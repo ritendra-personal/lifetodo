@@ -62,7 +62,7 @@
         <div id="sync-status" class="sync-status hidden" role="status"></div>
         <div id="sync-error" class="sync-error hidden" role="alert"></div>
 
-        <section class="entry-panel" aria-label="Add task">
+        <section id="entry-panel" class="entry-panel" aria-label="Add task">
           <form id="task-form" class="task-form">
             <input id="title" name="title" type="text" placeholder="New task" autocomplete="off" required>
             <select id="parent-id" name="parentId" aria-label="Parent task">
@@ -83,7 +83,7 @@
           </form>
         </section>
 
-        <section class="planner-grid">
+        <section id="planner-grid" class="planner-grid">
           <div class="task-board">
             <div class="board-head">
               <h3 id="board-title">Tasks</h3>
@@ -125,6 +125,10 @@
                 <select id="detail-parent">
                   <option value="">No parent</option>
                 </select>
+              </label>
+              <label>
+                Depends on
+                <select id="detail-dependencies" multiple size="4"></select>
               </label>
               <label>
                 Tags

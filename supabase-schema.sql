@@ -7,6 +7,7 @@ create table if not exists planner_tasks (
   title text not null,
   notes text default '',
   tags text[] not null default '{}',
+  dependency_ids uuid[] not null default '{}',
   area text not null default 'Life',
   priority text not null default 'Medium',
   status text not null default 'active',
@@ -20,11 +21,13 @@ create table if not exists planner_tasks (
 
 alter table planner_tasks add column if not exists parent_id uuid references planner_tasks(id) on delete cascade;
 alter table planner_tasks add column if not exists tags text[] not null default '{}';
+alter table planner_tasks add column if not exists dependency_ids uuid[] not null default '{}';
 alter table planner_tasks add column if not exists sort_order numeric not null default 0;
 
 create index if not exists planner_tasks_owner_key_idx on planner_tasks(owner_key);
 create index if not exists planner_tasks_parent_id_idx on planner_tasks(parent_id);
 create index if not exists planner_tasks_tags_idx on planner_tasks using gin(tags);
+create index if not exists planner_tasks_dependency_ids_idx on planner_tasks using gin(dependency_ids);
 create index if not exists planner_tasks_sort_order_idx on planner_tasks(sort_order);
 create index if not exists planner_tasks_due_date_idx on planner_tasks(due_date);
 create index if not exists planner_tasks_status_idx on planner_tasks(status);

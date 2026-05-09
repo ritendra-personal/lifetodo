@@ -1,4 +1,4 @@
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.8.0";
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -36,6 +36,8 @@ const els = {
   syncError: document.querySelector("#sync-error"),
   taskList: document.querySelector("#task-list"),
   taskForm: document.querySelector("#task-form"),
+  entryPanel: document.querySelector("#entry-panel"),
+  plannerGrid: document.querySelector("#planner-grid"),
   area: document.querySelector("#area"),
   manageAreasButton: document.querySelector("#manage-areas-button"),
   areasDialog: document.querySelector("#areas-dialog"),
@@ -66,6 +68,7 @@ const detail = {
   title: document.querySelector("#detail-title"),
   notes: document.querySelector("#detail-notes"),
   parent: document.querySelector("#detail-parent"),
+  dependencies: document.querySelector("#detail-dependencies"),
   tags: document.querySelector("#detail-tags"),
   area: document.querySelector("#detail-area"),
   priority: document.querySelector("#detail-priority"),
@@ -147,6 +150,11 @@ function parseTags(value) {
   return [...new Set(String(value || "").split(",").map((tag) => tag.trim()).filter(Boolean))];
 }
 
+function parseIds(value) {
+  if (Array.isArray(value)) return [...new Set(value.map((id) => String(id).trim()).filter(Boolean))];
+  return [...new Set(String(value || "").split(",").map((id) => id.trim()).filter(Boolean))];
+}
+
 function normalizeTask(task) {
   const order = Number(task.sort_order ?? task.sortOrder);
   return {
@@ -156,6 +164,7 @@ function normalizeTask(task) {
     title: task.title || "",
     notes: task.notes || "",
     tags: parseTags(task.tags),
+    dependency_ids: parseIds(task.dependency_ids || task.dependencyIds),
     area: task.area || "Life",
     priority: task.priority || "Medium",
     status: task.status || "active",
@@ -169,14 +178,25 @@ function normalizeTask(task) {
 }
 
 function databasePayload(task) {
-  return {
-    ...task,
+  const payload = {
+    id: task.id,
     owner_key: state.plannerKey,
     parent_id: task.parent_id || null,
+    title: task.title,
+    notes: task.notes,
     due_date: task.due_date || null,
     tags: parseTags(task.tags),
-    sort_order: task.sort_order || 0
+    area: task.area,
+    priority: task.priority,
+    status: task.status,
+    energy: task.energy,
+    sort_order: task.sort_order || 0,
+    created_at: task.created_at,
+    updated_at: task.updated_at,
+    completed_at: task.completed_at
   };
+  if (task.dependency_ids?.length) payload.dependency_ids = parseIds(task.dependency_ids);
+  return payload;
 }
 
 function databasePatchPayload(changes) {
@@ -187,6 +207,7 @@ function databasePatchPayload(changes) {
   if ("parent_id" in payload) payload.parent_id = payload.parent_id || null;
   if ("due_date" in payload) payload.due_date = payload.due_date || null;
   if ("tags" in payload) payload.tags = parseTags(payload.tags);
+  if ("dependency_ids" in payload) payload.dependency_ids = parseIds(payload.dependency_ids);
   if ("sort_order" in payload) payload.sort_order = Number(payload.sort_order) || 0;
   return payload;
 }
@@ -286,6 +307,18 @@ function fillParentSelect(select, selected = "", excludeId = "") {
     select.append(option);
   }
   select.value = value;
+}
+
+function fillDependencySelect(select, selected = [], excludeId = "") {
+  const values = new Set(parseIds(selected).filter((id) => id !== excludeId));
+  select.innerHTML = "";
+  for (const task of state.tasks.filter((item) => item.id !== excludeId).sort((a, b) => a.title.localeCompare(b.title))) {
+    const option = document.createElement("option");
+    option.value = task.id;
+    option.textContent = task.title;
+    option.selected = values.has(task.id);
+    select.append(option);
+  }
 }
 
 function seedTasks() {
@@ -408,6 +441,10 @@ async function deleteTask(id) {
   const ids = [id, ...descendantIds(id)];
   if (!isSupabaseReady()) {
     state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
+    state.tasks = state.tasks.map((task) => ({
+      ...task,
+      dependency_ids: task.dependency_ids.filter((dependencyId) => !ids.includes(dependencyId))
+    }));
     saveLocal();
     render();
     return;
@@ -418,6 +455,21 @@ async function deleteTask(id) {
     state.syncError = "";
     state.syncMessage = `Deleted from Supabase. ${keyLabel()}.`;
     state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
+    const cleanup = state.tasks
+      .map((task) => ({
+        ...task,
+        dependency_ids: task.dependency_ids.filter((dependencyId) => !ids.includes(dependencyId))
+      }))
+      .filter((task, index) => task.dependency_ids.length !== state.tasks[index].dependency_ids.length);
+    await Promise.all(
+      cleanup.map((task) =>
+        supabaseRequest(`planner_tasks?id=eq.${encodeURIComponent(task.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(databasePatchPayload({ dependency_ids: task.dependency_ids, updated_at: nowIso() }))
+        })
+      )
+    );
+    state.tasks = state.tasks.map((task) => cleanup.find((item) => item.id === task.id) || task);
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -573,6 +625,7 @@ function renderParentControls() {
   if (state.selectedId) {
     const task = state.tasks.find((item) => item.id === state.selectedId);
     fillParentSelect(detail.parent, task?.parent_id || "", state.selectedId);
+    fillDependencySelect(detail.dependencies, task?.dependency_ids || [], state.selectedId);
   }
 }
 
@@ -693,6 +746,11 @@ function renderGraphView() {
       visible.add(current.parent_id);
       current = byId.get(current.parent_id);
     }
+    if (visible.has(task.id)) {
+      for (const dependencyId of task.dependency_ids) {
+        if (byId.has(dependencyId)) visible.add(dependencyId);
+      }
+    }
   }
 
   if (!visible.size) {
@@ -703,23 +761,96 @@ function renderGraphView() {
     return;
   }
 
-  const graph = document.createElement("div");
-  graph.className = "graph-view";
   const children = childMap();
-  const renderBranch = (parentId, container) => {
+  const rows = [];
+  const visited = new Set();
+  const walk = (parentId, depth) => {
     for (const task of sortedSiblings(children.get(parentId) || [])) {
       if (!visible.has(task.id)) continue;
-      const branch = document.createElement("div");
-      branch.className = "graph-branch";
-      branch.append(makeMiniTask(task));
-      const childContainer = document.createElement("div");
-      childContainer.className = "graph-children";
-      renderBranch(task.id, childContainer);
-      if (childContainer.children.length) branch.append(childContainer);
-      container.append(branch);
+      visited.add(task.id);
+      rows.push({ task, depth });
+      walk(task.id, depth + 1);
     }
   };
-  renderBranch("", graph);
+  walk("", 0);
+  for (const task of sortedSiblings(state.tasks.filter((item) => visible.has(item.id) && !visited.has(item.id)))) {
+    rows.push({ task, depth: 0 });
+  }
+
+  const nodeWidth = 210;
+  const nodeHeight = 66;
+  const columnGap = 72;
+  const rowGap = 30;
+  const margin = 24;
+  const maxDepth = rows.reduce((depth, row) => Math.max(depth, row.depth), 0);
+  const graphWidth = margin * 2 + (maxDepth + 1) * nodeWidth + maxDepth * columnGap;
+  const graphHeight = margin * 2 + rows.length * nodeHeight + Math.max(0, rows.length - 1) * rowGap;
+  const positions = new Map();
+
+  const graph = document.createElement("div");
+  graph.className = "graph-canvas";
+  graph.style.width = `${Math.max(graphWidth, 720)}px`;
+  graph.style.height = `${Math.max(graphHeight, 420)}px`;
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "graph-links");
+  svg.setAttribute("width", Math.max(graphWidth, 720));
+  svg.setAttribute("height", Math.max(graphHeight, 420));
+  svg.setAttribute("viewBox", `0 0 ${Math.max(graphWidth, 720)} ${Math.max(graphHeight, 420)}`);
+  svg.innerHTML = `
+    <defs>
+      <marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z"></path>
+      </marker>
+      <marker id="graph-dot-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z"></path>
+      </marker>
+    </defs>
+  `;
+  graph.append(svg);
+
+  rows.forEach(({ task, depth }, index) => {
+    const x = margin + depth * (nodeWidth + columnGap);
+    const y = margin + index * (nodeHeight + rowGap);
+    positions.set(task.id, { x, y, width: nodeWidth, height: nodeHeight });
+    const node = document.createElement("button");
+    node.className = `graph-node ${task.id === state.selectedId ? "active" : ""} ${task.status === "done" ? "done" : ""}`;
+    node.type = "button";
+    node.dataset.id = task.id;
+    node.style.left = `${x}px`;
+    node.style.top = `${y}px`;
+    node.style.borderTopColor = areaColor(task.area);
+    node.innerHTML = `
+      <span class="graph-node-title"></span>
+      <span class="graph-node-meta"></span>
+    `;
+    node.querySelector(".graph-node-title").textContent = task.title;
+    node.querySelector(".graph-node-meta").textContent = `${task.area} · ${formatDate(task.due_date)}`;
+    graph.append(node);
+  });
+
+  const makePath = (fromId, toId, className) => {
+    const from = positions.get(fromId);
+    const to = positions.get(toId);
+    if (!from || !to) return;
+    const startX = from.x + from.width;
+    const startY = from.y + from.height / 2;
+    const endX = to.x;
+    const endY = to.y + to.height / 2;
+    const curve = Math.max(36, Math.abs(endX - startX) / 2);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("class", className);
+    path.setAttribute("d", `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`);
+    svg.append(path);
+  };
+
+  for (const task of rows.map((row) => row.task)) {
+    if (task.parent_id && visible.has(task.parent_id)) makePath(task.parent_id, task.id, "graph-link parent-link");
+    for (const dependencyId of task.dependency_ids) {
+      if (visible.has(dependencyId)) makePath(dependencyId, task.id, "graph-link dependency-link");
+    }
+  }
+
   els.taskList.append(graph);
 }
 
@@ -789,9 +920,11 @@ function render() {
   const titles = { today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done", graph: "Graph", timeline: "Timeline" };
 
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
+  els.plannerGrid.classList.toggle("graph-mode", state.view === "graph");
+  els.entryPanel.classList.toggle("hidden", state.view === "graph");
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view];
-  els.boardTitle.textContent = `${titles[state.view]} tasks`;
+  els.boardTitle.textContent = state.view === "graph" ? "Task graph" : `${titles[state.view]} tasks`;
   els.storageStatus.textContent = isSupabaseReady() ? "Supabase database" : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.showDone.checked = state.showDone;
@@ -918,6 +1051,12 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const graphNode = event.target.closest(".graph-node");
+  if (graphNode) {
+    state.selectedId = graphNode.dataset.id;
+    render();
+    return;
+  }
   const mini = event.target.closest(".mini-task");
   if (mini) {
     state.selectedId = mini.dataset.id;
@@ -940,6 +1079,13 @@ els.taskList.addEventListener("click", (event) => {
 });
 
 els.taskList.addEventListener("keydown", (event) => {
+  const graphNode = event.target.closest(".graph-node");
+  if (graphNode && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    state.selectedId = graphNode.dataset.id;
+    render();
+    return;
+  }
   const item = event.target.closest(".task-item");
   if (!item) return;
   if (event.key === "Enter" || event.key === " ") {
@@ -1029,6 +1175,7 @@ els.detailForm.addEventListener("submit", async (event) => {
     title: detail.title.value.trim(),
     notes: detail.notes.value.trim(),
     parent_id: detail.parent.value || null,
+    dependency_ids: [...detail.dependencies.selectedOptions].map((option) => option.value),
     tags: parseTags(detail.tags.value),
     area: detail.area.value || "Life",
     priority: detail.priority.value,
