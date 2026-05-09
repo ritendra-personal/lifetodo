@@ -1,4 +1,13 @@
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.6.0";
+
+const defaultAreas = [
+  { name: "Life", color: "#476c9b" },
+  { name: "Work", color: "#0e7c74" },
+  { name: "Health", color: "#2f855a" },
+  { name: "Money", color: "#b1791f" },
+  { name: "Home", color: "#7b5ea7" },
+  { name: "Creative", color: "#d85b49" }
+];
 
 const state = {
   tasks: [],
@@ -12,6 +21,7 @@ const state = {
   syncError: "",
   syncMessage: "",
   config: null,
+  areas: loadAreas(),
   plannerKey: localStorage.getItem("planner-key") || "",
   detailWidth: Number(localStorage.getItem("detail-width") || 360)
 };
@@ -26,6 +36,13 @@ const els = {
   syncError: document.querySelector("#sync-error"),
   taskList: document.querySelector("#task-list"),
   taskForm: document.querySelector("#task-form"),
+  areaOptions: document.querySelector("#area-options"),
+  manageAreasButton: document.querySelector("#manage-areas-button"),
+  areasDialog: document.querySelector("#areas-dialog"),
+  areaList: document.querySelector("#area-list"),
+  newAreaName: document.querySelector("#new-area-name"),
+  newAreaColor: document.querySelector("#new-area-color"),
+  addAreaButton: document.querySelector("#add-area-button"),
   search: document.querySelector("#search"),
   sort: document.querySelector("#sort"),
   showDone: document.querySelector("#show-done"),
@@ -65,14 +82,33 @@ const counts = {
   focus: document.querySelector("#stat-focus")
 };
 
-const areaColors = {
-  Work: "#476c9b",
-  Health: "#0e7c74",
-  Money: "#b1791f",
-  Home: "#7b5ea7",
-  Creative: "#d85b49",
-  Life: "#667085"
-};
+function loadAreas() {
+  const raw = localStorage.getItem("planner-areas");
+  if (!raw) return defaultAreas;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.length ? parsed : defaultAreas;
+  } catch {
+    return defaultAreas;
+  }
+}
+
+function saveAreas() {
+  localStorage.setItem("planner-areas", JSON.stringify(state.areas));
+}
+
+function areaColor(name) {
+  return state.areas.find((area) => area.name === name)?.color || "#667085";
+}
+
+function ensureArea(name, color = "#667085") {
+  const normalized = String(name || "").trim();
+  if (!normalized) return;
+  if (!state.areas.some((area) => area.name.toLowerCase() === normalized.toLowerCase())) {
+    state.areas.push({ name: normalized, color });
+    saveAreas();
+  }
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -497,6 +533,30 @@ function renderTagFilters() {
   }
 }
 
+function renderAreas() {
+  els.areaOptions.innerHTML = "";
+  for (const area of state.areas) {
+    const option = document.createElement("option");
+    option.value = area.name;
+    els.areaOptions.append(option);
+  }
+
+  els.areaList.innerHTML = "";
+  for (const area of state.areas) {
+    const row = document.createElement("div");
+    row.className = "area-row";
+    row.innerHTML = `
+      <input class="area-name-input" type="text">
+      <input class="area-color-input" type="color" aria-label="Area color">
+      <button class="ghost-button area-delete" type="button">Delete</button>
+    `;
+    row.dataset.area = area.name;
+    row.querySelector(".area-name-input").value = area.name;
+    row.querySelector(".area-color-input").value = area.color;
+    els.areaList.append(row);
+  }
+}
+
 function renderParentControls() {
   fillParentSelect(document.querySelector("#parent-id"), "", "");
   if (state.selectedId) {
@@ -538,7 +598,7 @@ function renderTask(task, depth, childCount) {
     button.tabIndex = 0;
     button.style.setProperty("--depth", depth);
 
-    const areaColor = areaColors[task.area] || areaColors.Life;
+    const color = areaColor(task.area);
     button.innerHTML = `
       <div class="task-line">
         <button class="check" type="button" aria-label="${task.status === "done" ? "Reopen task" : "Mark task done"}"></button>
@@ -562,7 +622,8 @@ function renderTask(task, depth, childCount) {
     if (notes) notes.textContent = task.notes;
     const pills = button.querySelectorAll(".pill");
     pills[0].textContent = task.area;
-    pills[0].style.borderLeft = `4px solid ${areaColor}`;
+    pills[0].style.borderLeft = `4px solid ${color}`;
+    button.style.borderLeft = `6px solid ${color}`;
     pills[1].textContent = task.priority;
     pills[2].textContent = formatDate(task.due_date);
     pills[3].textContent = `${task.energy} energy`;
@@ -635,6 +696,7 @@ function render() {
 
   renderCounts();
   renderTagFilters();
+  renderAreas();
   renderParentControls();
   renderTasks();
   renderDetail();
@@ -719,13 +781,14 @@ els.taskForm.addEventListener("submit", async (event) => {
   const task = normalizeTask({
     title: form.get("title").trim(),
     parent_id: form.get("parentId") || "",
-    area: form.get("area"),
+    area: form.get("area").trim() || "Life",
     priority: form.get("priority"),
     due_date: form.get("dueDate") || defaultDueDateForView(),
     tags: parseTags(form.get("tags")),
     energy: "Medium",
     sort_order: nextSortOrder(form.get("parentId") || "")
   });
+  ensureArea(task.area);
   els.taskForm.reset();
   document.querySelector("#area").value = "Life";
   document.querySelector("#priority").value = "Medium";
@@ -841,11 +904,56 @@ els.detailForm.addEventListener("submit", async (event) => {
     notes: detail.notes.value.trim(),
     parent_id: detail.parent.value || null,
     tags: parseTags(detail.tags.value),
-    area: detail.area.value,
+    area: detail.area.value.trim() || "Life",
     priority: detail.priority.value,
     due_date: detail.due.value || null,
     energy: detail.energy.value
   });
+  ensureArea(detail.area.value.trim() || "Life");
+});
+
+els.manageAreasButton.addEventListener("click", () => {
+  renderAreas();
+  els.areasDialog.showModal();
+});
+
+els.addAreaButton.addEventListener("click", () => {
+  const name = els.newAreaName.value.trim();
+  if (!name) return;
+  ensureArea(name, els.newAreaColor.value);
+  els.newAreaName.value = "";
+  render();
+});
+
+els.areaList.addEventListener("input", (event) => {
+  const row = event.target.closest(".area-row");
+  if (!row) return;
+  const original = row.dataset.area;
+  const area = state.areas.find((item) => item.name === original);
+  if (!area) return;
+  const nextName = row.querySelector(".area-name-input").value.trim();
+  if (event.target.classList.contains("area-name-input") && nextName) {
+    state.tasks = state.tasks.map((task) => task.area === area.name ? { ...task, area: nextName } : task);
+    area.name = nextName;
+    row.dataset.area = nextName;
+  }
+  if (event.target.classList.contains("area-color-input")) {
+    area.color = event.target.value;
+  }
+  saveAreas();
+  render();
+});
+
+els.areaList.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest(".area-delete");
+  if (!deleteButton) return;
+  const row = deleteButton.closest(".area-row");
+  const name = row.dataset.area;
+  state.areas = state.areas.filter((area) => area.name !== name);
+  if (!state.areas.length) state.areas = defaultAreas;
+  state.tasks = state.tasks.map((task) => task.area === name ? { ...task, area: "Life" } : task);
+  saveAreas();
+  render();
 });
 
 els.completeButton.addEventListener("click", async () => {

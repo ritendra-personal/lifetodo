@@ -66,14 +66,11 @@
             <select id="parent-id" name="parentId" aria-label="Parent task">
               <option value="">No parent</option>
             </select>
-            <select id="area" name="area" aria-label="Area">
-              <option>Life</option>
-              <option>Work</option>
-              <option>Health</option>
-              <option>Money</option>
-              <option>Home</option>
-              <option>Creative</option>
-            </select>
+            <div class="area-field">
+              <input id="area" name="area" type="text" list="area-options" value="Life" aria-label="Area">
+              <button id="manage-areas-button" class="ghost-button icon-button" type="button" title="Manage areas">Edit</button>
+            </div>
+            <datalist id="area-options"></datalist>
             <select id="priority" name="priority" aria-label="Priority">
               <option>Medium</option>
               <option>High</option>
@@ -135,14 +132,7 @@
               <div class="two-col">
                 <label>
                   Area
-                  <select id="detail-area">
-                    <option>Life</option>
-                    <option>Work</option>
-                    <option>Health</option>
-                    <option>Money</option>
-                    <option>Home</option>
-                    <option>Creative</option>
-                  </select>
+                  <input id="detail-area" type="text" list="area-options">
                 </label>
                 <label>
                   Priority
@@ -186,6 +176,22 @@
           <button id="clear-local-button" value="clear-local" class="ghost-button" type="button">Clear local data</button>
           <button value="local" class="ghost-button" type="submit">Use local</button>
           <button value="save" class="primary-button" type="submit">Connect</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="areas-dialog">
+      <form method="dialog" id="area-form">
+        <h2>Areas</h2>
+        <p>Edit the category list and choose colors for task cards.</p>
+        <div id="area-list" class="area-list"></div>
+        <div class="area-add-row">
+          <input id="new-area-name" type="text" placeholder="New area">
+          <input id="new-area-color" type="color" value="#0e7c74" aria-label="Area color">
+          <button id="add-area-button" class="primary-button" type="button">Add</button>
+        </div>
+        <div class="dialog-actions">
+          <button class="primary-button" value="close" type="submit">Done</button>
         </div>
       </form>
     </dialog>

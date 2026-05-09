@@ -272,12 +272,22 @@ textarea:focus {
 
 .task-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(150px, 0.8fr) 120px 115px 145px minmax(120px, 0.7fr) 90px;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(150px, 0.8fr) minmax(150px, 0.9fr) 115px 145px minmax(120px, 0.7fr) 90px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
   box-shadow: var(--shadow);
+}
+
+.area-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.icon-button {
+  padding: 0 12px;
 }
 
 .primary-button,
@@ -408,6 +418,7 @@ body.resizing .resize-handle::before {
   margin-left: calc(min(var(--depth), 5) * 22px);
   position: relative;
   cursor: grab;
+  border-left-width: 6px;
 }
 
 .task-item.active {
@@ -611,6 +622,40 @@ dialog::backdrop {
   display: grid;
   gap: 14px;
   padding: 22px;
+}
+
+#area-form {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+
+#area-form h2,
+#area-form p {
+  margin: 0;
+}
+
+#area-form p {
+  color: var(--muted);
+}
+
+.area-list {
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow: auto;
+}
+
+.area-row,
+.area-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.area-color-input {
+  padding: 4px;
 }
 
 #key-form h2,
