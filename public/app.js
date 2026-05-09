@@ -5,6 +5,7 @@ const state = {
   search: "",
   tagFilter: "",
   sort: "due",
+  syncError: "",
   config: null,
   plannerKey: localStorage.getItem("planner-key") || ""
 };
@@ -152,16 +153,18 @@ async function supabaseRequest(path, options = {}) {
   const base = state.config.supabaseUrl.replace(/\/$/, "");
   const headers = {
     apikey: state.config.supabaseAnonKey,
-    authorization: `Bearer ${state.config.supabaseAnonKey}`,
     "x-planner-key": state.plannerKey,
     "content-type": "application/json",
     prefer: "return=representation",
     ...(options.headers || {})
   };
+  if (state.config.supabaseAnonKey.startsWith("eyJ")) {
+    headers.authorization = `Bearer ${state.config.supabaseAnonKey}`;
+  }
 
   const response = await fetch(`${base}/rest/v1/${path}`, { ...options, headers });
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(`${response.status} ${await response.text()}`);
   }
   return response.status === 204 ? null : response.json();
 }
@@ -228,11 +231,18 @@ async function loadTasks() {
     return;
   }
 
-  const rows = await supabaseRequest(
-    `planner_tasks?select=*&owner_key=eq.${encodeURIComponent(state.plannerKey)}&order=created_at.desc`
-  );
-  state.tasks = rows.map(normalizeTask);
-  render();
+  try {
+    const rows = await supabaseRequest(
+      `planner_tasks?select=*&owner_key=eq.${encodeURIComponent(state.plannerKey)}&order=created_at.desc`
+    );
+    state.syncError = "";
+    state.tasks = rows.map(normalizeTask);
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
+    console.error("Supabase load failed", error);
+  }
 }
 
 async function persistTask(task) {
@@ -246,16 +256,23 @@ async function persistTask(task) {
   }
 
   const payload = databasePayload(task);
-  const rows = await supabaseRequest("planner_tasks", {
-    method: "POST",
-    headers: { prefer: "resolution=merge-duplicates,return=representation" },
-    body: JSON.stringify(payload)
-  });
-  const saved = normalizeTask(rows[0]);
-  const index = state.tasks.findIndex((item) => item.id === saved.id);
-  if (index >= 0) state.tasks[index] = saved;
-  else state.tasks.unshift(saved);
-  render();
+  try {
+    const rows = await supabaseRequest("planner_tasks", {
+      method: "POST",
+      headers: { prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(payload)
+    });
+    state.syncError = "";
+    const saved = normalizeTask(rows[0]);
+    const index = state.tasks.findIndex((item) => item.id === saved.id);
+    if (index >= 0) state.tasks[index] = saved;
+    else state.tasks.unshift(saved);
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
+    console.error("Supabase save failed", error);
+  }
 }
 
 async function patchTask(id, changes) {
@@ -270,12 +287,19 @@ async function patchTask(id, changes) {
     return;
   }
 
-  const rows = await supabaseRequest(`planner_tasks?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: JSON.stringify(databasePatchPayload({ ...changes, updated_at: updated.updated_at }))
-  });
-  state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask(rows[0]) : task));
-  render();
+  try {
+    const rows = await supabaseRequest(`planner_tasks?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(databasePatchPayload({ ...changes, updated_at: updated.updated_at }))
+    });
+    state.syncError = "";
+    state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask(rows[0]) : task));
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
+    console.error("Supabase update failed", error);
+  }
 }
 
 async function deleteTask(id) {
@@ -287,9 +311,16 @@ async function deleteTask(id) {
     return;
   }
 
-  await supabaseRequest(`planner_tasks?id=in.(${ids.map(encodeURIComponent).join(",")})`, { method: "DELETE" });
-  state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
-  render();
+  try {
+    await supabaseRequest(`planner_tasks?id=in.(${ids.map(encodeURIComponent).join(",")})`, { method: "DELETE" });
+    state.syncError = "";
+    state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
+    console.error("Supabase delete failed", error);
+  }
 }
 
 function childMap() {
@@ -503,6 +534,8 @@ function render() {
   els.viewTitle.textContent = titles[state.view];
   els.boardTitle.textContent = `${titles[state.view]} tasks`;
   els.storageStatus.textContent = isSupabaseReady() ? "Supabase database" : "Local storage";
+  els.storageStatus.title = state.syncError || "";
+  els.storageStatus.textContent = state.syncError ? "Database error" : els.storageStatus.textContent;
   document.querySelectorAll(".view-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === state.view);
   });
