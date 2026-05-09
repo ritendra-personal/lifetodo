@@ -1,4 +1,4 @@
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.5.0";
 
 const state = {
   tasks: [],
@@ -6,11 +6,14 @@ const state = {
   view: "today",
   search: "",
   tagFilter: "",
-  sort: "due",
+  sort: "manual",
+  showDone: localStorage.getItem("show-done") === "true",
+  draggingId: null,
   syncError: "",
   syncMessage: "",
   config: null,
-  plannerKey: localStorage.getItem("planner-key") || ""
+  plannerKey: localStorage.getItem("planner-key") || "",
+  detailWidth: Number(localStorage.getItem("detail-width") || 360)
 };
 
 const els = {
@@ -25,9 +28,11 @@ const els = {
   taskForm: document.querySelector("#task-form"),
   search: document.querySelector("#search"),
   sort: document.querySelector("#sort"),
+  showDone: document.querySelector("#show-done"),
   tagFilters: document.querySelector("#tag-filters"),
   keyButton: document.querySelector("#key-button"),
   syncButton: document.querySelector("#sync-button"),
+  resizeHandle: document.querySelector("#resize-handle"),
   detailForm: document.querySelector("#detail-form"),
   emptyDetail: document.querySelector("#empty-detail"),
   keyDialog: document.querySelector("#key-dialog"),
@@ -105,6 +110,7 @@ function parseTags(value) {
 }
 
 function normalizeTask(task) {
+  const order = Number(task.sort_order ?? task.sortOrder);
   return {
     id: task.id || makeId(),
     owner_key: task.owner_key || state.plannerKey || "local",
@@ -117,6 +123,7 @@ function normalizeTask(task) {
     status: task.status || "active",
     due_date: task.due_date || task.dueDate || "",
     energy: task.energy || "Medium",
+    sort_order: Number.isFinite(order) ? order : 0,
     created_at: task.created_at || nowIso(),
     updated_at: task.updated_at || nowIso(),
     completed_at: task.completed_at || null
@@ -129,7 +136,8 @@ function databasePayload(task) {
     owner_key: state.plannerKey,
     parent_id: task.parent_id || null,
     due_date: task.due_date || null,
-    tags: parseTags(task.tags)
+    tags: parseTags(task.tags),
+    sort_order: task.sort_order || 0
   };
 }
 
@@ -141,6 +149,7 @@ function databasePatchPayload(changes) {
   if ("parent_id" in payload) payload.parent_id = payload.parent_id || null;
   if ("due_date" in payload) payload.due_date = payload.due_date || null;
   if ("tags" in payload) payload.tags = parseTags(payload.tags);
+  if ("sort_order" in payload) payload.sort_order = Number(payload.sort_order) || 0;
   return payload;
 }
 
@@ -185,7 +194,7 @@ async function supabaseRequest(path, options = {}) {
 
 function loadLocal() {
   const raw = localStorage.getItem("planner-tasks");
-  state.tasks = raw ? JSON.parse(raw).map(normalizeTask) : seedTasks();
+  state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.syncError = "";
   state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
   saveLocal();
@@ -194,6 +203,32 @@ function loadLocal() {
 function saveLocal() {
   localStorage.setItem("planner-tasks", JSON.stringify(state.tasks));
   state.syncMessage = "Saved locally in this browser only.";
+}
+
+function ensureSortOrders(tasks) {
+  const groups = new Map();
+  for (const task of tasks) {
+    const parent = task.parent_id || "";
+    if (!groups.has(parent)) groups.set(parent, []);
+    groups.get(parent).push(task);
+  }
+  for (const siblings of groups.values()) {
+    siblings
+      .sort((a, b) => {
+        if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+        return new Date(a.created_at) - new Date(b.created_at);
+      })
+      .forEach((task, index) => {
+        if (!task.sort_order) task.sort_order = (index + 1) * 1000;
+      });
+  }
+  return tasks;
+}
+
+function nextSortOrder(parentId = "") {
+  const siblings = state.tasks.filter((task) => (task.parent_id || "") === (parentId || ""));
+  if (!siblings.length) return 1000;
+  return Math.max(...siblings.map((task) => Number(task.sort_order) || 0)) + 1000;
 }
 
 function selectableParents(excludeId = "") {
@@ -227,7 +262,8 @@ function seedTasks() {
       area: "Life",
       priority: "High",
       due_date: today,
-      energy: "Low"
+      energy: "Low",
+      sort_order: 1000
     }),
     normalizeTask({
       title: "Set up Supabase database",
@@ -236,7 +272,8 @@ function seedTasks() {
       area: "Work",
       priority: "Medium",
       due_date: tomorrow.toISOString().slice(0, 10),
-      energy: "Medium"
+      energy: "Medium",
+      sort_order: 2000
     })
   ];
 }
@@ -254,7 +291,7 @@ async function loadTasks() {
     );
     state.syncError = "";
     state.syncMessage = `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} from Supabase. ${keyLabel()}.`;
-    state.tasks = rows.map(normalizeTask);
+    state.tasks = ensureSortOrders(rows.map(normalizeTask));
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -269,6 +306,7 @@ async function persistTask(task) {
     const index = state.tasks.findIndex((item) => item.id === task.id);
     if (index >= 0) state.tasks[index] = task;
     else state.tasks.unshift(task);
+    ensureSortOrders(state.tasks);
     saveLocal();
     render();
     return;
@@ -287,6 +325,7 @@ async function persistTask(task) {
     const index = state.tasks.findIndex((item) => item.id === saved.id);
     if (index >= 0) state.tasks[index] = saved;
     else state.tasks.unshift(saved);
+    ensureSortOrders(state.tasks);
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -303,6 +342,7 @@ async function patchTask(id, changes) {
 
   if (!isSupabaseReady()) {
     state.tasks = state.tasks.map((task) => (task.id === id ? updated : task));
+    ensureSortOrders(state.tasks);
     saveLocal();
     render();
     return;
@@ -316,6 +356,7 @@ async function patchTask(id, changes) {
     state.syncError = "";
     state.syncMessage = `Updated in Supabase. ${keyLabel()}.`;
     state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask(rows[0]) : task));
+    ensureSortOrders(state.tasks);
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -374,7 +415,7 @@ function descendantIds(id) {
 
 function taskBucket(task) {
   const today = todayIso();
-  if (task.status === "done") return "done";
+  if (task.status === "done" && !state.showDone) return "done";
   if (!task.due_date) return "backlog";
   if (task.due_date <= today) return "today";
   return "upcoming";
@@ -385,7 +426,11 @@ function filteredTasks() {
   const priorityOrder = { High: 0, Medium: 1, Low: 2 };
 
   return state.tasks
-    .filter((task) => taskBucket(task) === state.view)
+    .filter((task) => {
+      if (state.view === "done") return task.status === "done";
+      if (task.status === "done" && !state.showDone) return false;
+      return taskBucket(task) === state.view;
+    })
     .filter((task) => {
       if (!search) return true;
       return `${task.title} ${task.notes} ${task.area} ${task.tags.join(" ")}`.toLowerCase().includes(search);
@@ -417,6 +462,10 @@ function visibleTaskIds() {
 function sortedSiblings(tasks) {
   const priorityOrder = { High: 0, Medium: 1, Low: 2 };
   return [...tasks].sort((a, b) => {
+    if (state.sort === "manual") {
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      return new Date(a.created_at) - new Date(b.created_at);
+    }
     if (state.sort === "priority") return priorityOrder[a.priority] - priorityOrder[b.priority];
     if (state.sort === "created") return new Date(b.created_at) - new Date(a.created_at);
     return (a.due_date || "9999-12-31").localeCompare(b.due_date || "9999-12-31");
@@ -481,16 +530,18 @@ function renderTasks() {
 }
 
 function renderTask(task, depth, childCount) {
-    const button = document.createElement("button");
-    button.className = `task-item ${task.id === state.selectedId ? "active" : ""} depth-${Math.min(depth, 5)}`;
-    button.type = "button";
+    const button = document.createElement("div");
+    button.className = `task-item ${task.id === state.selectedId ? "active" : ""} ${task.status === "done" ? "done" : ""} depth-${Math.min(depth, 5)}`;
     button.dataset.id = task.id;
+    button.draggable = true;
+    button.role = "button";
+    button.tabIndex = 0;
     button.style.setProperty("--depth", depth);
 
     const areaColor = areaColors[task.area] || areaColors.Life;
     button.innerHTML = `
       <div class="task-line">
-        <span class="check" aria-hidden="true"></span>
+        <button class="check" type="button" aria-label="${task.status === "done" ? "Reopen task" : "Mark task done"}"></button>
         <div>
           <div class="task-title"><span class="task-title-text"></span></div>
           ${task.notes ? '<p class="task-notes"></p>' : ""}
@@ -555,11 +606,13 @@ function render() {
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
   const titles = { today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done" };
 
+  document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view];
   els.boardTitle.textContent = `${titles[state.view]} tasks`;
   els.storageStatus.textContent = isSupabaseReady() ? "Supabase database" : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
+  els.showDone.checked = state.showDone;
   els.storageStatus.title = state.syncError || "";
   els.storageStatus.textContent = state.syncError ? "Database error" : els.storageStatus.textContent;
   if (state.syncMessage && !state.syncError) {
@@ -587,6 +640,79 @@ function render() {
   renderDetail();
 }
 
+function toggleTaskStatus(id) {
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task) return;
+  const done = task.status !== "done";
+  return patchTask(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
+}
+
+async function persistReorder(changedTasks) {
+  if (!changedTasks.length) return;
+
+  if (!isSupabaseReady()) {
+    state.tasks = state.tasks.map((task) => changedTasks.find((changed) => changed.id === task.id) || task);
+    saveLocal();
+    state.syncMessage = "Reordered locally in this browser only.";
+    render();
+    return;
+  }
+
+  try {
+    await Promise.all(
+      changedTasks.map((task) =>
+        supabaseRequest(`planner_tasks?id=eq.${encodeURIComponent(task.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(databasePatchPayload({ sort_order: task.sort_order, updated_at: nowIso() }))
+        })
+      )
+    );
+    state.syncError = "";
+    state.syncMessage = `Reordered in Supabase. ${keyLabel()}.`;
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    state.syncMessage = "";
+    render();
+    console.error("Supabase reorder failed", error);
+  }
+}
+
+async function reorderTask(draggedId, targetId, placement) {
+  if (!draggedId || !targetId || draggedId === targetId) return;
+  const dragged = state.tasks.find((task) => task.id === draggedId);
+  const target = state.tasks.find((task) => task.id === targetId);
+  if (!dragged || !target) return;
+
+  if ((dragged.parent_id || "") !== (target.parent_id || "")) {
+    state.syncError = "";
+    state.syncMessage = "Drag reordering currently works among sibling tasks. To move a task under another parent, edit its Parent task field.";
+    render();
+    return;
+  }
+
+  const siblings = sortedSiblings(state.tasks.filter((task) => (task.parent_id || "") === (target.parent_id || "")));
+  const withoutDragged = siblings.filter((task) => task.id !== draggedId);
+  const targetIndex = withoutDragged.findIndex((task) => task.id === targetId);
+  const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
+  withoutDragged.splice(insertIndex, 0, dragged);
+
+  const changed = [];
+  withoutDragged.forEach((task, index) => {
+    const nextOrder = (index + 1) * 1000;
+    if (task.sort_order !== nextOrder) {
+      task.sort_order = nextOrder;
+      task.updated_at = nowIso();
+      changed.push(task);
+    }
+  });
+
+  state.sort = "manual";
+  els.sort.value = "manual";
+  render();
+  await persistReorder(changed);
+}
+
 els.taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(els.taskForm);
@@ -597,7 +723,8 @@ els.taskForm.addEventListener("submit", async (event) => {
     priority: form.get("priority"),
     due_date: form.get("dueDate") || defaultDueDateForView(),
     tags: parseTags(form.get("tags")),
-    energy: "Medium"
+    energy: "Medium",
+    sort_order: nextSortOrder(form.get("parentId") || "")
   });
   els.taskForm.reset();
   document.querySelector("#area").value = "Life";
@@ -608,10 +735,73 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const check = event.target.closest(".check");
+  if (check) {
+    const item = check.closest(".task-item");
+    if (item) {
+      event.stopPropagation();
+      toggleTaskStatus(item.dataset.id);
+    }
+    return;
+  }
   const item = event.target.closest(".task-item");
   if (!item) return;
   state.selectedId = item.dataset.id;
   render();
+});
+
+els.taskList.addEventListener("keydown", (event) => {
+  const item = event.target.closest(".task-item");
+  if (!item) return;
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    state.selectedId = item.dataset.id;
+    render();
+  }
+});
+
+els.taskList.addEventListener("dragstart", (event) => {
+  const item = event.target.closest(".task-item");
+  if (!item) return;
+  state.draggingId = item.dataset.id;
+  item.classList.add("dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", item.dataset.id);
+});
+
+els.taskList.addEventListener("dragover", (event) => {
+  const item = event.target.closest(".task-item");
+  if (!item || item.dataset.id === state.draggingId) return;
+  event.preventDefault();
+  const rect = item.getBoundingClientRect();
+  const placement = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+  item.classList.toggle("drag-over-after", placement === "after");
+  item.classList.toggle("drag-over-before", placement === "before");
+});
+
+els.taskList.addEventListener("dragleave", (event) => {
+  const item = event.target.closest(".task-item");
+  if (!item) return;
+  item.classList.remove("drag-over-before", "drag-over-after");
+});
+
+els.taskList.addEventListener("drop", async (event) => {
+  const item = event.target.closest(".task-item");
+  if (!item) return;
+  event.preventDefault();
+  const rect = item.getBoundingClientRect();
+  const placement = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+  document.querySelectorAll(".drag-over-before, .drag-over-after").forEach((node) => {
+    node.classList.remove("drag-over-before", "drag-over-after");
+  });
+  await reorderTask(state.draggingId || event.dataTransfer.getData("text/plain"), item.dataset.id, placement);
+});
+
+els.taskList.addEventListener("dragend", () => {
+  state.draggingId = null;
+  document.querySelectorAll(".dragging, .drag-over-before, .drag-over-after").forEach((node) => {
+    node.classList.remove("dragging", "drag-over-before", "drag-over-after");
+  });
 });
 
 document.querySelectorAll(".view-button").forEach((button) => {
@@ -629,6 +819,12 @@ els.search.addEventListener("input", () => {
 els.sort.addEventListener("change", () => {
   state.sort = els.sort.value;
   renderTasks();
+});
+
+els.showDone.addEventListener("change", () => {
+  state.showDone = els.showDone.checked;
+  localStorage.setItem("show-done", String(state.showDone));
+  render();
 });
 
 els.tagFilters.addEventListener("click", (event) => {
@@ -669,7 +865,8 @@ els.subtaskButton.addEventListener("click", async () => {
     priority: parent.priority,
     due_date: parent.due_date,
     tags: parent.tags,
-    energy: parent.energy
+    energy: parent.energy,
+    sort_order: nextSortOrder(parent.id)
   });
   state.selectedId = task.id;
   await persistTask(task);
@@ -727,3 +924,26 @@ if (state.config?.supabaseUrl && state.config?.supabaseAnonKey && !state.planner
   els.keyDialog.showModal();
 }
 await loadTasks();
+
+let resizing = false;
+
+els.resizeHandle.addEventListener("pointerdown", (event) => {
+  resizing = true;
+  els.resizeHandle.setPointerCapture(event.pointerId);
+  document.body.classList.add("resizing");
+});
+
+els.resizeHandle.addEventListener("pointermove", (event) => {
+  if (!resizing) return;
+  const grid = document.querySelector(".planner-grid").getBoundingClientRect();
+  state.detailWidth = Math.min(620, Math.max(280, grid.right - event.clientX));
+  document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
+});
+
+els.resizeHandle.addEventListener("pointerup", (event) => {
+  if (!resizing) return;
+  resizing = false;
+  localStorage.setItem("detail-width", String(Math.round(state.detailWidth)));
+  els.resizeHandle.releasePointerCapture(event.pointerId);
+  document.body.classList.remove("resizing");
+});

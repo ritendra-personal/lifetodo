@@ -89,14 +89,23 @@
           <div class="task-board">
             <div class="board-head">
               <h3 id="board-title">Tasks</h3>
-              <select id="sort" aria-label="Sort tasks">
-                <option value="due">Due date</option>
-                <option value="priority">Priority</option>
-                <option value="created">Created</option>
-              </select>
+              <div class="board-tools">
+                <label class="toggle">
+                  <input id="show-done" type="checkbox">
+                  <span>Show done</span>
+                </label>
+                <select id="sort" aria-label="Sort tasks">
+                  <option value="manual">Manual</option>
+                  <option value="due">Due date</option>
+                  <option value="priority">Priority</option>
+                  <option value="created">Created</option>
+                </select>
+              </div>
             </div>
             <div id="task-list" class="task-list" aria-live="polite"></div>
           </div>
+
+          <div id="resize-handle" class="resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize task details pane" tabindex="0"></div>
 
           <aside class="detail-pane" aria-label="Task details">
             <div id="empty-detail" class="empty-detail">

@@ -12,6 +12,7 @@ create table if not exists planner_tasks (
   status text not null default 'active',
   due_date date,
   energy text not null default 'Medium',
+  sort_order numeric not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   completed_at timestamptz
@@ -19,10 +20,12 @@ create table if not exists planner_tasks (
 
 alter table planner_tasks add column if not exists parent_id uuid references planner_tasks(id) on delete cascade;
 alter table planner_tasks add column if not exists tags text[] not null default '{}';
+alter table planner_tasks add column if not exists sort_order numeric not null default 0;
 
 create index if not exists planner_tasks_owner_key_idx on planner_tasks(owner_key);
 create index if not exists planner_tasks_parent_id_idx on planner_tasks(parent_id);
 create index if not exists planner_tasks_tags_idx on planner_tasks using gin(tags);
+create index if not exists planner_tasks_sort_order_idx on planner_tasks(sort_order);
 create index if not exists planner_tasks_due_date_idx on planner_tasks(due_date);
 create index if not exists planner_tasks_status_idx on planner_tasks(status);
 
@@ -32,6 +35,10 @@ drop policy if exists "planner_tasks_select_by_owner_key" on planner_tasks;
 drop policy if exists "planner_tasks_insert_by_owner_key" on planner_tasks;
 drop policy if exists "planner_tasks_update_by_owner_key" on planner_tasks;
 drop policy if exists "planner_tasks_delete_by_owner_key" on planner_tasks;
+drop policy if exists "planner_tasks_select_for_publishable_app" on planner_tasks;
+drop policy if exists "planner_tasks_insert_for_publishable_app" on planner_tasks;
+drop policy if exists "planner_tasks_update_for_publishable_app" on planner_tasks;
+drop policy if exists "planner_tasks_delete_for_publishable_app" on planner_tasks;
 
 create policy "planner_tasks_select_for_publishable_app"
 on planner_tasks for select
