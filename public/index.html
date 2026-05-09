@@ -14,6 +14,7 @@
           <div>
             <h1>Life Planner</h1>
             <p id="storage-status">Local storage</p>
+            <p id="app-version">Version</p>
           </div>
         </div>
 
@@ -51,10 +52,12 @@
           </div>
           <div class="toolbar">
             <input id="search" type="search" placeholder="Search tasks" aria-label="Search tasks">
+            <button id="key-button" class="ghost-button" type="button">Key</button>
             <button id="sync-button" class="ghost-button" type="button" title="Sync">Sync</button>
           </div>
         </header>
 
+        <div id="sync-status" class="sync-status hidden" role="status"></div>
         <div id="sync-error" class="sync-error hidden" role="alert"></div>
 
         <section class="entry-panel" aria-label="Add task">
@@ -171,6 +174,7 @@
         <p>Use the same private key on every device.</p>
         <input id="planner-key" type="password" minlength="12" placeholder="Private planner key" required>
         <div class="dialog-actions">
+          <button id="clear-local-button" value="clear-local" class="ghost-button" type="button">Clear local data</button>
           <button value="local" class="ghost-button" type="submit">Use local</button>
           <button value="save" class="primary-button" type="submit">Connect</button>
         </div>

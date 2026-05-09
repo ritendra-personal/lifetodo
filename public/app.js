@@ -1,3 +1,5 @@
+const APP_VERSION = "0.4.1";
+
 const state = {
   tasks: [],
   selectedId: null,
@@ -6,27 +8,32 @@ const state = {
   tagFilter: "",
   sort: "due",
   syncError: "",
+  syncMessage: "",
   config: null,
   plannerKey: localStorage.getItem("planner-key") || ""
 };
 
 const els = {
   storageStatus: document.querySelector("#storage-status"),
+  appVersion: document.querySelector("#app-version"),
   todayLabel: document.querySelector("#today-label"),
   viewTitle: document.querySelector("#view-title"),
   boardTitle: document.querySelector("#board-title"),
+  syncStatus: document.querySelector("#sync-status"),
   syncError: document.querySelector("#sync-error"),
   taskList: document.querySelector("#task-list"),
   taskForm: document.querySelector("#task-form"),
   search: document.querySelector("#search"),
   sort: document.querySelector("#sort"),
   tagFilters: document.querySelector("#tag-filters"),
+  keyButton: document.querySelector("#key-button"),
   syncButton: document.querySelector("#sync-button"),
   detailForm: document.querySelector("#detail-form"),
   emptyDetail: document.querySelector("#empty-detail"),
   keyDialog: document.querySelector("#key-dialog"),
   keyForm: document.querySelector("#key-form"),
   plannerKey: document.querySelector("#planner-key"),
+  clearLocalButton: document.querySelector("#clear-local-button"),
   completeButton: document.querySelector("#complete-button"),
   subtaskButton: document.querySelector("#subtask-button"),
   deleteButton: document.querySelector("#delete-button")
@@ -141,6 +148,11 @@ function isSupabaseReady() {
   return Boolean(state.config?.supabaseUrl && state.config?.supabaseAnonKey && state.plannerKey);
 }
 
+function keyLabel() {
+  if (!state.plannerKey) return "No planner key";
+  return `Key ending ${state.plannerKey.slice(-4)}`;
+}
+
 async function loadConfig() {
   try {
     const response = await fetch("/api/config");
@@ -174,11 +186,14 @@ async function supabaseRequest(path, options = {}) {
 function loadLocal() {
   const raw = localStorage.getItem("planner-tasks");
   state.tasks = raw ? JSON.parse(raw).map(normalizeTask) : seedTasks();
+  state.syncError = "";
+  state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
   saveLocal();
 }
 
 function saveLocal() {
   localStorage.setItem("planner-tasks", JSON.stringify(state.tasks));
+  state.syncMessage = "Saved locally in this browser only.";
 }
 
 function selectableParents(excludeId = "") {
@@ -238,10 +253,12 @@ async function loadTasks() {
       `planner_tasks?select=*&owner_key=eq.${encodeURIComponent(state.plannerKey)}&order=created_at.desc`
     );
     state.syncError = "";
+    state.syncMessage = `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} from Supabase. ${keyLabel()}.`;
     state.tasks = rows.map(normalizeTask);
     render();
   } catch (error) {
     state.syncError = error.message;
+    state.syncMessage = "";
     render();
     console.error("Supabase load failed", error);
   }
@@ -265,6 +282,7 @@ async function persistTask(task) {
       body: JSON.stringify(payload)
     });
     state.syncError = "";
+    state.syncMessage = `Saved to Supabase. ${keyLabel()}.`;
     const saved = normalizeTask(rows[0]);
     const index = state.tasks.findIndex((item) => item.id === saved.id);
     if (index >= 0) state.tasks[index] = saved;
@@ -272,6 +290,7 @@ async function persistTask(task) {
     render();
   } catch (error) {
     state.syncError = error.message;
+    state.syncMessage = "";
     render();
     console.error("Supabase save failed", error);
   }
@@ -295,10 +314,12 @@ async function patchTask(id, changes) {
       body: JSON.stringify(databasePatchPayload({ ...changes, updated_at: updated.updated_at }))
     });
     state.syncError = "";
+    state.syncMessage = `Updated in Supabase. ${keyLabel()}.`;
     state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask(rows[0]) : task));
     render();
   } catch (error) {
     state.syncError = error.message;
+    state.syncMessage = "";
     render();
     console.error("Supabase update failed", error);
   }
@@ -316,10 +337,12 @@ async function deleteTask(id) {
   try {
     await supabaseRequest(`planner_tasks?id=in.(${ids.map(encodeURIComponent).join(",")})`, { method: "DELETE" });
     state.syncError = "";
+    state.syncMessage = `Deleted from Supabase. ${keyLabel()}.`;
     state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
     render();
   } catch (error) {
     state.syncError = error.message;
+    state.syncMessage = "";
     render();
     console.error("Supabase delete failed", error);
   }
@@ -536,8 +559,16 @@ function render() {
   els.viewTitle.textContent = titles[state.view];
   els.boardTitle.textContent = `${titles[state.view]} tasks`;
   els.storageStatus.textContent = isSupabaseReady() ? "Supabase database" : "Local storage";
+  els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.storageStatus.title = state.syncError || "";
   els.storageStatus.textContent = state.syncError ? "Database error" : els.storageStatus.textContent;
+  if (state.syncMessage && !state.syncError) {
+    els.syncStatus.textContent = state.syncMessage;
+    els.syncStatus.classList.remove("hidden");
+  } else {
+    els.syncStatus.textContent = "";
+    els.syncStatus.classList.add("hidden");
+  }
   if (state.syncError) {
     els.syncError.textContent = `Database error: ${state.syncError}`;
     els.syncError.classList.remove("hidden");
@@ -659,8 +690,31 @@ els.syncButton.addEventListener("click", async () => {
   await loadTasks();
 });
 
+els.keyButton.addEventListener("click", () => {
+  els.plannerKey.value = "";
+  els.keyDialog.showModal();
+});
+
+els.clearLocalButton.addEventListener("click", () => {
+  localStorage.removeItem("planner-tasks");
+  localStorage.removeItem("planner-key");
+  state.plannerKey = "";
+  state.selectedId = null;
+  state.syncError = "";
+  state.syncMessage = "Local browser data cleared. Enter your planner key and click Connect to use Supabase.";
+  state.tasks = [];
+  render();
+});
+
 els.keyForm.addEventListener("submit", async (event) => {
   const submitter = event.submitter?.value;
+  if (submitter === "local") {
+    state.plannerKey = "";
+    localStorage.removeItem("planner-key");
+    loadLocal();
+    render();
+    return;
+  }
   if (submitter === "save") {
     state.plannerKey = els.plannerKey.value;
     localStorage.setItem("planner-key", state.plannerKey);

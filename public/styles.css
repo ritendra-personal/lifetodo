@@ -73,6 +73,7 @@ button {
 
 .brand h1,
 .brand p,
+.brand #app-version,
 .topbar h2,
 .topbar p,
 .board-head h3,
@@ -88,6 +89,11 @@ button {
   margin-top: 4px;
   color: #c9d3da;
   font-size: 0.85rem;
+}
+
+#app-version {
+  color: #96a5ad;
+  font-size: 0.76rem;
 }
 
 .views {
@@ -247,6 +253,7 @@ textarea:focus {
   margin-bottom: 22px;
 }
 
+.sync-status,
 .sync-error {
   border: 1px solid #f2b8ad;
   border-radius: 8px;
@@ -255,6 +262,12 @@ textarea:focus {
   padding: 12px 14px;
   margin-bottom: 16px;
   overflow-wrap: anywhere;
+}
+
+.sync-status {
+  border-color: #abd8cf;
+  background: #eef7f6;
+  color: #075f59;
 }
 
 .task-form {
