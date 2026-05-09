@@ -1,4 +1,4 @@
-const APP_VERSION = "0.6.1";
+const APP_VERSION = "0.7.0";
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -78,6 +78,8 @@ const counts = {
   upcoming: document.querySelector("#count-upcoming"),
   backlog: document.querySelector("#count-backlog"),
   done: document.querySelector("#count-done"),
+  graph: document.querySelector("#count-graph"),
+  timeline: document.querySelector("#count-timeline"),
   open: document.querySelector("#stat-open"),
   focus: document.querySelector("#stat-focus")
 };
@@ -463,6 +465,7 @@ function filteredTasks() {
 
   return state.tasks
     .filter((task) => {
+      if (state.view === "graph" || state.view === "timeline") return task.status !== "done" || state.showDone;
       if (state.view === "done") return task.status === "done";
       if (task.status === "done" && !state.showDone) return false;
       return taskBucket(task) === state.view;
@@ -516,6 +519,8 @@ function renderCounts() {
   counts.upcoming.textContent = bucketCounts.upcoming;
   counts.backlog.textContent = bucketCounts.backlog;
   counts.done.textContent = bucketCounts.done;
+  counts.graph.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
+  counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
   counts.focus.textContent = state.tasks.filter((task) => task.status !== "done" && task.priority === "High").length;
 }
@@ -572,6 +577,15 @@ function renderParentControls() {
 }
 
 function renderTasks() {
+  if (state.view === "graph") {
+    renderGraphView();
+    return;
+  }
+  if (state.view === "timeline") {
+    renderTimelineView();
+    return;
+  }
+
   const visible = visibleTaskIds();
   els.taskList.innerHTML = "";
 
@@ -646,6 +660,107 @@ function renderTask(task, depth, childCount) {
     els.taskList.append(button);
 }
 
+function taskMatchesGlobalFilters(task) {
+  const search = state.search.trim().toLowerCase();
+  if (task.status === "done" && !state.showDone) return false;
+  if (state.tagFilter && !task.tags.includes(state.tagFilter)) return false;
+  if (!search) return true;
+  return `${task.title} ${task.notes} ${task.area} ${task.tags.join(" ")}`.toLowerCase().includes(search);
+}
+
+function makeMiniTask(task) {
+  const node = document.createElement("button");
+  node.className = `mini-task ${task.id === state.selectedId ? "active" : ""} ${task.status === "done" ? "done" : ""}`;
+  node.type = "button";
+  node.dataset.id = task.id;
+  node.style.borderLeftColor = areaColor(task.area);
+  node.innerHTML = `
+    <span class="mini-title"></span>
+    <span class="mini-meta"></span>
+  `;
+  node.querySelector(".mini-title").textContent = task.title;
+  node.querySelector(".mini-meta").textContent = `${task.area} · ${formatDate(task.due_date)}`;
+  return node;
+}
+
+function renderGraphView() {
+  els.taskList.innerHTML = "";
+  const visible = new Set(state.tasks.filter(taskMatchesGlobalFilters).map((task) => task.id));
+  const byId = new Map(state.tasks.map((task) => [task.id, task]));
+  for (const task of state.tasks) {
+    let current = task;
+    while (visible.has(task.id) && current?.parent_id) {
+      visible.add(current.parent_id);
+      current = byId.get(current.parent_id);
+    }
+  }
+
+  if (!visible.size) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Nothing here right now.";
+    els.taskList.append(empty);
+    return;
+  }
+
+  const graph = document.createElement("div");
+  graph.className = "graph-view";
+  const children = childMap();
+  const renderBranch = (parentId, container) => {
+    for (const task of sortedSiblings(children.get(parentId) || [])) {
+      if (!visible.has(task.id)) continue;
+      const branch = document.createElement("div");
+      branch.className = "graph-branch";
+      branch.append(makeMiniTask(task));
+      const childContainer = document.createElement("div");
+      childContainer.className = "graph-children";
+      renderBranch(task.id, childContainer);
+      if (childContainer.children.length) branch.append(childContainer);
+      container.append(branch);
+    }
+  };
+  renderBranch("", graph);
+  els.taskList.append(graph);
+}
+
+function renderTimelineView() {
+  els.taskList.innerHTML = "";
+  const tasks = state.tasks
+    .filter(taskMatchesGlobalFilters)
+    .sort((a, b) => (a.due_date || "9999-12-31").localeCompare(b.due_date || "9999-12-31") || a.sort_order - b.sort_order);
+
+  if (!tasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Nothing here right now.";
+    els.taskList.append(empty);
+    return;
+  }
+
+  const timeline = document.createElement("div");
+  timeline.className = "timeline-view";
+  const groups = new Map();
+  for (const task of tasks) {
+    const key = task.due_date || "No date";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(task);
+  }
+
+  for (const [date, items] of groups) {
+    const group = document.createElement("section");
+    group.className = "timeline-group";
+    const label = document.createElement("h4");
+    label.textContent = date === "No date" ? "No date" : formatDate(date);
+    group.append(label);
+    const list = document.createElement("div");
+    list.className = "timeline-items";
+    for (const task of items) list.append(makeMiniTask(task));
+    group.append(list);
+    timeline.append(group);
+  }
+  els.taskList.append(timeline);
+}
+
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
@@ -671,7 +786,7 @@ function renderDetail() {
 
 function render() {
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
-  const titles = { today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done" };
+  const titles = { today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done", graph: "Graph", timeline: "Timeline" };
 
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
   els.todayLabel.textContent = label;
@@ -803,6 +918,12 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const mini = event.target.closest(".mini-task");
+  if (mini) {
+    state.selectedId = mini.dataset.id;
+    render();
+    return;
+  }
   const check = event.target.closest(".check");
   if (check) {
     const item = check.closest(".task-item");
