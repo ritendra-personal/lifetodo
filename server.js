@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 
 const root = process.cwd();
+const publicRoot = join(root, "public");
 const port = Number(process.env.PORT || 3000);
 
 const types = {
@@ -35,9 +36,9 @@ const server = createServer(async (req, res) => {
   }
 
   const requestPath = url.pathname === "/" ? "/index.html" : url.pathname;
-  const filePath = normalize(join(root, requestPath));
+  const filePath = normalize(join(publicRoot, requestPath));
 
-  if (!filePath.startsWith(root)) {
+  if (!filePath.startsWith(publicRoot)) {
     send(res, 403, "Forbidden");
     return;
   }

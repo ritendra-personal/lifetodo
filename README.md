@@ -17,6 +17,8 @@ node server.js
 
 Open `http://localhost:3000`.
 
+The browser app lives in `public/` so Vercel serves it as static files. The only serverless function is `api/config.js`.
+
 ## Supabase Setup
 
 1. Create a Supabase project.
