@@ -1,4 +1,4 @@
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.6.1";
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -36,7 +36,7 @@ const els = {
   syncError: document.querySelector("#sync-error"),
   taskList: document.querySelector("#task-list"),
   taskForm: document.querySelector("#task-form"),
-  areaOptions: document.querySelector("#area-options"),
+  area: document.querySelector("#area"),
   manageAreasButton: document.querySelector("#manage-areas-button"),
   areasDialog: document.querySelector("#areas-dialog"),
   areaList: document.querySelector("#area-list"),
@@ -534,12 +534,19 @@ function renderTagFilters() {
 }
 
 function renderAreas() {
-  els.areaOptions.innerHTML = "";
-  for (const area of state.areas) {
-    const option = document.createElement("option");
-    option.value = area.name;
-    els.areaOptions.append(option);
+  const selectedArea = els.area.value || "Life";
+  const selectedDetailArea = detail.area.value || "Life";
+  for (const select of [els.area, detail.area]) {
+    select.innerHTML = "";
+    for (const area of state.areas) {
+      const option = document.createElement("option");
+      option.value = area.name;
+      option.textContent = area.name;
+      select.append(option);
+    }
   }
+  els.area.value = state.areas.some((area) => area.name === selectedArea) ? selectedArea : state.areas[0]?.name || "Life";
+  detail.area.value = state.areas.some((area) => area.name === selectedDetailArea) ? selectedDetailArea : state.areas[0]?.name || "Life";
 
   els.areaList.innerHTML = "";
   for (const area of state.areas) {
@@ -548,7 +555,6 @@ function renderAreas() {
     row.innerHTML = `
       <input class="area-name-input" type="text">
       <input class="area-color-input" type="color" aria-label="Area color">
-      <button class="ghost-button area-delete" type="button">Delete</button>
     `;
     row.dataset.area = area.name;
     row.querySelector(".area-name-input").value = area.name;
@@ -781,16 +787,15 @@ els.taskForm.addEventListener("submit", async (event) => {
   const task = normalizeTask({
     title: form.get("title").trim(),
     parent_id: form.get("parentId") || "",
-    area: form.get("area").trim() || "Life",
+    area: form.get("area") || "Life",
     priority: form.get("priority"),
     due_date: form.get("dueDate") || defaultDueDateForView(),
     tags: parseTags(form.get("tags")),
     energy: "Medium",
     sort_order: nextSortOrder(form.get("parentId") || "")
   });
-  ensureArea(task.area);
   els.taskForm.reset();
-  document.querySelector("#area").value = "Life";
+  els.area.value = state.areas.some((area) => area.name === "Life") ? "Life" : state.areas[0]?.name || "";
   document.querySelector("#priority").value = "Medium";
   document.querySelector("#parent-id").value = "";
   state.selectedId = task.id;
@@ -904,12 +909,11 @@ els.detailForm.addEventListener("submit", async (event) => {
     notes: detail.notes.value.trim(),
     parent_id: detail.parent.value || null,
     tags: parseTags(detail.tags.value),
-    area: detail.area.value.trim() || "Life",
+    area: detail.area.value || "Life",
     priority: detail.priority.value,
     due_date: detail.due.value || null,
     energy: detail.energy.value
   });
-  ensureArea(detail.area.value.trim() || "Life");
 });
 
 els.manageAreasButton.addEventListener("click", () => {
@@ -940,18 +944,6 @@ els.areaList.addEventListener("input", (event) => {
   if (event.target.classList.contains("area-color-input")) {
     area.color = event.target.value;
   }
-  saveAreas();
-  render();
-});
-
-els.areaList.addEventListener("click", (event) => {
-  const deleteButton = event.target.closest(".area-delete");
-  if (!deleteButton) return;
-  const row = deleteButton.closest(".area-row");
-  const name = row.dataset.area;
-  state.areas = state.areas.filter((area) => area.name !== name);
-  if (!state.areas.length) state.areas = defaultAreas;
-  state.tasks = state.tasks.map((task) => task.area === name ? { ...task, area: "Life" } : task);
   saveAreas();
   render();
 });

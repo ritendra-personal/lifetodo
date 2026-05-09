@@ -67,10 +67,9 @@
               <option value="">No parent</option>
             </select>
             <div class="area-field">
-              <input id="area" name="area" type="text" list="area-options" value="Life" aria-label="Area">
+              <select id="area" name="area" aria-label="Area"></select>
               <button id="manage-areas-button" class="ghost-button icon-button" type="button" title="Manage areas">Edit</button>
             </div>
-            <datalist id="area-options"></datalist>
             <select id="priority" name="priority" aria-label="Priority">
               <option>Medium</option>
               <option>High</option>
@@ -132,7 +131,7 @@
               <div class="two-col">
                 <label>
                   Area
-                  <input id="detail-area" type="text" list="area-options">
+                  <select id="detail-area"></select>
                 </label>
                 <label>
                   Priority
