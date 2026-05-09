@@ -904,12 +904,6 @@ dialog::backdrop {
   background: rgba(31, 36, 48, 0.35);
 }
 
-#key-form {
-  display: grid;
-  gap: 14px;
-  padding: 22px;
-}
-
 #area-form {
   display: grid;
   gap: 14px;
@@ -946,15 +940,6 @@ dialog::backdrop {
 
 .area-color-input {
   padding: 4px;
-}
-
-#key-form h2,
-#key-form p {
-  margin: 0;
-}
-
-#key-form p {
-  color: var(--muted);
 }
 
 .dialog-actions {

@@ -1,4 +1,6 @@
-const APP_VERSION = "0.9.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const APP_VERSION = "1.0.0";
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -21,6 +23,9 @@ const state = {
   syncError: "",
   syncMessage: "",
   config: null,
+  supabase: null,
+  session: null,
+  user: null,
   areas: loadAreas(),
   plannerKey: localStorage.getItem("planner-key") || "",
   timelineZoom: Number(localStorage.getItem("timeline-zoom") || 42),
@@ -55,10 +60,6 @@ const els = {
   resizeHandle: document.querySelector("#resize-handle"),
   detailForm: document.querySelector("#detail-form"),
   emptyDetail: document.querySelector("#empty-detail"),
-  keyDialog: document.querySelector("#key-dialog"),
-  keyForm: document.querySelector("#key-form"),
-  plannerKey: document.querySelector("#planner-key"),
-  clearLocalButton: document.querySelector("#clear-local-button"),
   completeButton: document.querySelector("#complete-button"),
   subtaskButton: document.querySelector("#subtask-button"),
   deleteButton: document.querySelector("#delete-button")
@@ -183,6 +184,7 @@ function normalizeTask(task) {
   return {
     id: task.id || makeId(),
     owner_key: task.owner_key || state.plannerKey || "local",
+    user_id: task.user_id || task.userId || null,
     parent_id: task.parent_id || task.parentId || "",
     title: task.title || "",
     notes: task.notes || "",
@@ -203,7 +205,8 @@ function normalizeTask(task) {
 function databasePayload(task) {
   const payload = {
     id: task.id,
-    owner_key: state.plannerKey,
+    owner_key: state.plannerKey || state.user?.id || "local",
+    user_id: state.user?.id || null,
     parent_id: task.parent_id || null,
     title: task.title,
     notes: task.notes,
@@ -236,12 +239,11 @@ function databasePatchPayload(changes) {
 }
 
 function isSupabaseReady() {
-  return Boolean(state.config?.supabaseUrl && state.config?.supabaseAnonKey && state.plannerKey);
+  return Boolean(state.supabase && state.user);
 }
 
 function keyLabel() {
-  if (!state.plannerKey) return "No planner key";
-  return `Key ending ${state.plannerKey.slice(-4)}`;
+  return state.user?.email || "Not signed in";
 }
 
 async function loadConfig() {
@@ -253,25 +255,66 @@ async function loadConfig() {
   }
 }
 
-async function supabaseRequest(path, options = {}) {
-  const base = state.config.supabaseUrl.replace(/\/$/, "");
-  const headers = {
-    apikey: state.config.supabaseAnonKey,
-    "x-planner-key": state.plannerKey,
-    "content-type": "application/json",
-    prefer: "return=representation",
-    ...(options.headers || {})
-  };
-  if (state.config.supabaseAnonKey.startsWith("eyJ")) {
-    headers.authorization = `Bearer ${state.config.supabaseAnonKey}`;
-  }
+async function initSupabase() {
+  if (!state.config?.supabaseUrl || !state.config?.supabaseAnonKey) return;
+  state.supabase = createClient(state.config.supabaseUrl, state.config.supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  });
+  const { data } = await state.supabase.auth.getSession();
+  state.session = data.session;
+  state.user = data.session?.user || null;
+  state.supabase.auth.onAuthStateChange(async (_event, session) => {
+    state.session = session;
+    state.user = session?.user || null;
+    state.selectedId = null;
+    await claimLegacyTasks();
+    await loadTasks();
+  });
+}
 
-  const response = await fetch(`${base}/rest/v1/${path}`, { ...options, headers });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`${response.status} ${text || response.statusText}`);
+async function signInWithGoogle() {
+  if (!state.supabase) {
+    state.syncError = "Supabase is not configured yet.";
+    render();
+    return;
   }
-  return response.status === 204 ? null : response.json();
+  const { error } = await state.supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin }
+  });
+  if (error) {
+    state.syncError = error.message;
+    render();
+  }
+}
+
+async function signOut() {
+  if (!state.supabase) return;
+  await state.supabase.auth.signOut();
+  state.session = null;
+  state.user = null;
+  state.tasks = [];
+  state.selectedId = null;
+  loadLocal();
+}
+
+async function claimLegacyTasks() {
+  if (!state.supabase || !state.user || !state.plannerKey) return;
+  try {
+    const { data, error } = await state.supabase.rpc("claim_planner_tasks", {
+      legacy_owner_key: state.plannerKey
+    });
+    if (error) throw error;
+    if (data) {
+      state.syncMessage = `Moved ${data} legacy task${data === 1 ? "" : "s"} into your Google login.`;
+    }
+  } catch (error) {
+    console.warn("Legacy task claim failed", error);
+  }
 }
 
 function loadLocal() {
@@ -375,16 +418,22 @@ function seedTasks() {
 async function loadTasks() {
   if (!isSupabaseReady()) {
     loadLocal();
+    state.syncMessage = state.supabase
+      ? "Working locally. Sign in with Google to sync your planner."
+      : "Using local browser storage. Configure Supabase to enable Google sign-in.";
     render();
     return;
   }
 
   try {
-    const rows = await supabaseRequest(
-      `planner_tasks?select=*&owner_key=eq.${encodeURIComponent(state.plannerKey)}&order=created_at.desc`
-    );
+    const { data: rows, error } = await state.supabase
+      .from("planner_tasks")
+      .select("*")
+      .eq("user_id", state.user.id)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
     state.syncError = "";
-    state.syncMessage = `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} from Supabase. ${keyLabel()}.`;
+    state.syncMessage = `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} for ${keyLabel()}.`;
     state.tasks = ensureSortOrders(rows.map(normalizeTask));
     render();
   } catch (error) {
@@ -408,14 +457,15 @@ async function persistTask(task) {
 
   const payload = databasePayload(task);
   try {
-    const rows = await supabaseRequest("planner_tasks", {
-      method: "POST",
-      headers: { prefer: "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify(payload)
-    });
+    const { data: savedRow, error } = await state.supabase
+      .from("planner_tasks")
+      .upsert(payload)
+      .select()
+      .single();
+    if (error) throw error;
     state.syncError = "";
-    state.syncMessage = `Saved to Supabase. ${keyLabel()}.`;
-    const saved = normalizeTask(rows[0]);
+    state.syncMessage = `Saved for ${keyLabel()}.`;
+    const saved = normalizeTask(savedRow);
     const index = state.tasks.findIndex((item) => item.id === saved.id);
     if (index >= 0) state.tasks[index] = saved;
     else state.tasks.unshift(saved);
@@ -443,13 +493,16 @@ async function patchTask(id, changes) {
   }
 
   try {
-    const rows = await supabaseRequest(`planner_tasks?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(databasePatchPayload({ ...changes, updated_at: updated.updated_at }))
-    });
+    const { data: savedRow, error } = await state.supabase
+      .from("planner_tasks")
+      .update(databasePatchPayload({ ...changes, updated_at: updated.updated_at }))
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
     state.syncError = "";
-    state.syncMessage = `Updated in Supabase. ${keyLabel()}.`;
-    state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask(rows[0]) : task));
+    state.syncMessage = `Updated for ${keyLabel()}.`;
+    state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask(savedRow) : task));
     ensureSortOrders(state.tasks);
     render();
   } catch (error) {
@@ -474,9 +527,10 @@ async function deleteTask(id) {
   }
 
   try {
-    await supabaseRequest(`planner_tasks?id=in.(${ids.map(encodeURIComponent).join(",")})`, { method: "DELETE" });
+    const { error: deleteError } = await state.supabase.from("planner_tasks").delete().in("id", ids);
+    if (deleteError) throw deleteError;
     state.syncError = "";
-    state.syncMessage = `Deleted from Supabase. ${keyLabel()}.`;
+    state.syncMessage = `Deleted for ${keyLabel()}.`;
     state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
     const cleanup = state.tasks
       .map((task) => ({
@@ -485,12 +539,13 @@ async function deleteTask(id) {
       }))
       .filter((task, index) => task.dependency_ids.length !== state.tasks[index].dependency_ids.length);
     await Promise.all(
-      cleanup.map((task) =>
-        supabaseRequest(`planner_tasks?id=eq.${encodeURIComponent(task.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify(databasePatchPayload({ dependency_ids: task.dependency_ids, updated_at: nowIso() }))
-        })
-      )
+      cleanup.map(async (task) => {
+        const { error } = await state.supabase
+          .from("planner_tasks")
+          .update(databasePatchPayload({ dependency_ids: task.dependency_ids, updated_at: nowIso() }))
+          .eq("id", task.id);
+        if (error) throw error;
+      })
     );
     state.tasks = state.tasks.map((task) => cleanup.find((item) => item.id === task.id) || task);
     render();
@@ -1036,8 +1091,10 @@ function render() {
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view];
   els.boardTitle.textContent = state.view === "graph" ? "Task graph" : state.view === "timeline" ? "Task timeline" : `${titles[state.view]} tasks`;
-  els.storageStatus.textContent = isSupabaseReady() ? "Supabase database" : "Local storage";
+  els.storageStatus.textContent = isSupabaseReady() ? state.user.email : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
+  els.keyButton.textContent = state.user ? "Sign out" : "Google";
+  els.keyButton.title = state.user ? `Signed in as ${state.user.email}` : "Sign in with Google";
   els.showDone.checked = state.showDone;
   els.storageStatus.title = state.syncError || "";
   els.storageStatus.textContent = state.syncError ? "Database error" : els.storageStatus.textContent;
@@ -1087,15 +1144,16 @@ async function persistReorder(changedTasks) {
 
   try {
     await Promise.all(
-      changedTasks.map((task) =>
-        supabaseRequest(`planner_tasks?id=eq.${encodeURIComponent(task.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify(databasePatchPayload({ sort_order: task.sort_order, updated_at: nowIso() }))
-        })
-      )
+      changedTasks.map(async (task) => {
+        const { error } = await state.supabase
+          .from("planner_tasks")
+          .update(databasePatchPayload({ sort_order: task.sort_order, updated_at: nowIso() }))
+          .eq("id", task.id);
+        if (error) throw error;
+      })
     );
     state.syncError = "";
-    state.syncMessage = `Reordered in Supabase. ${keyLabel()}.`;
+    state.syncMessage = `Reordered for ${keyLabel()}.`;
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -1421,49 +1479,24 @@ els.deleteButton.addEventListener("click", async () => {
 });
 
 els.syncButton.addEventListener("click", async () => {
-  if (state.config?.supabaseUrl && state.config?.supabaseAnonKey && !state.plannerKey) {
-    els.keyDialog.showModal();
+  if (state.supabase && !state.user) {
+    await signInWithGoogle();
     return;
   }
   await loadTasks();
 });
 
-els.keyButton.addEventListener("click", () => {
-  els.plannerKey.value = "";
-  els.keyDialog.showModal();
-});
-
-els.clearLocalButton.addEventListener("click", () => {
-  localStorage.removeItem("planner-tasks");
-  localStorage.removeItem("planner-key");
-  state.plannerKey = "";
-  state.selectedId = null;
-  state.syncError = "";
-  state.syncMessage = "Local browser data cleared. Enter your planner key and click Connect to use Supabase.";
-  state.tasks = [];
-  render();
-});
-
-els.keyForm.addEventListener("submit", async (event) => {
-  const submitter = event.submitter?.value;
-  if (submitter === "local") {
-    state.plannerKey = "";
-    localStorage.removeItem("planner-key");
-    loadLocal();
-    render();
+els.keyButton.addEventListener("click", async () => {
+  if (state.user) {
+    await signOut();
     return;
   }
-  if (submitter === "save") {
-    state.plannerKey = els.plannerKey.value;
-    localStorage.setItem("planner-key", state.plannerKey);
-    await loadTasks();
-  }
+  await signInWithGoogle();
 });
 
 await loadConfig();
-if (state.config?.supabaseUrl && state.config?.supabaseAnonKey && !state.plannerKey) {
-  els.keyDialog.showModal();
-}
+await initSupabase();
+await claimLegacyTasks();
 await loadTasks();
 
 let resizing = false;
