@@ -28,23 +28,28 @@ create index if not exists planner_tasks_status_idx on planner_tasks(status);
 
 alter table planner_tasks enable row level security;
 
-create policy "planner_tasks_select_by_owner_key"
+drop policy if exists "planner_tasks_select_by_owner_key" on planner_tasks;
+drop policy if exists "planner_tasks_insert_by_owner_key" on planner_tasks;
+drop policy if exists "planner_tasks_update_by_owner_key" on planner_tasks;
+drop policy if exists "planner_tasks_delete_by_owner_key" on planner_tasks;
+
+create policy "planner_tasks_select_for_publishable_app"
 on planner_tasks for select
 to anon
-using (owner_key = current_setting('request.headers', true)::json->>'x-planner-key');
+using (true);
 
-create policy "planner_tasks_insert_by_owner_key"
+create policy "planner_tasks_insert_for_publishable_app"
 on planner_tasks for insert
 to anon
-with check (owner_key = current_setting('request.headers', true)::json->>'x-planner-key');
+with check (owner_key <> '');
 
-create policy "planner_tasks_update_by_owner_key"
+create policy "planner_tasks_update_for_publishable_app"
 on planner_tasks for update
 to anon
-using (owner_key = current_setting('request.headers', true)::json->>'x-planner-key')
-with check (owner_key = current_setting('request.headers', true)::json->>'x-planner-key');
+using (owner_key <> '')
+with check (owner_key <> '');
 
-create policy "planner_tasks_delete_by_owner_key"
+create policy "planner_tasks_delete_for_publishable_app"
 on planner_tasks for delete
 to anon
-using (owner_key = current_setting('request.headers', true)::json->>'x-planner-key');
+using (owner_key <> '');

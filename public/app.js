@@ -15,6 +15,7 @@ const els = {
   todayLabel: document.querySelector("#today-label"),
   viewTitle: document.querySelector("#view-title"),
   boardTitle: document.querySelector("#board-title"),
+  syncError: document.querySelector("#sync-error"),
   taskList: document.querySelector("#task-list"),
   taskForm: document.querySelector("#task-form"),
   search: document.querySelector("#search"),
@@ -164,7 +165,8 @@ async function supabaseRequest(path, options = {}) {
 
   const response = await fetch(`${base}/rest/v1/${path}`, { ...options, headers });
   if (!response.ok) {
-    throw new Error(`${response.status} ${await response.text()}`);
+    const text = await response.text();
+    throw new Error(`${response.status} ${text || response.statusText}`);
   }
   return response.status === 204 ? null : response.json();
 }
@@ -536,6 +538,13 @@ function render() {
   els.storageStatus.textContent = isSupabaseReady() ? "Supabase database" : "Local storage";
   els.storageStatus.title = state.syncError || "";
   els.storageStatus.textContent = state.syncError ? "Database error" : els.storageStatus.textContent;
+  if (state.syncError) {
+    els.syncError.textContent = `Database error: ${state.syncError}`;
+    els.syncError.classList.remove("hidden");
+  } else {
+    els.syncError.textContent = "";
+    els.syncError.classList.add("hidden");
+  }
   document.querySelectorAll(".view-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === state.view);
   });
