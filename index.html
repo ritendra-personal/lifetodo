@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Life Planner</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar" aria-label="Planner navigation">
+        <div class="brand">
+          <span class="mark" aria-hidden="true">LP</span>
+          <div>
+            <h1>Life Planner</h1>
+            <p id="storage-status">Local storage</p>
+          </div>
+        </div>
+
+        <nav class="views" aria-label="Task views">
+          <button class="view-button active" data-view="today" type="button">Today <span id="count-today">0</span></button>
+          <button class="view-button" data-view="upcoming" type="button">Upcoming <span id="count-upcoming">0</span></button>
+          <button class="view-button" data-view="backlog" type="button">Backlog <span id="count-backlog">0</span></button>
+          <button class="view-button" data-view="done" type="button">Done <span id="count-done">0</span></button>
+        </nav>
+
+        <section class="tag-panel" aria-label="Tag filters">
+          <div class="panel-label">Tags</div>
+          <div id="tag-filters" class="tag-filters">
+            <button class="tag-filter active" data-tag="" type="button">All</button>
+          </div>
+        </section>
+
+        <div class="quick-stats">
+          <div>
+            <strong id="stat-open">0</strong>
+            <span>open</span>
+          </div>
+          <div>
+            <strong id="stat-focus">0</strong>
+            <span>high</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p id="today-label"></p>
+            <h2 id="view-title">Today</h2>
+          </div>
+          <div class="toolbar">
+            <input id="search" type="search" placeholder="Search tasks" aria-label="Search tasks">
+            <button id="sync-button" class="ghost-button" type="button" title="Sync">Sync</button>
+          </div>
+        </header>
+
+        <section class="entry-panel" aria-label="Add task">
+          <form id="task-form" class="task-form">
+            <input id="title" name="title" type="text" placeholder="New task" autocomplete="off" required>
+            <select id="parent-id" name="parentId" aria-label="Parent task">
+              <option value="">No parent</option>
+            </select>
+            <select id="area" name="area" aria-label="Area">
+              <option>Life</option>
+              <option>Work</option>
+              <option>Health</option>
+              <option>Money</option>
+              <option>Home</option>
+              <option>Creative</option>
+            </select>
+            <select id="priority" name="priority" aria-label="Priority">
+              <option>Medium</option>
+              <option>High</option>
+              <option>Low</option>
+            </select>
+            <input id="due-date" name="dueDate" type="date" aria-label="Due date">
+            <input id="tags" name="tags" type="text" placeholder="Tags" aria-label="Tags">
+            <button class="primary-button" type="submit">Add</button>
+          </form>
+        </section>
+
+        <section class="planner-grid">
+          <div class="task-board">
+            <div class="board-head">
+              <h3 id="board-title">Tasks</h3>
+              <select id="sort" aria-label="Sort tasks">
+                <option value="due">Due date</option>
+                <option value="priority">Priority</option>
+                <option value="created">Created</option>
+              </select>
+            </div>
+            <div id="task-list" class="task-list" aria-live="polite"></div>
+          </div>
+
+          <aside class="detail-pane" aria-label="Task details">
+            <div id="empty-detail" class="empty-detail">
+              <h3>Select a task</h3>
+              <p>Details, notes, energy, and status will appear here.</p>
+            </div>
+            <form id="detail-form" class="detail-form hidden">
+              <input id="detail-id" type="hidden">
+              <label>
+                Title
+                <input id="detail-title" type="text" required>
+              </label>
+              <label>
+                Notes
+                <textarea id="detail-notes" rows="7"></textarea>
+              </label>
+              <label>
+                Parent task
+                <select id="detail-parent">
+                  <option value="">No parent</option>
+                </select>
+              </label>
+              <label>
+                Tags
+                <input id="detail-tags" type="text" placeholder="comma separated tags">
+              </label>
+              <div class="two-col">
+                <label>
+                  Area
+                  <select id="detail-area">
+                    <option>Life</option>
+                    <option>Work</option>
+                    <option>Health</option>
+                    <option>Money</option>
+                    <option>Home</option>
+                    <option>Creative</option>
+                  </select>
+                </label>
+                <label>
+                  Priority
+                  <select id="detail-priority">
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                  </select>
+                </label>
+                <label>
+                  Due
+                  <input id="detail-due" type="date">
+                </label>
+                <label>
+                  Energy
+                  <select id="detail-energy">
+                    <option>Low</option>
+                    <option>Medium</option>
+                    <option>High</option>
+                  </select>
+                </label>
+              </div>
+              <div class="detail-actions">
+                <button id="subtask-button" class="ghost-button" type="button">Add subtask</button>
+                <button id="complete-button" class="ghost-button" type="button">Done</button>
+                <button id="delete-button" class="danger-button" type="button">Delete</button>
+                <button class="primary-button" type="submit">Save</button>
+              </div>
+            </form>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="key-dialog">
+      <form method="dialog" id="key-form">
+        <h2>Planner key</h2>
+        <p>Use the same private key on every device.</p>
+        <input id="planner-key" type="password" minlength="12" placeholder="Private planner key" required>
+        <div class="dialog-actions">
+          <button value="local" class="ghost-button" type="submit">Use local</button>
+          <button value="save" class="primary-button" type="submit">Connect</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
