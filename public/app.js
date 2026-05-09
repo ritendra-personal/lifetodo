@@ -1,4 +1,4 @@
-const APP_VERSION = "0.8.0";
+const APP_VERSION = "0.9.0";
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -23,6 +23,7 @@ const state = {
   config: null,
   areas: loadAreas(),
   plannerKey: localStorage.getItem("planner-key") || "",
+  timelineZoom: Number(localStorage.getItem("timeline-zoom") || 42),
   detailWidth: Number(localStorage.getItem("detail-width") || 360)
 };
 
@@ -106,6 +107,16 @@ function areaColor(name) {
   return state.areas.find((area) => area.name === name)?.color || "#667085";
 }
 
+function areaTint(name) {
+  const color = areaColor(name);
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) return "rgba(102, 112, 133, 0.1)";
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, 0.11)`;
+}
+
 function ensureArea(name, color = "#667085") {
   const normalized = String(name || "").trim();
   if (!normalized) return;
@@ -133,6 +144,18 @@ function addDaysIso(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function addDaysToIso(value, days) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function daysBetween(start, end) {
+  const startDate = new Date(`${start}T12:00:00`);
+  const endDate = new Date(`${end}T12:00:00`);
+  return Math.round((endDate - startDate) / 86400000);
 }
 
 function defaultDueDateForView() {
@@ -696,7 +719,9 @@ function renderTask(task, depth, childCount) {
     const pills = button.querySelectorAll(".pill");
     pills[0].textContent = task.area;
     pills[0].style.borderLeft = `4px solid ${color}`;
+    pills[0].style.background = areaTint(task.area);
     button.style.borderLeft = `6px solid ${color}`;
+    button.style.background = `linear-gradient(90deg, ${areaTint(task.area)}, #fff 42%)`;
     pills[1].textContent = task.priority;
     pills[2].textContent = formatDate(task.due_date);
     pills[3].textContent = `${task.energy} energy`;
@@ -820,6 +845,7 @@ function renderGraphView() {
     node.style.left = `${x}px`;
     node.style.top = `${y}px`;
     node.style.borderTopColor = areaColor(task.area);
+    node.style.background = `linear-gradient(180deg, ${areaTint(task.area)}, #fff 58%)`;
     node.innerHTML = `
       <span class="graph-node-title"></span>
       <span class="graph-node-meta"></span>
@@ -868,28 +894,112 @@ function renderTimelineView() {
     return;
   }
 
+  const datedTasks = tasks.filter((task) => task.due_date);
+  const noDateTasks = tasks.filter((task) => !task.due_date);
+  const today = todayIso();
+  const minDate = datedTasks.length ? datedTasks[0].due_date : today;
+  const maxDate = datedTasks.length ? datedTasks[datedTasks.length - 1].due_date : today;
+  const startDate = addDaysToIso(minDate < today ? minDate : today, -5);
+  const endDate = addDaysToIso(maxDate > today ? maxDate : today, 10);
+  const dayCount = Math.max(1, daysBetween(startDate, endDate));
+  const pixelsPerDay = Math.min(120, Math.max(18, state.timelineZoom));
+  const margin = 120;
+  const rowHeight = 86;
+  const axisTop = 78;
+  const laneTop = 128;
+  const noDateTop = laneTop + Math.max(1, datedTasks.length) * rowHeight + 44;
+  const width = margin * 2 + dayCount * pixelsPerDay;
+  const height = noDateTop + Math.max(1, noDateTasks.length) * 74 + 60;
+  const tickInterval = pixelsPerDay >= 76 ? 1 : pixelsPerDay >= 42 ? 2 : pixelsPerDay >= 26 ? 4 : 7;
+
   const timeline = document.createElement("div");
   timeline.className = "timeline-view";
-  const groups = new Map();
-  for (const task of tasks) {
-    const key = task.due_date || "No date";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(task);
+  timeline.innerHTML = `
+    <div class="timeline-controls">
+      <button class="ghost-button timeline-zoom" data-zoom="-8" type="button">-</button>
+      <span>${pixelsPerDay}px/day</span>
+      <button class="ghost-button timeline-zoom" data-zoom="8" type="button">+</button>
+      <button class="ghost-button timeline-today" type="button">Today</button>
+    </div>
+    <div class="timeline-scroller">
+      <div class="timeline-canvas"></div>
+    </div>
+  `;
+
+  const canvas = timeline.querySelector(".timeline-canvas");
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${Math.max(height, 460)}px`;
+
+  const axis = document.createElement("div");
+  axis.className = "timeline-axis";
+  axis.style.top = `${axisTop}px`;
+  axis.style.left = `${margin}px`;
+  axis.style.width = `${dayCount * pixelsPerDay}px`;
+  canvas.append(axis);
+
+  for (let day = 0; day <= dayCount; day += 1) {
+    const date = addDaysToIso(startDate, day);
+    const left = margin + day * pixelsPerDay;
+    const line = document.createElement("div");
+    line.className = `timeline-tick ${date === today ? "today" : ""}`;
+    line.style.left = `${left}px`;
+    line.style.top = `${axisTop - 22}px`;
+    line.style.height = `${Math.max(height, 460) - axisTop - 24}px`;
+    canvas.append(line);
+    if (day % tickInterval === 0 || date === today) {
+      const label = document.createElement("div");
+      label.className = `timeline-date ${date === today ? "today" : ""}`;
+      label.style.left = `${left}px`;
+      label.style.top = `${axisTop - 46}px`;
+      label.textContent = formatDate(date);
+      canvas.append(label);
+    }
   }
 
-  for (const [date, items] of groups) {
-    const group = document.createElement("section");
-    group.className = "timeline-group";
-    const label = document.createElement("h4");
-    label.textContent = date === "No date" ? "No date" : formatDate(date);
-    group.append(label);
-    const list = document.createElement("div");
-    list.className = "timeline-items";
-    for (const task of items) list.append(makeMiniTask(task));
-    group.append(list);
-    timeline.append(group);
+  datedTasks.forEach((task, index) => {
+    const x = margin + daysBetween(startDate, task.due_date) * pixelsPerDay;
+    const y = laneTop + index * rowHeight;
+    canvas.append(makeTimelineTask(task, x, y));
+  });
+
+  if (noDateTasks.length) {
+    const label = document.createElement("div");
+    label.className = "timeline-undated-label";
+    label.style.left = `${margin}px`;
+    label.style.top = `${noDateTop - 30}px`;
+    label.textContent = "No date";
+    canvas.append(label);
+    noDateTasks.forEach((task, index) => {
+      canvas.append(makeTimelineTask(task, margin + index * 232, noDateTop));
+    });
   }
+
   els.taskList.append(timeline);
+  const scroller = timeline.querySelector(".timeline-scroller");
+  requestAnimationFrame(() => {
+    const todayLeft = margin + daysBetween(startDate, today) * pixelsPerDay;
+    scroller.scrollLeft = Math.max(0, todayLeft - scroller.clientWidth / 2);
+  });
+}
+
+function makeTimelineTask(task, x, y) {
+  const node = document.createElement("button");
+  node.className = `timeline-task ${task.id === state.selectedId ? "active" : ""} ${task.status === "done" ? "done" : ""}`;
+  node.type = "button";
+  node.dataset.id = task.id;
+  node.style.left = `${x}px`;
+  node.style.top = `${y}px`;
+  node.style.borderLeftColor = areaColor(task.area);
+  node.style.background = `linear-gradient(90deg, ${areaTint(task.area)}, #fff 55%)`;
+  node.innerHTML = `
+    <span class="timeline-dot"></span>
+    <span class="timeline-task-title"></span>
+    <span class="timeline-task-meta"></span>
+  `;
+  node.querySelector(".timeline-dot").style.background = areaColor(task.area);
+  node.querySelector(".timeline-task-title").textContent = task.title;
+  node.querySelector(".timeline-task-meta").textContent = `${task.area} · ${task.priority} · ${formatDate(task.due_date)}`;
+  return node;
 }
 
 function renderDetail() {
@@ -921,10 +1031,11 @@ function render() {
 
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
   els.plannerGrid.classList.toggle("graph-mode", state.view === "graph");
-  els.entryPanel.classList.toggle("hidden", state.view === "graph");
+  els.plannerGrid.classList.toggle("timeline-mode", state.view === "timeline");
+  els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline");
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view];
-  els.boardTitle.textContent = state.view === "graph" ? "Task graph" : `${titles[state.view]} tasks`;
+  els.boardTitle.textContent = state.view === "graph" ? "Task graph" : state.view === "timeline" ? "Task timeline" : `${titles[state.view]} tasks`;
   els.storageStatus.textContent = isSupabaseReady() ? "Supabase database" : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.showDone.checked = state.showDone;
@@ -1051,6 +1162,26 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const zoomButton = event.target.closest(".timeline-zoom");
+  if (zoomButton) {
+    state.timelineZoom = Math.min(120, Math.max(18, state.timelineZoom + Number(zoomButton.dataset.zoom)));
+    localStorage.setItem("timeline-zoom", String(state.timelineZoom));
+    renderTasks();
+    return;
+  }
+  const todayButton = event.target.closest(".timeline-today");
+  if (todayButton) {
+    const scroller = event.target.closest(".timeline-view")?.querySelector(".timeline-scroller");
+    const todayTick = event.target.closest(".timeline-view")?.querySelector(".timeline-tick.today");
+    if (scroller && todayTick) scroller.scrollLeft = Math.max(0, todayTick.offsetLeft - scroller.clientWidth / 2);
+    return;
+  }
+  const timelineTask = event.target.closest(".timeline-task");
+  if (timelineTask) {
+    state.selectedId = timelineTask.dataset.id;
+    renderTasks();
+    return;
+  }
   const graphNode = event.target.closest(".graph-node");
   if (graphNode) {
     state.selectedId = graphNode.dataset.id;
@@ -1079,6 +1210,13 @@ els.taskList.addEventListener("click", (event) => {
 });
 
 els.taskList.addEventListener("keydown", (event) => {
+  const timelineTask = event.target.closest(".timeline-task");
+  if (timelineTask && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    state.selectedId = timelineTask.dataset.id;
+    renderTasks();
+    return;
+  }
   const graphNode = event.target.closest(".graph-node");
   if (graphNode && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
@@ -1137,6 +1275,41 @@ els.taskList.addEventListener("dragend", () => {
   document.querySelectorAll(".dragging, .drag-over-before, .drag-over-after").forEach((node) => {
     node.classList.remove("dragging", "drag-over-before", "drag-over-after");
   });
+});
+
+let timelinePanning = false;
+let timelinePanStartX = 0;
+let timelinePanStartScroll = 0;
+
+els.taskList.addEventListener("pointerdown", (event) => {
+  const scroller = event.target.closest(".timeline-scroller");
+  if (!scroller || event.target.closest("button")) return;
+  timelinePanning = true;
+  timelinePanStartX = event.clientX;
+  timelinePanStartScroll = scroller.scrollLeft;
+  scroller.setPointerCapture(event.pointerId);
+  scroller.classList.add("panning");
+});
+
+els.taskList.addEventListener("pointermove", (event) => {
+  if (!timelinePanning) return;
+  const scroller = event.target.closest(".timeline-scroller");
+  if (!scroller) return;
+  scroller.scrollLeft = timelinePanStartScroll - (event.clientX - timelinePanStartX);
+});
+
+els.taskList.addEventListener("pointerup", (event) => {
+  const scroller = event.target.closest(".timeline-scroller");
+  if (!scroller || !timelinePanning) return;
+  timelinePanning = false;
+  scroller.releasePointerCapture(event.pointerId);
+  scroller.classList.remove("panning");
+});
+
+els.taskList.addEventListener("pointercancel", (event) => {
+  const scroller = event.target.closest(".timeline-scroller");
+  timelinePanning = false;
+  scroller?.classList.remove("panning");
 });
 
 document.querySelectorAll(".view-button").forEach((button) => {
