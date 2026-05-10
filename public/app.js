@@ -1709,18 +1709,34 @@ function renderGoalAssignmentsView() {
 function fillSkillPicker(container, selected = []) {
   const values = new Set(parseIds(selected));
   container.innerHTML = "";
+  const select = document.createElement("select");
+  select.className = "skill-add-select";
+  select.name = "skillAdd";
+  select.setAttribute("aria-label", "Add skill");
+  select.innerHTML = '<option value="">Add skill...</option>';
+  for (const skill of state.skills.filter((item) => !values.has(item.id))) {
+    const option = document.createElement("option");
+    option.value = skill.id;
+    option.textContent = skill.name;
+    select.append(option);
+  }
+  container.append(select);
+  const pills = document.createElement("div");
+  pills.className = "skill-pills";
+  container.append(pills);
   for (const skill of state.skills) {
-    const label = document.createElement("label");
-    label.className = "skill-choice";
-    label.innerHTML = `
-      <input name="skillIds" type="checkbox">
+    if (!values.has(skill.id)) continue;
+    const pill = document.createElement("span");
+    pill.className = "skill-pill";
+    pill.innerHTML = `
+      <input name="skillIds" type="hidden">
       <span></span>
+      <button class="skill-remove-button" type="button" aria-label="Remove skill">x</button>
     `;
-    const input = label.querySelector("input");
+    const input = pill.querySelector("input");
     input.value = skill.id;
-    input.checked = values.has(skill.id);
-    label.querySelector("span").textContent = skill.name;
-    container.append(label);
+    pill.querySelector("span").textContent = skill.name;
+    pills.append(pill);
   }
 }
 
@@ -2203,6 +2219,15 @@ els.taskList.addEventListener("click", (event) => {
     if (card) deletePerson(card.dataset.personId);
     return;
   }
+  const removeSkillButton = event.target.closest(".skill-remove-button");
+  if (removeSkillButton) {
+    const picker = removeSkillButton.closest(".skill-picker");
+    const card = removeSkillButton.closest("[data-person-id]");
+    removeSkillButton.closest(".skill-pill")?.remove();
+    if (card) autosavePersonCard(card);
+    else if (picker) fillSkillPicker(picker, [...picker.querySelectorAll("[name='skillIds']")].map((input) => input.value));
+    return;
+  }
   const goalTaskLink = event.target.closest(".goal-task-link");
   if (goalTaskLink) {
     state.selectedId = goalTaskLink.dataset.taskId;
@@ -2385,7 +2410,7 @@ function autosavePersonCard(card) {
         first_name: firstName,
         last_name: card.querySelector("[name='lastName']").value.trim(),
         relationship_type_id: card.querySelector("[name='relationshipTypeId']").value || "",
-        skill_ids: [...card.querySelectorAll("[name='skillIds']:checked")].map((input) => input.value),
+        skill_ids: [...card.querySelectorAll("[name='skillIds']")].map((input) => input.value),
         created_at: person.created_at
       },
       { render: false }
@@ -2433,6 +2458,16 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  const skillAdd = event.target.closest(".skill-add-select");
+  if (skillAdd) {
+    const picker = skillAdd.closest(".skill-picker");
+    const card = skillAdd.closest("[data-person-id]");
+    const selected = [...picker.querySelectorAll("[name='skillIds']")].map((input) => input.value);
+    if (skillAdd.value && !selected.includes(skillAdd.value)) selected.push(skillAdd.value);
+    fillSkillPicker(picker, selected);
+    if (card) autosavePersonCard(card);
+    return;
+  }
   const ideaCard = event.target.closest("[data-idea-id]");
   if (ideaCard) {
     autosaveIdeaCard(ideaCard);

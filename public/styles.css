@@ -157,7 +157,7 @@ button {
 
 .views {
   display: grid;
-  gap: 4px;
+  gap: 1px;
 }
 
 .tag-panel {
@@ -193,7 +193,7 @@ button {
 }
 
 .view-button {
-  min-height: 31px;
+  min-height: 27px;
   border: 0;
   border-radius: 8px;
   color: #eef4f5;
@@ -210,12 +210,16 @@ button {
 }
 
 .nav-group-label {
-  margin: 6px 0 -1px;
+  margin: 11px 0 1px;
   padding: 0 12px;
   color: #c9d3da;
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.nav-group-label:first-child {
+  margin-top: 0;
 }
 
 .view-button:hover,
@@ -938,13 +942,24 @@ body.resizing .resize-handle::before {
   border-radius: 8px;
   background: #fff;
   padding: 5px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(130px, 0.75fr) minmax(0, 1fr);
+  align-items: start;
   gap: 5px;
 }
 
-.skill-choice {
+.skill-add-select {
+  min-height: 28px;
+  border-radius: 6px;
+}
+
+.skill-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.skill-pill {
   min-height: 26px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -952,21 +967,22 @@ body.resizing .resize-handle::before {
   align-items: center;
   gap: 5px;
   padding: 0 8px;
-  color: var(--muted);
-  background: #f8fafc;
-  cursor: pointer;
-}
-
-.skill-choice:has(input:checked) {
   border-color: var(--teal);
   color: var(--teal-dark);
   background: #eef7f6;
 }
 
-.skill-choice input {
-  width: auto;
+.skill-remove-button {
   min-height: 0;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
   padding: 0;
+  color: var(--teal-dark);
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .assignment-view {
@@ -1427,6 +1443,7 @@ dialog::backdrop {
   .area-settings-row,
   .people-form,
   .person-card,
+  .skill-picker,
   .assignment-view,
   .named-settings-form {
     grid-template-columns: 1fr;
