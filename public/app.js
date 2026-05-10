@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.4.1";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -105,12 +105,12 @@ const counts = {
 
 function loadAreas() {
   const raw = localStorage.getItem("planner-areas");
-  if (!raw) return defaultAreas;
+  if (!raw) return defaultAreas.map(normalizeArea);
   try {
     const parsed = JSON.parse(raw);
-    return parsed.length ? parsed : defaultAreas;
+    return (parsed.length ? parsed : defaultAreas).map(normalizeArea);
   } catch {
-    return defaultAreas;
+    return defaultAreas.map(normalizeArea);
   }
 }
 
@@ -196,11 +196,14 @@ function areaTint(name) {
 
 function ensureArea(name, color = "#667085") {
   const normalized = String(name || "").trim();
-  if (!normalized) return;
+  if (!normalized) return null;
   if (!state.areas.some((area) => area.name.toLowerCase() === normalized.toLowerCase())) {
-    state.areas.push({ name: normalized, color });
+    const area = normalizeArea({ name: normalized, color, sort_order: nextAreaSortOrder() });
+    state.areas.push(area);
     saveAreas();
+    return area;
   }
+  return state.areas.find((area) => area.name.toLowerCase() === normalized.toLowerCase()) || null;
 }
 
 function todayIso() {
@@ -274,6 +277,17 @@ function normalizeIdea(idea) {
     area: idea.area || "Life",
     created_at: idea.created_at || nowIso(),
     updated_at: idea.updated_at || nowIso()
+  };
+}
+
+function normalizeArea(area, index = 0) {
+  return {
+    id: area.id || makeId(),
+    name: area.name || "",
+    color: area.color || "#667085",
+    sort_order: Number(area.sort_order ?? area.sortOrder ?? index * 1000) || 0,
+    created_at: area.created_at || nowIso(),
+    updated_at: area.updated_at || nowIso()
   };
 }
 
@@ -463,6 +477,11 @@ function nextSortOrder(parentId = "") {
   return Math.max(...siblings.map((task) => Number(task.sort_order) || 0)) + 1000;
 }
 
+function nextAreaSortOrder() {
+  if (!state.areas.length) return 1000;
+  return Math.max(...state.areas.map((area) => Number(area.sort_order) || 0)) + 1000;
+}
+
 function selectableParents(excludeId = "") {
   const blocked = excludeId ? new Set([excludeId, ...descendantIds(excludeId)]) : new Set();
   return state.tasks
@@ -551,11 +570,31 @@ async function loadTasks() {
       .eq("user_id", state.user.id)
       .order("created_at", { ascending: false });
     if (ideasError) throw ideasError;
+    let areas = [];
+    const { data: areaRows, error: areasError } = await state.supabase
+      .from("planner_areas")
+      .select("*")
+      .eq("user_id", state.user.id)
+      .order("sort_order", { ascending: true });
+    if (areasError) {
+      console.warn("Supabase areas load failed; using local areas", areasError);
+      state.syncMessage = "Areas are local until you run the latest Supabase schema.";
+    } else {
+      areas = areaRows.map(normalizeArea);
+      if (!areas.length) {
+        areas = state.areas.map((area, index) => normalizeArea(area, index));
+        await Promise.all(areas.map((area) => persistArea(area, { render: false })));
+      }
+    }
     state.syncError = "";
-    state.syncMessage = `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} for ${keyLabel()}.`;
+    state.syncMessage = state.syncMessage || `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} for ${keyLabel()}.`;
     state.tasks = ensureSortOrders(rows.map(normalizeTask));
     state.goals = goals.map(normalizeGoal);
     state.ideas = ideas.map(normalizeIdea);
+    if (areas.length) {
+      state.areas = areas;
+      saveAreas();
+    }
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -674,6 +713,56 @@ async function persistIdea(idea, options = {}) {
     if (error) throw error;
     state.ideas = [normalizeIdea(data), ...state.ideas.filter((item) => item.id !== data.id)];
     state.syncMessage = `Saved idea for ${keyLabel()}.`;
+    state.syncError = "";
+    if (options.render !== false) render();
+  } catch (error) {
+    state.syncError = error.message;
+    if (options.render !== false) render();
+  }
+}
+
+async function persistArea(area, options = {}) {
+  const normalized = normalizeArea({ ...area, updated_at: nowIso() });
+  if (!isSupabaseReady()) {
+    const exists = state.areas.some((item) => item.id === normalized.id);
+    state.areas = exists
+      ? state.areas.map((item) => (item.id === normalized.id ? normalized : item))
+      : [...state.areas, normalized];
+    saveAreas();
+    saveLocal();
+    if (options.render !== false) render();
+    return;
+  }
+  try {
+    const payload = {
+      id: normalized.id,
+      user_id: state.user.id,
+      name: normalized.name,
+      color: normalized.color,
+      sort_order: normalized.sort_order,
+      created_at: normalized.created_at,
+      updated_at: normalized.updated_at
+    };
+    const { data, error } = await state.supabase.from("planner_areas").upsert(payload).select().single();
+    if (error) throw error;
+    const saved = normalizeArea(data);
+    state.areas = state.areas.some((item) => item.id === saved.id)
+      ? state.areas.map((item) => (item.id === saved.id ? saved : item))
+      : [...state.areas, saved];
+    if (options.oldName && options.oldName !== saved.name) {
+      await state.supabase
+        .from("planner_tasks")
+        .update({ area: saved.name, updated_at: nowIso() })
+        .eq("user_id", state.user.id)
+        .eq("area", options.oldName);
+      await state.supabase
+        .from("planner_ideas")
+        .update({ area: saved.name, updated_at: nowIso() })
+        .eq("user_id", state.user.id)
+        .eq("area", options.oldName);
+    }
+    saveAreas();
+    state.syncMessage = `Saved area for ${keyLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
   } catch (error) {
@@ -926,6 +1015,8 @@ function renderAreas() {
       <input class="area-color-input" type="color" aria-label="Area color">
     `;
     row.dataset.area = area.name;
+    row.dataset.areaId = area.id;
+    row.dataset.persistedArea = area.name;
     row.querySelector(".area-name-input").value = area.name;
     row.querySelector(".area-color-input").value = area.color;
     els.areaList.append(row);
@@ -1199,6 +1290,8 @@ function renderAreasView() {
     const row = document.createElement("div");
     row.className = "area-settings-row";
     row.dataset.area = area.name;
+    row.dataset.areaId = area.id;
+    row.dataset.persistedArea = area.name;
     row.style.borderLeftColor = area.color;
     row.innerHTML = `
       <input class="area-name-input" type="text" aria-label="Area name">
@@ -1724,7 +1817,8 @@ els.taskList.addEventListener("submit", async (event) => {
   } else if (ideaForm) {
     await persistIdea({ text: form.get("text").trim(), area: form.get("area") || "Life" });
   } else if (areasForm) {
-    ensureArea(form.get("name").trim(), form.get("color") || "#39ff14");
+    const area = ensureArea(form.get("name").trim(), form.get("color") || "#39ff14");
+    if (area) await persistArea(area, { render: false });
     event.target.reset();
     event.target.querySelector("[name='color']").value = "#39ff14";
     render();
@@ -1769,7 +1863,8 @@ function autosaveIdeaCard(card) {
 
 function updateAreaRow(row, shouldRender = false) {
   const original = row.dataset.area;
-  const area = state.areas.find((item) => item.name === original);
+  const persistedName = row.dataset.persistedArea || original;
+  const area = state.areas.find((item) => item.id === row.dataset.areaId) || state.areas.find((item) => item.name === original);
   if (!area) return;
   const nextName = row.querySelector(".area-name-input").value.trim();
   if (nextName && nextName !== area.name) {
@@ -1781,6 +1876,10 @@ function updateAreaRow(row, shouldRender = false) {
   area.color = row.querySelector(".area-color-input").value;
   saveAreas();
   saveLocal();
+  queueAutosave(`area:${area.id}`, async () => {
+    await persistArea(area, { render: false, oldName: persistedName });
+    row.dataset.persistedArea = area.name;
+  });
   if (shouldRender) render();
 }
 
@@ -1978,7 +2077,8 @@ els.detailForm.addEventListener("change", queueDetailAutosave);
 els.addAreaButton.addEventListener("click", () => {
   const name = els.newAreaName.value.trim();
   if (!name) return;
-  ensureArea(name, els.newAreaColor.value);
+  const area = ensureArea(name, els.newAreaColor.value);
+  if (area) persistArea(area, { render: false });
   els.newAreaName.value = "";
   render();
 });
