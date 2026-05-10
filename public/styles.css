@@ -966,14 +966,14 @@ body.resizing .resize-handle::before {
 
 .people-table-head,
 .person-card {
-  grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(160px, 0.9fr) minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(120px, 0.75fr) minmax(120px, 0.75fr) minmax(140px, 0.72fr) minmax(260px, 1.15fr) 68px;
   display: grid;
   align-items: center;
 }
 
 .people-table-head > *,
 .person-card > * {
-  min-height: 100%;
+  min-height: 0;
   border-right: 1px solid var(--line);
   padding-right: var(--ui-gap);
 }
@@ -986,7 +986,7 @@ body.resizing .resize-handle::before {
 
 .people-table-head {
   gap: var(--ui-gap);
-  padding: 8px var(--task-pad-x);
+  padding: 7px var(--task-pad-x);
   color: var(--muted);
   background: #f8fafc;
   border-bottom: 1px solid var(--line);
@@ -997,8 +997,52 @@ body.resizing .resize-handle::before {
 
 .person-card {
   gap: var(--ui-gap);
-  padding: var(--task-pad-y) var(--task-pad-x);
+  padding: 7px var(--task-pad-x);
   border-bottom: 1px solid var(--line);
+}
+
+.person-card input,
+.person-card select {
+  min-height: 32px;
+}
+
+.person-card .skill-picker {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  overflow: hidden;
+}
+
+.person-card .skill-add-select {
+  flex: 0 0 122px;
+  min-height: 28px;
+}
+
+.person-card .skill-pills {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 1px;
+}
+
+.person-card .skill-pill {
+  min-height: 23px;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+
+.person-card .skill-remove-button {
+  width: 16px;
+  height: 16px;
+}
+
+.person-card .danger-button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  justify-self: stretch;
 }
 
 .person-card:last-child {
@@ -1172,10 +1216,11 @@ body.resizing .resize-handle::before {
 
 .assignment-task,
 .assignment-goal {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  padding: var(--task-pad-y) var(--task-pad-x);
+  padding: var(--task-pad-y) calc(var(--task-pad-x) + 14px);
   text-align: left;
   display: grid;
   gap: 3px;
@@ -1190,6 +1235,39 @@ body.resizing .resize-handle::before {
 
 .assignment-task.linked {
   border-left: 6px solid #476c9b;
+}
+
+.connector-handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--teal);
+  border-radius: 999px;
+  background: #fff;
+  transform: translateY(-50%);
+  box-shadow: 0 0 0 4px rgba(14, 124, 116, 0.1);
+}
+
+.task-handle {
+  right: -8px;
+  cursor: grab;
+}
+
+.task-handle:active {
+  cursor: grabbing;
+}
+
+.goal-handle {
+  left: -8px;
+  pointer-events: none;
+}
+
+.assignment-line-draft {
+  stroke: var(--teal-dark);
+  stroke-width: 2.8;
+  stroke-dasharray: 4 3;
+  opacity: 0.9;
 }
 
 .assignment-task span,

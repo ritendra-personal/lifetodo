@@ -1,10 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.7.1";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
 const autosaveTimers = new Map();
+let assignmentDrag = null;
+let suppressAssignmentClick = false;
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -2141,7 +2143,7 @@ function renderGoalAssignmentsView() {
     button.className = `assignment-task ${task.id === state.selectedAssignmentTaskId ? "active" : ""} ${goalCount ? "linked" : ""}`;
     button.type = "button";
     button.dataset.assignmentTaskId = task.id;
-    button.innerHTML = `<span></span><small></small>`;
+    button.innerHTML = `<span class="assignment-title"></span><small></small><span class="connector-handle task-handle" title="Drag to a life goal" aria-hidden="true"></span>`;
     button.querySelector("span").textContent = task.title;
     button.querySelector("small").textContent = `${goalCount} linked goal${goalCount === 1 ? "" : "s"}`;
     taskList.append(button);
@@ -2152,9 +2154,9 @@ function renderGoalAssignmentsView() {
     button.type = "button";
     button.dataset.assignmentGoalId = goal.id;
     const count = state.tasks.filter((task) => !task.parent_id && taskHasGoal(task, goal.id)).length;
-    button.innerHTML = `<strong></strong><span></span>`;
+    button.innerHTML = `<span class="connector-handle goal-handle" aria-hidden="true"></span><strong></strong><span></span>`;
     button.querySelector("strong").textContent = goal.name;
-    button.querySelector("span").textContent = `${count} top-level task${count === 1 ? "" : "s"}`;
+    button.querySelector("strong + span").textContent = `${count} top-level task${count === 1 ? "" : "s"}`;
     goalList.append(button);
   }
   if (!state.goals.length) {
@@ -2163,22 +2165,94 @@ function renderGoalAssignmentsView() {
     empty.textContent = "No life goals yet.";
     goalList.append(empty);
   }
-  if (topLevelTasks.length && state.goals.length) {
-    const taskStep = 100 / topLevelTasks.length;
-    const goalStep = 100 / state.goals.length;
-    for (const [taskIndex, task] of topLevelTasks.entries()) {
-      for (const goalId of goalIdsForTask(task)) {
-        const goalIndex = state.goals.findIndex((goal) => goal.id === goalId);
-        if (goalIndex < 0) continue;
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", "35");
-        line.setAttribute("x2", "65");
-        line.setAttribute("y1", String(taskStep * taskIndex + taskStep / 2));
-        line.setAttribute("y2", String(goalStep * goalIndex + goalStep / 2));
-        line.setAttribute("class", task.id === state.selectedAssignmentTaskId ? "assignment-line active" : "assignment-line");
-        lines.append(line);
-      }
+  if (topLevelTasks.length && state.goals.length) requestAnimationFrame(drawAssignmentLines);
+  else lines.innerHTML = "";
+}
+
+function drawAssignmentLines() {
+  const svg = els.taskList.querySelector(".assignment-lines");
+  if (!svg) return;
+  svg.innerHTML = "";
+  for (const task of state.tasks.filter((item) => !item.parent_id && item.status !== "done")) {
+    const taskHandle = els.taskList.querySelector(`[data-assignment-task-id="${CSS.escape(task.id)}"] .task-handle`);
+    if (!taskHandle) continue;
+    const start = assignmentHandlePoint(taskHandle, svg);
+    for (const goalId of goalIdsForTask(task)) {
+      const goalHandle = els.taskList.querySelector(`[data-assignment-goal-id="${CSS.escape(goalId)}"] .goal-handle`);
+      if (!goalHandle) continue;
+      const end = assignmentHandlePoint(goalHandle, svg);
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", String(start.x));
+      line.setAttribute("y1", String(start.y));
+      line.setAttribute("x2", String(end.x));
+      line.setAttribute("y2", String(end.y));
+      line.setAttribute("class", task.id === state.selectedAssignmentTaskId ? "assignment-line active" : "assignment-line");
+      svg.append(line);
     }
+  }
+}
+
+function assignmentSvgPoint(svg, clientX, clientY) {
+  const rect = svg.getBoundingClientRect();
+  return {
+    x: ((clientX - rect.left) / rect.width) * 100,
+    y: ((clientY - rect.top) / rect.height) * 100
+  };
+}
+
+function assignmentHandlePoint(handle, svg) {
+  const rect = handle.getBoundingClientRect();
+  return assignmentSvgPoint(svg, rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
+function updateAssignmentDraft(clientX, clientY) {
+  if (!assignmentDrag) return;
+  const point = assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
+  assignmentDrag.line.setAttribute("x2", String(Math.max(0, Math.min(100, point.x))));
+  assignmentDrag.line.setAttribute("y2", String(Math.max(0, Math.min(100, point.y))));
+}
+
+function beginAssignmentDrag(handle, event) {
+  const task = handle.closest("[data-assignment-task-id]");
+  const svg = els.taskList.querySelector(".assignment-lines");
+  if (!task || !svg) return;
+  state.selectedAssignmentTaskId = task.dataset.assignmentTaskId;
+  const start = assignmentHandlePoint(handle, svg);
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("class", "assignment-line assignment-line-draft");
+  line.setAttribute("x1", String(start.x));
+  line.setAttribute("y1", String(start.y));
+  line.setAttribute("x2", String(start.x));
+  line.setAttribute("y2", String(start.y));
+  svg.append(line);
+  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line, svg };
+  updateAssignmentDraft(event.clientX, event.clientY);
+}
+
+async function toggleAssignmentLink(taskId, goalId) {
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task || !goalId) return;
+  const goals = new Set(goalIdsForTask(task));
+  if (goals.has(goalId)) goals.delete(goalId);
+  else goals.add(goalId);
+  const goalIds = [...goals];
+  await patchTask(taskId, { goal_ids: goalIds, goal_id: goalIds[0] || null });
+}
+
+async function finishAssignmentDrag(event) {
+  if (!assignmentDrag) return;
+  const drag = assignmentDrag;
+  assignmentDrag = null;
+  drag.line.remove();
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-assignment-goal-id]");
+  if (target) {
+    suppressAssignmentClick = true;
+    await toggleAssignmentLink(drag.taskId, target.dataset.assignmentGoalId);
+    setTimeout(() => {
+      suppressAssignmentClick = false;
+    }, 0);
+  } else {
+    renderTasks();
   }
 }
 
@@ -2683,6 +2757,11 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  if (suppressAssignmentClick) {
+    suppressAssignmentClick = false;
+    return;
+  }
+  if (event.target.closest(".connector-handle")) return;
   const assignmentTask = event.target.closest("[data-assignment-task-id]");
   if (assignmentTask) {
     state.selectedAssignmentTaskId = assignmentTask.dataset.assignmentTaskId;
@@ -2692,15 +2771,7 @@ els.taskList.addEventListener("click", (event) => {
   const assignmentGoal = event.target.closest("[data-assignment-goal-id]");
   if (assignmentGoal) {
     if (state.selectedAssignmentTaskId) {
-      const task = state.tasks.find((item) => item.id === state.selectedAssignmentTaskId);
-      const goalId = assignmentGoal.dataset.assignmentGoalId;
-      if (task && goalId) {
-        const goals = new Set(goalIdsForTask(task));
-        if (goals.has(goalId)) goals.delete(goalId);
-        else goals.add(goalId);
-        const goalIds = [...goals];
-        patchTask(state.selectedAssignmentTaskId, { goal_ids: goalIds, goal_id: goalIds[0] || null });
-      }
+      toggleAssignmentLink(state.selectedAssignmentTaskId, assignmentGoal.dataset.assignmentGoalId);
     }
     return;
   }
@@ -2845,6 +2916,26 @@ els.taskList.addEventListener("submit", async (event) => {
     });
     await persistNamedOption(type, option);
   }
+});
+
+els.taskList.addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest(".task-handle");
+  if (!handle) return;
+  event.preventDefault();
+  event.stopPropagation();
+  beginAssignmentDrag(handle, event);
+});
+
+document.addEventListener("pointermove", (event) => {
+  if (!assignmentDrag) return;
+  event.preventDefault();
+  updateAssignmentDraft(event.clientX, event.clientY);
+});
+
+document.addEventListener("pointerup", (event) => {
+  if (!assignmentDrag) return;
+  event.preventDefault();
+  finishAssignmentDrag(event);
 });
 
 function autosaveGoalCard(card) {
