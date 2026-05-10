@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1497,6 +1497,13 @@ els.subtaskButton.addEventListener("click", async () => {
 els.deleteButton.addEventListener("click", async () => {
   if (!state.selectedId) return;
   const id = state.selectedId;
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task) return;
+  const childCount = descendantIds(id).length;
+  const message = childCount
+    ? `Delete "${task.title}" and ${childCount} subtask${childCount === 1 ? "" : "s"}? This cannot be undone.`
+    : `Delete "${task.title}"? This cannot be undone.`;
+  if (!window.confirm(message)) return;
   state.selectedId = null;
   await deleteTask(id);
 });
