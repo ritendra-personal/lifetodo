@@ -1615,13 +1615,13 @@ function renderPeopleView() {
       <input name="firstName" type="text" placeholder="First name" required>
       <input name="lastName" type="text" placeholder="Last name">
       <select name="relationshipTypeId" aria-label="Relationship"></select>
-      <select name="skillIds" aria-label="Skills" multiple size="3"></select>
+      <div class="skill-picker" role="group" aria-label="Skills"></div>
       <button class="primary-button" type="submit">Add person</button>
     </form>
     <div class="planning-list people-list"></div>
   `;
   fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
-  fillSkillsSelect(els.taskList.querySelector("select[name='skillIds']"), []);
+  fillSkillPicker(els.taskList.querySelector(".skill-picker"), []);
   const list = els.taskList.querySelector(".people-list");
   if (!state.people.length) {
     const empty = document.createElement("div");
@@ -1638,13 +1638,13 @@ function renderPeopleView() {
       <input name="firstName" type="text" required aria-label="First name">
       <input name="lastName" type="text" aria-label="Last name">
       <select name="relationshipTypeId" aria-label="Relationship"></select>
-      <select name="skillIds" aria-label="Skills" multiple size="3"></select>
+      <div class="skill-picker" role="group" aria-label="Skills"></div>
       <button class="danger-button delete-person-button" type="button">Delete</button>
     `;
     card.querySelector("[name='firstName']").value = person.first_name;
     card.querySelector("[name='lastName']").value = person.last_name;
     fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
-    fillSkillsSelect(card.querySelector("[name='skillIds']"), person.skill_ids);
+    fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
     list.append(card);
   }
 }
@@ -1706,15 +1706,21 @@ function renderGoalAssignmentsView() {
   }
 }
 
-function fillSkillsSelect(select, selected = []) {
+function fillSkillPicker(container, selected = []) {
   const values = new Set(parseIds(selected));
-  select.innerHTML = "";
+  container.innerHTML = "";
   for (const skill of state.skills) {
-    const option = document.createElement("option");
-    option.value = skill.id;
-    option.textContent = skill.name;
-    option.selected = values.has(skill.id);
-    select.append(option);
+    const label = document.createElement("label");
+    label.className = "skill-choice";
+    label.innerHTML = `
+      <input name="skillIds" type="checkbox">
+      <span></span>
+    `;
+    const input = label.querySelector("input");
+    input.value = skill.id;
+    input.checked = values.has(skill.id);
+    label.querySelector("span").textContent = skill.name;
+    container.append(label);
   }
 }
 
@@ -2379,7 +2385,7 @@ function autosavePersonCard(card) {
         first_name: firstName,
         last_name: card.querySelector("[name='lastName']").value.trim(),
         relationship_type_id: card.querySelector("[name='relationshipTypeId']").value || "",
-        skill_ids: [...card.querySelector("[name='skillIds']").selectedOptions].map((option) => option.value),
+        skill_ids: [...card.querySelectorAll("[name='skillIds']:checked")].map((input) => input.value),
         created_at: person.created_at
       },
       { render: false }

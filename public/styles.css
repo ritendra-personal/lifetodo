@@ -932,6 +932,43 @@ body.resizing .resize-handle::before {
   align-items: center;
 }
 
+.skill-picker {
+  min-height: var(--control-height);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.skill-choice {
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  color: var(--muted);
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.skill-choice:has(input:checked) {
+  border-color: var(--teal);
+  color: var(--teal-dark);
+  background: #eef7f6;
+}
+
+.skill-choice input {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+}
+
 .assignment-view {
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 1.1fr);
