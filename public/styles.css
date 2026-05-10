@@ -832,6 +832,67 @@ body.resizing .resize-handle::before {
   color: var(--muted);
 }
 
+.planning-card label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.goal-task-outline {
+  display: grid;
+  gap: var(--ui-gap);
+  border-top: 1px solid var(--line);
+  padding-top: var(--task-pad-y);
+}
+
+.goal-task-section {
+  display: grid;
+  gap: 5px;
+}
+
+.goal-task-section h5,
+.goal-task-empty {
+  margin: 0;
+}
+
+.goal-task-section h5 {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.goal-task-empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.goal-task-link {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 7px 9px;
+  margin-left: calc(min(var(--depth), 5) * 18px);
+  text-align: left;
+  display: grid;
+  gap: 2px;
+}
+
+.goal-task-link:hover {
+  border-color: var(--teal);
+}
+
+.goal-task-link.done {
+  opacity: 0.62;
+}
+
+.goal-task-link span {
+  font-weight: 700;
+}
+
+.goal-task-link small {
+  color: var(--muted);
+}
+
 .timeline-view {
   min-height: calc(100vh - 230px);
   display: grid;

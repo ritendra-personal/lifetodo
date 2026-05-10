@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.2.1";
+const APP_VERSION = "1.3.0";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -589,7 +589,10 @@ async function patchTask(id, changes) {
 async function persistGoal(goal) {
   const normalized = normalizeGoal({ ...goal, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!isSupabaseReady()) {
-    state.goals.unshift(normalized);
+    const exists = state.goals.some((item) => item.id === normalized.id);
+    state.goals = exists
+      ? state.goals.map((item) => (item.id === normalized.id ? normalized : item))
+      : [normalized, ...state.goals];
     saveLocal();
     render();
     return;
@@ -609,7 +612,10 @@ async function persistGoal(goal) {
 async function persistIdea(idea) {
   const normalized = normalizeIdea({ ...idea, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!isSupabaseReady()) {
-    state.ideas.unshift(normalized);
+    const exists = state.ideas.some((item) => item.id === normalized.id);
+    state.ideas = exists
+      ? state.ideas.map((item) => (item.id === normalized.id ? normalized : item))
+      : [normalized, ...state.ideas];
     saveLocal();
     render();
     return;
@@ -619,6 +625,57 @@ async function persistIdea(idea) {
     if (error) throw error;
     state.ideas = [normalizeIdea(data), ...state.ideas.filter((item) => item.id !== data.id)];
     state.syncMessage = `Saved idea for ${keyLabel()}.`;
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
+  }
+}
+
+async function deleteGoal(id) {
+  const goal = state.goals.find((item) => item.id === id);
+  if (!goal) return;
+  const linkedCount = state.tasks.filter((task) => task.goal_id === id).length;
+  const message = linkedCount
+    ? `Delete "${goal.name}"? ${linkedCount} linked task${linkedCount === 1 ? "" : "s"} will be unlinked, not deleted.`
+    : `Delete "${goal.name}"?`;
+  if (!window.confirm(message)) return;
+  if (!isSupabaseReady()) {
+    state.goals = state.goals.filter((item) => item.id !== id);
+    state.tasks = state.tasks.map((task) => (task.goal_id === id ? { ...task, goal_id: "" } : task));
+    saveLocal();
+    render();
+    return;
+  }
+  try {
+    const { error: unlinkError } = await state.supabase.from("planner_tasks").update({ goal_id: null }).eq("goal_id", id);
+    if (unlinkError) throw unlinkError;
+    const { error } = await state.supabase.from("planner_goals").delete().eq("id", id);
+    if (error) throw error;
+    state.goals = state.goals.filter((item) => item.id !== id);
+    state.tasks = state.tasks.map((task) => (task.goal_id === id ? { ...task, goal_id: "" } : task));
+    state.syncMessage = `Deleted goal for ${keyLabel()}.`;
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
+  }
+}
+
+async function deleteIdea(id) {
+  const idea = state.ideas.find((item) => item.id === id);
+  if (!idea || !window.confirm(`Delete this idea? "${idea.text}"`)) return;
+  if (!isSupabaseReady()) {
+    state.ideas = state.ideas.filter((item) => item.id !== id);
+    saveLocal();
+    render();
+    return;
+  }
+  try {
+    const { error } = await state.supabase.from("planner_ideas").delete().eq("id", id);
+    if (error) throw error;
+    state.ideas = state.ideas.filter((item) => item.id !== id);
+    state.syncMessage = `Deleted idea for ${keyLabel()}.`;
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -929,6 +986,58 @@ function renderTask(task, depth, childCount) {
     els.taskList.append(button);
 }
 
+function tasksForGoal(goalId) {
+  const related = new Set(state.tasks.filter((task) => task.goal_id === goalId).map((task) => task.id));
+  const children = childMap();
+  const rows = [];
+  const visit = (parentId, depth) => {
+    for (const task of sortedSiblings(children.get(parentId) || [])) {
+      const childRows = [];
+      const collectChild = (child) => {
+        childRows.push(child.id);
+        for (const next of children.get(child.id) || []) collectChild(next);
+      };
+      for (const child of children.get(task.id) || []) collectChild(child);
+      const include = related.has(task.id) || childRows.some((id) => related.has(id));
+      if (include) rows.push({ task, depth });
+      visit(task.id, depth + 1);
+    }
+  };
+  visit("", 0);
+  return rows.filter(({ task }) => related.has(task.id));
+}
+
+function makeGoalTaskOutline(goalId, status) {
+  const rows = tasksForGoal(goalId).filter(({ task }) => (status === "done" ? task.status === "done" : task.status !== "done"));
+  const section = document.createElement("div");
+  section.className = "goal-task-section";
+  const heading = document.createElement("h5");
+  heading.textContent = status === "done" ? "Done tasks" : "Active tasks";
+  section.append(heading);
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.className = "goal-task-empty";
+    empty.textContent = status === "done" ? "No done tasks yet." : "No active tasks linked.";
+    section.append(empty);
+    return section;
+  }
+  for (const { task, depth } of rows) {
+    const button = document.createElement("button");
+    button.className = `goal-task-link ${task.status === "done" ? "done" : ""}`;
+    button.type = "button";
+    button.dataset.taskId = task.id;
+    button.style.setProperty("--depth", depth);
+    button.innerHTML = `
+      <span></span>
+      <small></small>
+    `;
+    button.querySelector("span").textContent = task.title;
+    button.querySelector("small").textContent = `${task.area} · ${formatDate(task.due_date)}`;
+    section.append(button);
+  }
+  return section;
+}
+
 function renderGoalsView() {
   els.taskList.innerHTML = `
     <form id="goal-form" class="planning-form">
@@ -947,17 +1056,29 @@ function renderGoalsView() {
     return;
   }
   for (const goal of state.goals) {
-    const card = document.createElement("article");
+    const card = document.createElement("form");
     card.className = "planning-card";
-    const linkedTasks = state.tasks.filter((task) => task.goal_id === goal.id && task.status !== "done").length;
+    card.dataset.goalId = goal.id;
     card.innerHTML = `
-      <h4></h4>
-      <p></p>
-      <span class="pill branch-pill"></span>
+      <label>
+        Name
+        <input name="name" type="text" required>
+      </label>
+      <label>
+        Description
+        <textarea name="description"></textarea>
+      </label>
+      <div class="goal-task-outline"></div>
+      <div class="detail-actions">
+        <button class="danger-button delete-goal-button" type="button">Delete</button>
+        <button class="primary-button" type="submit">Save goal</button>
+      </div>
     `;
-    card.querySelector("h4").textContent = goal.name;
-    card.querySelector("p").textContent = goal.description || "No description";
-    card.querySelector(".pill").textContent = `${linkedTasks} active task${linkedTasks === 1 ? "" : "s"}`;
+    card.querySelector("[name='name']").value = goal.name;
+    card.querySelector("[name='description']").value = goal.description;
+    const outline = card.querySelector(".goal-task-outline");
+    outline.append(makeGoalTaskOutline(goal.id, "active"));
+    outline.append(makeGoalTaskOutline(goal.id, "done"));
     list.append(card);
   }
 }
@@ -987,16 +1108,34 @@ function renderIdeasView() {
     return;
   }
   for (const idea of state.ideas) {
-    const card = document.createElement("article");
+    const card = document.createElement("form");
     card.className = "planning-card idea-card";
+    card.dataset.ideaId = idea.id;
     card.style.borderLeftColor = areaColor(idea.area);
     card.style.background = `linear-gradient(90deg, ${areaTint(idea.area)}, #fff 46%)`;
     card.innerHTML = `
-      <p></p>
-      <span class="pill area"></span>
+      <label>
+        Idea
+        <input name="text" type="text" required>
+      </label>
+      <label>
+        Area
+        <select name="area"></select>
+      </label>
+      <div class="detail-actions">
+        <button class="danger-button delete-idea-button" type="button">Delete</button>
+        <button class="primary-button" type="submit">Save idea</button>
+      </div>
     `;
-    card.querySelector("p").textContent = idea.text;
-    card.querySelector(".pill").textContent = idea.area;
+    card.querySelector("[name='text']").value = idea.text;
+    const select = card.querySelector("select");
+    for (const area of state.areas) {
+      const option = document.createElement("option");
+      option.value = area.name;
+      option.textContent = area.name;
+      select.append(option);
+    }
+    select.value = idea.area;
     list.append(card);
   }
 }
@@ -1433,6 +1572,25 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const goalTaskLink = event.target.closest(".goal-task-link");
+  if (goalTaskLink) {
+    state.selectedId = goalTaskLink.dataset.taskId;
+    state.view = "today";
+    render();
+    return;
+  }
+  const deleteGoalButton = event.target.closest(".delete-goal-button");
+  if (deleteGoalButton) {
+    const card = deleteGoalButton.closest("[data-goal-id]");
+    if (card) deleteGoal(card.dataset.goalId);
+    return;
+  }
+  const deleteIdeaButton = event.target.closest(".delete-idea-button");
+  if (deleteIdeaButton) {
+    const card = deleteIdeaButton.closest("[data-idea-id]");
+    if (card) deleteIdea(card.dataset.ideaId);
+    return;
+  }
   const zoomButton = event.target.closest(".timeline-zoom");
   if (zoomButton) {
     state.timelineZoom = Math.min(120, Math.max(18, state.timelineZoom + Number(zoomButton.dataset.zoom)));
@@ -1483,13 +1641,29 @@ els.taskList.addEventListener("click", (event) => {
 els.taskList.addEventListener("submit", async (event) => {
   const goalForm = event.target.closest("#goal-form");
   const ideaForm = event.target.closest("#idea-form");
-  if (!goalForm && !ideaForm) return;
+  const goalCard = event.target.closest("[data-goal-id]");
+  const ideaCard = event.target.closest("[data-idea-id]");
+  if (!goalForm && !ideaForm && !goalCard && !ideaCard) return;
   event.preventDefault();
   const form = new FormData(event.target);
   if (goalForm) {
     await persistGoal({ name: form.get("name").trim(), description: form.get("description").trim() });
-  } else {
+  } else if (ideaForm) {
     await persistIdea({ text: form.get("text").trim(), area: form.get("area") || "Life" });
+  } else if (goalCard) {
+    await persistGoal({
+      id: goalCard.dataset.goalId,
+      name: form.get("name").trim(),
+      description: form.get("description").trim(),
+      created_at: state.goals.find((goal) => goal.id === goalCard.dataset.goalId)?.created_at
+    });
+  } else if (ideaCard) {
+    await persistIdea({
+      id: ideaCard.dataset.ideaId,
+      text: form.get("text").trim(),
+      area: form.get("area") || "Life",
+      created_at: state.ideas.find((idea) => idea.id === ideaCard.dataset.ideaId)?.created_at
+    });
   }
 });
 
