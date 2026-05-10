@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.4.1";
+const APP_VERSION = "1.4.2";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -184,6 +184,35 @@ function areaColor(name) {
   return state.areas.find((area) => area.name === name)?.color || "#667085";
 }
 
+function areaById(id) {
+  return state.areas.find((area) => area.id === id);
+}
+
+function areaByName(name) {
+  return state.areas.find((area) => area.name === name);
+}
+
+function areaNameFor(item) {
+  return areaById(item.area_id)?.name || item.area || "Life";
+}
+
+function areaIdForName(name) {
+  return areaByName(name)?.id || "";
+}
+
+function areaIdForValue(value) {
+  if (!value) return "";
+  return areaById(value)?.id || areaIdForName(value);
+}
+
+function areaColorFor(item) {
+  return areaById(item.area_id)?.color || areaColor(item.area);
+}
+
+function areaTintFor(item) {
+  return areaTint(areaNameFor(item));
+}
+
 function areaTint(name) {
   const color = areaColor(name);
   const hex = color.replace("#", "");
@@ -270,11 +299,13 @@ function normalizeGoal(goal) {
 }
 
 function normalizeIdea(idea) {
+  const areaName = idea.area || "Life";
   return {
     id: idea.id || makeId(),
     user_id: idea.user_id || idea.userId || state.user?.id || null,
     text: idea.text || "",
-    area: idea.area || "Life",
+    area_id: idea.area_id || idea.areaId || areaIdForName(areaName),
+    area: areaName,
     created_at: idea.created_at || nowIso(),
     updated_at: idea.updated_at || nowIso()
   };
@@ -293,6 +324,7 @@ function normalizeArea(area, index = 0) {
 
 function normalizeTask(task) {
   const order = Number(task.sort_order ?? task.sortOrder);
+  const areaName = task.area || "Life";
   return {
     id: task.id || makeId(),
     owner_key: task.owner_key || state.plannerKey || "local",
@@ -303,7 +335,8 @@ function normalizeTask(task) {
     notes: task.notes || "",
     tags: parseTags(task.tags),
     dependency_ids: parseIds(task.dependency_ids || task.dependencyIds),
-    area: task.area || "Life",
+    area_id: task.area_id || task.areaId || areaIdForName(areaName),
+    area: areaName,
     priority: task.priority || "Medium",
     status: task.status || "active",
     due_date: task.due_date || task.dueDate || "",
@@ -326,7 +359,8 @@ function databasePayload(task) {
     notes: task.notes,
     due_date: task.due_date || null,
     tags: parseTags(task.tags),
-    area: task.area,
+    area_id: task.area_id || areaIdForName(task.area) || null,
+    area: areaNameFor(task),
     priority: task.priority,
     status: task.status,
     energy: task.energy,
@@ -347,6 +381,8 @@ function databasePatchPayload(changes) {
   if ("parent_id" in payload) payload.parent_id = payload.parent_id || null;
   if ("goal_id" in payload) payload.goal_id = payload.goal_id || null;
   if ("due_date" in payload) payload.due_date = payload.due_date || null;
+  if ("area_id" in payload) payload.area_id = payload.area_id || null;
+  if ("area" in payload) payload.area = areaNameFor(payload);
   if ("tags" in payload) payload.tags = parseTags(payload.tags);
   if ("dependency_ids" in payload) payload.dependency_ids = parseIds(payload.dependency_ids);
   if ("sort_order" in payload) payload.sort_order = Number(payload.sort_order) || 0;
@@ -588,13 +624,13 @@ async function loadTasks() {
     }
     state.syncError = "";
     state.syncMessage = state.syncMessage || `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} for ${keyLabel()}.`;
-    state.tasks = ensureSortOrders(rows.map(normalizeTask));
-    state.goals = goals.map(normalizeGoal);
-    state.ideas = ideas.map(normalizeIdea);
     if (areas.length) {
       state.areas = areas;
       saveAreas();
     }
+    state.tasks = ensureSortOrders(rows.map(normalizeTask));
+    state.goals = goals.map(normalizeGoal);
+    state.ideas = ideas.map(normalizeIdea);
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -749,15 +785,25 @@ async function persistArea(area, options = {}) {
     state.areas = state.areas.some((item) => item.id === saved.id)
       ? state.areas.map((item) => (item.id === saved.id ? saved : item))
       : [...state.areas, saved];
+    await state.supabase
+      .from("planner_tasks")
+      .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
+      .eq("user_id", state.user.id)
+      .eq("area_id", saved.id);
+    await state.supabase
+      .from("planner_ideas")
+      .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
+      .eq("user_id", state.user.id)
+      .eq("area_id", saved.id);
     if (options.oldName && options.oldName !== saved.name) {
       await state.supabase
         .from("planner_tasks")
-        .update({ area: saved.name, updated_at: nowIso() })
+        .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
         .eq("user_id", state.user.id)
         .eq("area", options.oldName);
       await state.supabase
         .from("planner_ideas")
-        .update({ area: saved.name, updated_at: nowIso() })
+        .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
         .eq("user_id", state.user.id)
         .eq("area", options.oldName);
     }
@@ -911,7 +957,7 @@ function filteredTasks() {
     })
     .filter((task) => {
       if (!search) return true;
-      return `${task.title} ${task.notes} ${task.area} ${task.tags.join(" ")}`.toLowerCase().includes(search);
+      return `${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")}`.toLowerCase().includes(search);
     })
     .filter((task) => {
       if (!state.tagFilter) return true;
@@ -992,19 +1038,19 @@ function renderTagFilters() {
 }
 
 function renderAreas() {
-  const selectedArea = els.area.value || "Life";
-  const selectedDetailArea = detail.area.value || "Life";
+  const selectedArea = areaIdForValue(els.area.value) || areaIdForName("Life");
+  const selectedDetailArea = areaIdForValue(detail.area.value) || areaIdForName("Life");
   for (const select of [els.area, detail.area]) {
     select.innerHTML = "";
     for (const area of state.areas) {
       const option = document.createElement("option");
-      option.value = area.name;
+      option.value = area.id;
       option.textContent = area.name;
       select.append(option);
     }
   }
-  els.area.value = state.areas.some((area) => area.name === selectedArea) ? selectedArea : state.areas[0]?.name || "Life";
-  detail.area.value = state.areas.some((area) => area.name === selectedDetailArea) ? selectedDetailArea : state.areas[0]?.name || "Life";
+  els.area.value = state.areas.some((area) => area.id === selectedArea) ? selectedArea : state.areas[0]?.id || "";
+  detail.area.value = state.areas.some((area) => area.id === selectedDetailArea) ? selectedDetailArea : state.areas[0]?.id || "";
 
   els.areaList.innerHTML = "";
   for (const area of state.areas) {
@@ -1088,7 +1134,7 @@ function renderTask(task, depth, childCount) {
     button.tabIndex = 0;
     button.style.setProperty("--depth", depth);
 
-    const color = areaColor(task.area);
+    const color = areaColorFor(task);
     button.innerHTML = `
       <div class="task-line">
         <button class="check" type="button" aria-label="${task.status === "done" ? "Reopen task" : "Mark task done"}"></button>
@@ -1111,11 +1157,11 @@ function renderTask(task, depth, childCount) {
     const notes = button.querySelector(".task-notes");
     if (notes) notes.textContent = task.notes;
     const pills = button.querySelectorAll(".pill");
-    pills[0].textContent = task.area;
+    pills[0].textContent = areaNameFor(task);
     pills[0].style.borderLeft = `4px solid ${color}`;
-    pills[0].style.background = areaTint(task.area);
+    pills[0].style.background = areaTintFor(task);
     button.style.borderLeft = `6px solid ${color}`;
-    button.style.background = `linear-gradient(90deg, ${areaTint(task.area)}, #fff 42%)`;
+    button.style.background = `linear-gradient(90deg, ${areaTintFor(task)}, #fff 42%)`;
     pills[1].textContent = task.priority;
     pills[2].textContent = formatDate(task.due_date);
     pills[3].textContent = `${task.energy} energy`;
@@ -1178,7 +1224,7 @@ function makeGoalTaskOutline(goalId, status) {
       <small></small>
     `;
     button.querySelector("span").textContent = task.title;
-    button.querySelector("small").textContent = `${task.area} · ${formatDate(task.due_date)}`;
+    button.querySelector("small").textContent = `${areaNameFor(task)} · ${formatDate(task.due_date)}`;
     section.append(button);
   }
   return section;
@@ -1240,7 +1286,7 @@ function renderIdeasView() {
   const areaSelect = els.taskList.querySelector("select[name='area']");
   for (const area of state.areas) {
     const option = document.createElement("option");
-    option.value = area.name;
+    option.value = area.id;
     option.textContent = area.name;
     areaSelect.append(option);
   }
@@ -1256,8 +1302,8 @@ function renderIdeasView() {
     const card = document.createElement("article");
     card.className = "planning-card idea-card";
     card.dataset.ideaId = idea.id;
-    card.style.borderLeftColor = areaColor(idea.area);
-    card.style.background = `linear-gradient(90deg, ${areaTint(idea.area)}, #fff 46%)`;
+    card.style.borderLeftColor = areaColorFor(idea);
+    card.style.background = `linear-gradient(90deg, ${areaTintFor(idea)}, #fff 46%)`;
     card.innerHTML = `
       <input name="text" type="text" required aria-label="Idea text">
       <select name="area" aria-label="Idea area"></select>
@@ -1267,11 +1313,11 @@ function renderIdeasView() {
     const select = card.querySelector("select");
     for (const area of state.areas) {
       const option = document.createElement("option");
-      option.value = area.name;
+      option.value = area.id;
       option.textContent = area.name;
       select.append(option);
     }
-    select.value = idea.area;
+    select.value = idea.area_id || areaIdForName(idea.area);
     list.append(card);
   }
 }
@@ -1300,7 +1346,9 @@ function renderAreasView() {
     `;
     row.querySelector(".area-name-input").value = area.name;
     row.querySelector(".area-color-input").value = area.color;
-    const usage = state.tasks.filter((task) => task.area === area.name).length + state.ideas.filter((idea) => idea.area === area.name).length;
+    const usage =
+      state.tasks.filter((task) => task.area_id === area.id || (!task.area_id && task.area === area.name)).length +
+      state.ideas.filter((idea) => idea.area_id === area.id || (!idea.area_id && idea.area === area.name)).length;
     row.querySelector(".area-usage").textContent = `${usage} item${usage === 1 ? "" : "s"}`;
     list.append(row);
   }
@@ -1311,7 +1359,7 @@ function taskMatchesGlobalFilters(task) {
   if (task.status === "done" && !state.showDone) return false;
   if (state.tagFilter && !task.tags.includes(state.tagFilter)) return false;
   if (!search) return true;
-  return `${task.title} ${task.notes} ${task.area} ${task.tags.join(" ")}`.toLowerCase().includes(search);
+  return `${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")}`.toLowerCase().includes(search);
 }
 
 function makeMiniTask(task) {
@@ -1319,13 +1367,13 @@ function makeMiniTask(task) {
   node.className = `mini-task ${task.id === state.selectedId ? "active" : ""} ${task.status === "done" ? "done" : ""}`;
   node.type = "button";
   node.dataset.id = task.id;
-  node.style.borderLeftColor = areaColor(task.area);
+  node.style.borderLeftColor = areaColorFor(task);
   node.innerHTML = `
     <span class="mini-title"></span>
     <span class="mini-meta"></span>
   `;
   node.querySelector(".mini-title").textContent = task.title;
-  node.querySelector(".mini-meta").textContent = `${task.area} · ${formatDate(task.due_date)}`;
+  node.querySelector(".mini-meta").textContent = `${areaNameFor(task)} · ${formatDate(task.due_date)}`;
   return node;
 }
 
@@ -1412,14 +1460,14 @@ function renderGraphView() {
     node.dataset.id = task.id;
     node.style.left = `${x}px`;
     node.style.top = `${y}px`;
-    node.style.borderTopColor = areaColor(task.area);
-    node.style.background = `linear-gradient(180deg, ${areaTint(task.area)}, #fff 58%)`;
+    node.style.borderTopColor = areaColorFor(task);
+    node.style.background = `linear-gradient(180deg, ${areaTintFor(task)}, #fff 58%)`;
     node.innerHTML = `
       <span class="graph-node-title"></span>
       <span class="graph-node-meta"></span>
     `;
     node.querySelector(".graph-node-title").textContent = task.title;
-    node.querySelector(".graph-node-meta").textContent = `${task.area} · ${formatDate(task.due_date)}`;
+    node.querySelector(".graph-node-meta").textContent = `${areaNameFor(task)} · ${formatDate(task.due_date)}`;
     graph.append(node);
   });
 
@@ -1557,16 +1605,16 @@ function makeTimelineTask(task, x, y) {
   node.dataset.id = task.id;
   node.style.left = `${x}px`;
   node.style.top = `${y}px`;
-  node.style.borderLeftColor = areaColor(task.area);
-  node.style.background = `linear-gradient(90deg, ${areaTint(task.area)}, #fff 55%)`;
+  node.style.borderLeftColor = areaColorFor(task);
+  node.style.background = `linear-gradient(90deg, ${areaTintFor(task)}, #fff 55%)`;
   node.innerHTML = `
     <span class="timeline-dot"></span>
     <span class="timeline-task-title"></span>
     <span class="timeline-task-meta"></span>
   `;
-  node.querySelector(".timeline-dot").style.background = areaColor(task.area);
+  node.querySelector(".timeline-dot").style.background = areaColorFor(task);
   node.querySelector(".timeline-task-title").textContent = task.title;
-  node.querySelector(".timeline-task-meta").textContent = `${task.area} · ${task.priority} · ${formatDate(task.due_date)}`;
+  node.querySelector(".timeline-task-meta").textContent = `${areaNameFor(task)} · ${task.priority} · ${formatDate(task.due_date)}`;
   return node;
 }
 
@@ -1587,7 +1635,7 @@ function renderDetail() {
   detail.parent.value = task.parent_id || "";
   detail.goal.value = task.goal_id || "";
   detail.tags.value = task.tags.join(", ");
-  detail.area.value = task.area;
+  detail.area.value = task.area_id || areaIdForName(task.area);
   detail.priority.value = task.priority;
   detail.due.value = task.due_date || "";
   detail.energy.value = task.energy;
@@ -1722,7 +1770,8 @@ els.taskForm.addEventListener("submit", async (event) => {
     title: form.get("title").trim(),
     parent_id: form.get("parentId") || "",
     goal_id: form.get("goalId") || "",
-    area: form.get("area") || "Life",
+    area_id: form.get("area") || null,
+    area: areaById(form.get("area"))?.name || "Life",
     priority: form.get("priority"),
     due_date: form.get("dueDate") || defaultDueDateForView(),
     tags: parseTags(form.get("tags")),
@@ -1730,7 +1779,7 @@ els.taskForm.addEventListener("submit", async (event) => {
     sort_order: nextSortOrder(form.get("parentId") || "")
   });
   els.taskForm.reset();
-  els.area.value = state.areas.some((area) => area.name === "Life") ? "Life" : state.areas[0]?.name || "";
+  els.area.value = areaIdForName("Life") || state.areas[0]?.id || "";
   document.querySelector("#priority").value = "Medium";
   document.querySelector("#parent-id").value = "";
   document.querySelector("#goal-id").value = "";
@@ -1815,7 +1864,11 @@ els.taskList.addEventListener("submit", async (event) => {
   if (goalForm) {
     await persistGoal({ name: form.get("name").trim(), description: form.get("description").trim() });
   } else if (ideaForm) {
-    await persistIdea({ text: form.get("text").trim(), area: form.get("area") || "Life" });
+    await persistIdea({
+      text: form.get("text").trim(),
+      area_id: form.get("area") || null,
+      area: areaById(form.get("area"))?.name || "Life"
+    });
   } else if (areasForm) {
     const area = ensureArea(form.get("name").trim(), form.get("color") || "#39ff14");
     if (area) await persistArea(area, { render: false });
@@ -1853,7 +1906,8 @@ function autosaveIdeaCard(card) {
       {
         id: idea.id,
         text,
-        area: card.querySelector("[name='area']").value || "Life",
+        area_id: card.querySelector("[name='area']").value || null,
+        area: areaById(card.querySelector("[name='area']").value)?.name || "Life",
         created_at: idea.created_at
       },
       { render: false }
@@ -1868,8 +1922,12 @@ function updateAreaRow(row, shouldRender = false) {
   if (!area) return;
   const nextName = row.querySelector(".area-name-input").value.trim();
   if (nextName && nextName !== area.name) {
-    state.tasks = state.tasks.map((task) => (task.area === area.name ? { ...task, area: nextName } : task));
-    state.ideas = state.ideas.map((idea) => (idea.area === area.name ? { ...idea, area: nextName } : idea));
+    state.tasks = state.tasks.map((task) =>
+      task.area_id === area.id || (!task.area_id && task.area === area.name) ? { ...task, area: nextName, area_id: area.id } : task
+    );
+    state.ideas = state.ideas.map((idea) =>
+      idea.area_id === area.id || (!idea.area_id && idea.area === area.name) ? { ...idea, area: nextName, area_id: area.id } : idea
+    );
     area.name = nextName;
     row.dataset.area = nextName;
   }
@@ -2053,7 +2111,8 @@ function detailPayload() {
     goal_id: detail.goal.value || null,
     dependency_ids: [...detail.dependencies.selectedOptions].map((option) => option.value),
     tags: parseTags(detail.tags.value),
-    area: detail.area.value || "Life",
+    area_id: detail.area.value || null,
+    area: areaById(detail.area.value)?.name || "Life",
     priority: detail.priority.value,
     due_date: detail.due.value || null,
     energy: detail.energy.value
@@ -2102,7 +2161,8 @@ els.subtaskButton.addEventListener("click", async () => {
   const task = normalizeTask({
     title: `Subtask of ${parent.title}`,
     parent_id: parent.id,
-    area: parent.area,
+    area_id: parent.area_id || areaIdForName(parent.area),
+    area: areaNameFor(parent),
     priority: parent.priority,
     due_date: parent.due_date,
     tags: parent.tags,

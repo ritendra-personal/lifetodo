@@ -24,6 +24,7 @@ create table if not exists planner_tasks (
 alter table planner_tasks add column if not exists parent_id uuid references planner_tasks(id) on delete cascade;
 alter table planner_tasks add column if not exists user_id uuid references auth.users(id) on delete cascade;
 alter table planner_tasks add column if not exists goal_id uuid;
+alter table planner_tasks add column if not exists area_id uuid;
 alter table planner_tasks add column if not exists tags text[] not null default '{}';
 alter table planner_tasks add column if not exists dependency_ids uuid[] not null default '{}';
 alter table planner_tasks add column if not exists sort_order numeric not null default 0;
@@ -31,6 +32,7 @@ alter table planner_tasks add column if not exists sort_order numeric not null d
 create index if not exists planner_tasks_owner_key_idx on planner_tasks(owner_key);
 create index if not exists planner_tasks_user_id_idx on planner_tasks(user_id);
 create index if not exists planner_tasks_goal_id_idx on planner_tasks(goal_id);
+create index if not exists planner_tasks_area_id_idx on planner_tasks(area_id);
 create index if not exists planner_tasks_parent_id_idx on planner_tasks(parent_id);
 create index if not exists planner_tasks_tags_idx on planner_tasks using gin(tags);
 create index if not exists planner_tasks_dependency_ids_idx on planner_tasks using gin(dependency_ids);
@@ -114,10 +116,13 @@ create table if not exists planner_ideas (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   text text not null,
+  area_id uuid,
   area text not null default 'Life',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table planner_ideas add column if not exists area_id uuid;
 
 create table if not exists planner_areas (
   id uuid primary key default gen_random_uuid(),
@@ -130,12 +135,23 @@ create table if not exists planner_areas (
   unique (user_id, name)
 );
 
+alter table planner_tasks
+  drop constraint if exists planner_tasks_area_id_fkey,
+  add constraint planner_tasks_area_id_fkey
+  foreign key (area_id) references planner_areas(id) on delete set null;
+
+alter table planner_ideas
+  drop constraint if exists planner_ideas_area_id_fkey,
+  add constraint planner_ideas_area_id_fkey
+  foreign key (area_id) references planner_areas(id) on delete set null;
+
 alter table planner_goals enable row level security;
 alter table planner_ideas enable row level security;
 alter table planner_areas enable row level security;
 
 create index if not exists planner_goals_user_id_idx on planner_goals(user_id);
 create index if not exists planner_ideas_user_id_idx on planner_ideas(user_id);
+create index if not exists planner_ideas_area_id_idx on planner_ideas(area_id);
 create index if not exists planner_areas_user_id_idx on planner_areas(user_id);
 create index if not exists planner_areas_sort_order_idx on planner_areas(sort_order);
 
@@ -160,3 +176,17 @@ on planner_areas for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
+
+update planner_tasks t
+set area_id = a.id
+from planner_areas a
+where t.user_id = a.user_id
+  and t.area = a.name
+  and t.area_id is null;
+
+update planner_ideas i
+set area_id = a.id
+from planner_areas a
+where i.user_id = a.user_id
+  and i.area = a.name
+  and i.area_id is null;
