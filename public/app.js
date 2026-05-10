@@ -1618,21 +1618,30 @@ function renderPeopleView() {
       <div class="skill-picker" role="group" aria-label="Skills"></div>
       <button class="primary-button" type="submit">Add person</button>
     </form>
-    <div class="planning-list people-list"></div>
+    <div class="people-table">
+      <div class="people-table-head">
+        <span>First Name</span>
+        <span>Last Name</span>
+        <span>Relationship</span>
+        <span>Skills</span>
+        <span></span>
+      </div>
+      <div class="planning-list people-list"></div>
+    </div>
   `;
   fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
   fillSkillPicker(els.taskList.querySelector(".skill-picker"), []);
   const list = els.taskList.querySelector(".people-list");
   if (!state.people.length) {
     const empty = document.createElement("div");
-    empty.className = "empty-state";
+    empty.className = "empty-state people-empty";
     empty.textContent = "No people yet.";
     list.append(empty);
     return;
   }
   for (const person of state.people) {
-    const card = document.createElement("article");
-    card.className = "planning-card person-card";
+    const card = document.createElement("div");
+    card.className = "person-card";
     card.dataset.personId = person.id;
     card.innerHTML = `
       <input name="firstName" type="text" required aria-label="First name">
