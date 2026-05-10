@@ -120,10 +120,15 @@ create table if not exists planner_projects (
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   description text default '',
+  start_date date,
+  end_date date,
   target_date date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table planner_projects add column if not exists start_date date;
+alter table planner_projects add column if not exists end_date date;
 
 create table if not exists planner_ideas (
   id uuid primary key default gen_random_uuid(),
@@ -204,6 +209,8 @@ alter table planner_people enable row level security;
 
 create index if not exists planner_goals_user_id_idx on planner_goals(user_id);
 create index if not exists planner_projects_user_id_idx on planner_projects(user_id);
+create index if not exists planner_projects_start_date_idx on planner_projects(start_date);
+create index if not exists planner_projects_end_date_idx on planner_projects(end_date);
 create index if not exists planner_projects_target_date_idx on planner_projects(target_date);
 create index if not exists planner_ideas_user_id_idx on planner_ideas(user_id);
 create index if not exists planner_ideas_area_id_idx on planner_ideas(area_id);

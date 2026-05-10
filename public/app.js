@@ -345,12 +345,15 @@ function normalizeIdea(idea) {
 }
 
 function normalizeProject(project) {
+  const legacyDate = project.target_date || project.targetDate || "";
   return {
     id: project.id || makeId(),
     user_id: project.user_id || project.userId || state.user?.id || null,
     name: project.name || "",
     description: project.description || "",
-    target_date: project.target_date || project.targetDate || "",
+    start_date: project.start_date || project.startDate || "",
+    end_date: project.end_date || project.endDate || legacyDate,
+    target_date: legacyDate,
     created_at: project.created_at || nowIso(),
     updated_at: project.updated_at || nowIso()
   };
@@ -865,6 +868,8 @@ async function persistProject(project, options = {}) {
         user_id: state.user.id,
         name: normalized.name,
         description: normalized.description,
+        start_date: normalized.start_date || null,
+        end_date: normalized.end_date || null,
         target_date: normalized.target_date || null,
         created_at: normalized.created_at,
         updated_at: normalized.updated_at
@@ -1878,7 +1883,8 @@ function renderProjectsView() {
     <form id="project-form" class="planning-form project-form">
       <input name="name" type="text" placeholder="Project name" required>
       <textarea name="description" placeholder="Description"></textarea>
-      <input name="targetDate" type="date" aria-label="Project date">
+      <input name="startDate" type="date" aria-label="Project start date">
+      <input name="endDate" type="date" aria-label="Project end date">
       <button class="primary-button" type="submit">Add project</button>
     </form>
     <div class="planning-list project-list"></div>
@@ -1896,15 +1902,27 @@ function renderProjectsView() {
     card.className = "planning-card project-card";
     card.dataset.projectId = project.id;
     card.innerHTML = `
-      <input name="name" type="text" required aria-label="Project name">
+      <div class="project-identity">
+        <input name="name" type="text" required aria-label="Project name">
+        <div class="project-task-count"></div>
+      </div>
       <textarea name="description" aria-label="Project description"></textarea>
-      <input name="targetDate" type="date" aria-label="Project date">
-      <div class="project-task-count"></div>
+      <div class="project-date-pair">
+        <label>
+          Start
+          <input name="startDate" type="date" aria-label="Project start date">
+        </label>
+        <label>
+          End
+          <input name="endDate" type="date" aria-label="Project end date">
+        </label>
+      </div>
       <button class="danger-button delete-project-button" type="button">Delete</button>
     `;
     card.querySelector("[name='name']").value = project.name;
     card.querySelector("[name='description']").value = project.description;
-    card.querySelector("[name='targetDate']").value = project.target_date || "";
+    card.querySelector("[name='startDate']").value = project.start_date || "";
+    card.querySelector("[name='endDate']").value = project.end_date || "";
     const count = state.tasks.filter((task) => task.project_id === project.id).length;
     card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
     list.append(card);
@@ -2608,7 +2626,8 @@ els.taskList.addEventListener("submit", async (event) => {
     await persistProject({
       name: form.get("name").trim(),
       description: form.get("description").trim(),
-      target_date: form.get("targetDate") || ""
+      start_date: form.get("startDate") || "",
+      end_date: form.get("endDate") || ""
     });
   } else if (namedSettingsForm) {
     const type = namedSettingsForm.dataset.optionType;
@@ -2715,7 +2734,8 @@ function autosaveProjectCard(card) {
         id: project.id,
         name,
         description: card.querySelector("[name='description']").value.trim(),
-        target_date: card.querySelector("[name='targetDate']").value || "",
+        start_date: card.querySelector("[name='startDate']").value || "",
+        end_date: card.querySelector("[name='endDate']").value || "",
         created_at: project.created_at
       },
       { render: false }

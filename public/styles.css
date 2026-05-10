@@ -993,7 +993,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(160px, 0.9fr) minmax(220px, 1.3fr) 150px auto;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(220px, 1.3fr) 140px 140px auto;
 }
 
 .project-list {
@@ -1002,13 +1002,45 @@ body.resizing .resize-handle::before {
 }
 
 .project-card {
-  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.3fr) 150px auto auto;
+  border-left-width: 1px;
+  border-top: 6px solid #476c9b;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1.2fr) minmax(240px, 0.95fr) auto;
   align-items: center;
+  background: linear-gradient(180deg, rgba(71, 108, 155, 0.12), #fff 48%);
 }
 
 .project-task-count {
   color: var(--muted);
   white-space: nowrap;
+}
+
+.project-identity {
+  display: grid;
+  gap: 4px;
+}
+
+.project-identity input {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  min-height: 0;
+  padding: 0;
+  font-weight: 800;
+}
+
+.project-date-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ui-gap);
+}
+
+.project-date-pair label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .skill-picker {
