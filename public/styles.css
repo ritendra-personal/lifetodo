@@ -1180,15 +1180,16 @@ body.resizing .resize-handle::before {
 
 .assignment-line {
   stroke: #8aa5bf;
-  stroke-width: 1.4;
-  stroke-dasharray: 3 3;
-  opacity: 0.55;
+  stroke-width: 1.15;
+  fill: none;
+  stroke-linecap: round;
+  opacity: 0.5;
 }
 
 .assignment-line.active {
   stroke: var(--teal);
-  stroke-width: 2.4;
-  opacity: 0.95;
+  stroke-width: 1.75;
+  opacity: 0.8;
 }
 
 .assignment-panel {
@@ -1265,9 +1266,8 @@ body.resizing .resize-handle::before {
 
 .assignment-line-draft {
   stroke: var(--teal-dark);
-  stroke-width: 2.8;
-  stroke-dasharray: 4 3;
-  opacity: 0.9;
+  stroke-width: 1.8;
+  opacity: 0.85;
 }
 
 .assignment-task span,

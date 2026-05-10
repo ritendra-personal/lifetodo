@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.7.2";
+const APP_VERSION = "1.7.3";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2227,15 +2227,19 @@ function drawAssignmentLines() {
       const goalHandle = els.taskList.querySelector(`[data-assignment-goal-id="${CSS.escape(goalId)}"] .goal-handle`);
       if (!goalHandle) continue;
       const end = assignmentHandlePoint(goalHandle, svg);
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("x1", String(start.x));
-      line.setAttribute("y1", String(start.y));
-      line.setAttribute("x2", String(end.x));
-      line.setAttribute("y2", String(end.y));
-      line.setAttribute("class", task.id === state.selectedAssignmentTaskId ? "assignment-line active" : "assignment-line");
-      svg.append(line);
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", assignmentCurvePath(start, end));
+      path.setAttribute("class", task.id === state.selectedAssignmentTaskId ? "assignment-line active" : "assignment-line");
+      svg.append(path);
     }
   }
+}
+
+function assignmentCurvePath(start, end) {
+  const distance = Math.max(14, Math.abs(end.x - start.x) * 0.48);
+  const control1 = { x: start.x + distance, y: start.y };
+  const control2 = { x: end.x - distance, y: end.y };
+  return `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`;
 }
 
 function assignmentSvgPoint(svg, clientX, clientY) {
@@ -2255,8 +2259,11 @@ function assignmentHandlePoint(handle, svg) {
 function updateAssignmentDraft(clientX, clientY) {
   if (!assignmentDrag) return;
   const point = assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
-  assignmentDrag.line.setAttribute("x2", String(Math.max(0, Math.min(100, point.x))));
-  assignmentDrag.line.setAttribute("y2", String(Math.max(0, Math.min(100, point.y))));
+  const end = {
+    x: Math.max(0, Math.min(100, point.x)),
+    y: Math.max(0, Math.min(100, point.y))
+  };
+  assignmentDrag.line.setAttribute("d", assignmentCurvePath(assignmentDrag.start, end));
 }
 
 function beginAssignmentDrag(handle, event) {
@@ -2265,14 +2272,11 @@ function beginAssignmentDrag(handle, event) {
   if (!task || !svg) return;
   state.selectedAssignmentTaskId = task.dataset.assignmentTaskId;
   const start = assignmentHandlePoint(handle, svg);
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line.setAttribute("class", "assignment-line assignment-line-draft");
-  line.setAttribute("x1", String(start.x));
-  line.setAttribute("y1", String(start.y));
-  line.setAttribute("x2", String(start.x));
-  line.setAttribute("y2", String(start.y));
-  svg.append(line);
-  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line, svg };
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("class", "assignment-line assignment-line-draft");
+  path.setAttribute("d", assignmentCurvePath(start, start));
+  svg.append(path);
+  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line: path, start, svg };
   updateAssignmentDraft(event.clientX, event.clientY);
 }
 
