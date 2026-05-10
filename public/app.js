@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
+
+const densityOptions = ["compact", "comfort", "roomy"];
+const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -19,6 +22,7 @@ const state = {
   tagFilter: "",
   sort: "manual",
   showDone: localStorage.getItem("show-done") === "true",
+  density: densityOptions.includes(localStorage.getItem("planner-density")) ? localStorage.getItem("planner-density") : "comfort",
   draggingId: null,
   syncError: "",
   syncMessage: "",
@@ -57,6 +61,9 @@ const els = {
   tagFilters: document.querySelector("#tag-filters"),
   keyButton: document.querySelector("#key-button"),
   syncButton: document.querySelector("#sync-button"),
+  densityDown: document.querySelector("#density-down"),
+  densityUp: document.querySelector("#density-up"),
+  densityLabel: document.querySelector("#density-label"),
   resizeHandle: document.querySelector("#resize-handle"),
   detailForm: document.querySelector("#detail-form"),
   emptyDetail: document.querySelector("#empty-detail"),
@@ -102,6 +109,21 @@ function loadAreas() {
 
 function saveAreas() {
   localStorage.setItem("planner-areas", JSON.stringify(state.areas));
+}
+
+function setDensity(density) {
+  state.density = densityOptions.includes(density) ? density : "comfort";
+  localStorage.setItem("planner-density", state.density);
+  document.body.dataset.density = state.density;
+  if (els.densityLabel) els.densityLabel.textContent = densityLabels[state.density];
+  if (els.densityDown) els.densityDown.disabled = state.density === densityOptions[0];
+  if (els.densityUp) els.densityUp.disabled = state.density === densityOptions[densityOptions.length - 1];
+}
+
+function adjustDensity(direction) {
+  const current = densityOptions.indexOf(state.density);
+  const next = Math.min(densityOptions.length - 1, Math.max(0, current + direction));
+  setDensity(densityOptions[next]);
 }
 
 function areaColor(name) {
@@ -1084,6 +1106,7 @@ function render() {
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
   const titles = { today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done", graph: "Graph", timeline: "Timeline" };
 
+  setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
   els.plannerGrid.classList.toggle("graph-mode", state.view === "graph");
   els.plannerGrid.classList.toggle("timeline-mode", state.view === "timeline");
@@ -1484,6 +1507,14 @@ els.syncButton.addEventListener("click", async () => {
     return;
   }
   await loadTasks();
+});
+
+els.densityDown.addEventListener("click", () => {
+  adjustDensity(-1);
+});
+
+els.densityUp.addEventListener("click", () => {
+  adjustDensity(1);
 });
 
 els.keyButton.addEventListener("click", async () => {
