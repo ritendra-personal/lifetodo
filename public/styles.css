@@ -210,7 +210,8 @@ button {
 }
 
 .nav-group-label {
-  margin: 8px 0 -2px;
+  margin: 10px 0 -2px;
+  padding: 0 12px;
   color: #c9d3da;
   font-size: 0.72rem;
   font-weight: 800;
