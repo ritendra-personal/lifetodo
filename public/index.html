@@ -32,6 +32,8 @@
           <div class="nav-group-label">Views</div>
           <button class="view-button nested" data-view="graph" type="button">Graph <span id="count-graph">0</span></button>
           <button class="view-button nested" data-view="timeline" type="button">Timeline <span id="count-timeline">0</span></button>
+          <div class="nav-group-label">Settings</div>
+          <button class="view-button nested" data-view="areas" type="button">Areas <span id="count-areas">0</span></button>
         </nav>
 
         <section class="tag-panel" aria-label="Tag filters">
@@ -80,10 +82,7 @@
             <select id="parent-id" name="parentId" aria-label="Parent task">
               <option value="">No parent</option>
             </select>
-            <div class="area-field">
-              <select id="area" name="area" aria-label="Area"></select>
-              <button id="manage-areas-button" class="ghost-button icon-button" type="button" title="Manage areas">Edit</button>
-            </div>
+            <select id="area" name="area" aria-label="Area"></select>
             <select id="goal-id" name="goalId" aria-label="Life goal">
               <option value="">No goal</option>
             </select>
@@ -185,7 +184,6 @@
                 <button id="subtask-button" class="ghost-button" type="button">Add subtask</button>
                 <button id="complete-button" class="ghost-button" type="button">Done</button>
                 <button id="delete-button" class="danger-button" type="button">Delete</button>
-                <button class="primary-button" type="submit">Save</button>
               </div>
             </form>
           </aside>

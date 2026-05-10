@@ -1,9 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
+const autosaveTimers = new Map();
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -52,7 +53,6 @@ const els = {
   plannerGrid: document.querySelector("#planner-grid"),
   area: document.querySelector("#area"),
   goal: document.querySelector("#goal-id"),
-  manageAreasButton: document.querySelector("#manage-areas-button"),
   areasDialog: document.querySelector("#areas-dialog"),
   areaList: document.querySelector("#area-list"),
   newAreaName: document.querySelector("#new-area-name"),
@@ -98,6 +98,7 @@ const counts = {
   ideas: document.querySelector("#count-ideas"),
   graph: document.querySelector("#count-graph"),
   timeline: document.querySelector("#count-timeline"),
+  areas: document.querySelector("#count-areas"),
   open: document.querySelector("#stat-open"),
   focus: document.querySelector("#stat-focus")
 };
@@ -130,6 +131,53 @@ function adjustDensity(direction) {
   const current = densityOptions.indexOf(state.density);
   const next = Math.min(densityOptions.length - 1, Math.max(0, current + direction));
   setDensity(densityOptions[next]);
+}
+
+function savedAtLabel() {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date());
+}
+
+function renderSyncStatus() {
+  if (state.syncMessage && !state.syncError) {
+    els.syncStatus.textContent = state.syncMessage;
+    els.syncStatus.classList.remove("hidden");
+  } else {
+    els.syncStatus.textContent = "";
+    els.syncStatus.classList.add("hidden");
+  }
+  if (state.syncError) {
+    els.syncError.textContent = `Database error: ${state.syncError}`;
+    els.syncError.classList.remove("hidden");
+  } else {
+    els.syncError.textContent = "";
+    els.syncError.classList.add("hidden");
+  }
+}
+
+function showSyncMessage(message) {
+  state.syncError = "";
+  state.syncMessage = message;
+  renderSyncStatus();
+}
+
+function queueAutosave(key, callback) {
+  clearTimeout(autosaveTimers.get(key));
+  showSyncMessage("Autosave pending...");
+  autosaveTimers.set(
+    key,
+    setTimeout(async () => {
+      autosaveTimers.delete(key);
+      showSyncMessage("Saving...");
+      try {
+        await callback();
+        if (!state.syncError) showSyncMessage(`Saved at ${savedAtLabel()}.`);
+        else renderSyncStatus();
+      } catch (error) {
+        state.syncError = error.message;
+        renderSyncStatus();
+      }
+    }, 650)
+  );
 }
 
 function areaColor(name) {
@@ -552,7 +600,7 @@ async function persistTask(task) {
   }
 }
 
-async function patchTask(id, changes) {
+async function patchTask(id, changes, options = {}) {
   const current = state.tasks.find((task) => task.id === id);
   if (!current) return;
   const updated = normalizeTask({ ...current, ...changes, updated_at: nowIso() });
@@ -561,7 +609,7 @@ async function patchTask(id, changes) {
     state.tasks = state.tasks.map((task) => (task.id === id ? updated : task));
     ensureSortOrders(state.tasks);
     saveLocal();
-    render();
+    if (options.render !== false) render();
     return;
   }
 
@@ -577,16 +625,16 @@ async function patchTask(id, changes) {
     state.syncMessage = `Updated for ${keyLabel()}.`;
     state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask(savedRow) : task));
     ensureSortOrders(state.tasks);
-    render();
+    if (options.render !== false) render();
   } catch (error) {
     state.syncError = error.message;
     state.syncMessage = "";
-    render();
+    if (options.render !== false) render();
     console.error("Supabase update failed", error);
   }
 }
 
-async function persistGoal(goal) {
+async function persistGoal(goal, options = {}) {
   const normalized = normalizeGoal({ ...goal, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!isSupabaseReady()) {
     const exists = state.goals.some((item) => item.id === normalized.id);
@@ -594,7 +642,7 @@ async function persistGoal(goal) {
       ? state.goals.map((item) => (item.id === normalized.id ? normalized : item))
       : [normalized, ...state.goals];
     saveLocal();
-    render();
+    if (options.render !== false) render();
     return;
   }
   try {
@@ -602,14 +650,15 @@ async function persistGoal(goal) {
     if (error) throw error;
     state.goals = [normalizeGoal(data), ...state.goals.filter((item) => item.id !== data.id)];
     state.syncMessage = `Saved goal for ${keyLabel()}.`;
-    render();
+    state.syncError = "";
+    if (options.render !== false) render();
   } catch (error) {
     state.syncError = error.message;
-    render();
+    if (options.render !== false) render();
   }
 }
 
-async function persistIdea(idea) {
+async function persistIdea(idea, options = {}) {
   const normalized = normalizeIdea({ ...idea, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!isSupabaseReady()) {
     const exists = state.ideas.some((item) => item.id === normalized.id);
@@ -617,7 +666,7 @@ async function persistIdea(idea) {
       ? state.ideas.map((item) => (item.id === normalized.id ? normalized : item))
       : [normalized, ...state.ideas];
     saveLocal();
-    render();
+    if (options.render !== false) render();
     return;
   }
   try {
@@ -625,10 +674,11 @@ async function persistIdea(idea) {
     if (error) throw error;
     state.ideas = [normalizeIdea(data), ...state.ideas.filter((item) => item.id !== data.id)];
     state.syncMessage = `Saved idea for ${keyLabel()}.`;
-    render();
+    state.syncError = "";
+    if (options.render !== false) render();
   } catch (error) {
     state.syncError = error.message;
-    render();
+    if (options.render !== false) render();
   }
 }
 
@@ -823,6 +873,7 @@ function renderCounts() {
   counts.ideas.textContent = state.ideas.length;
   counts.graph.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
+  counts.areas.textContent = state.areas.length;
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
   counts.focus.textContent = state.tasks.filter((task) => task.status !== "done" && task.priority === "High").length;
 }
@@ -899,6 +950,10 @@ function renderTasks() {
   }
   if (state.view === "ideas") {
     renderIdeasView();
+    return;
+  }
+  if (state.view === "areas") {
+    renderAreasView();
     return;
   }
   if (state.view === "graph") {
@@ -1038,6 +1093,11 @@ function makeGoalTaskOutline(goalId, status) {
   return section;
 }
 
+function goalAccent(index) {
+  const colors = ["#39ff14", "#5cc8ff", "#f0b35a", "#d85b49", "#7b5ea7", "#0e7c74"];
+  return colors[index % colors.length];
+}
+
 function renderGoalsView() {
   els.taskList.innerHTML = `
     <form id="goal-form" class="planning-form">
@@ -1045,7 +1105,7 @@ function renderGoalsView() {
       <textarea name="description" placeholder="Description"></textarea>
       <button class="primary-button" type="submit">Add goal</button>
     </form>
-    <div class="planning-list"></div>
+    <div class="planning-list goal-grid"></div>
   `;
   const list = els.taskList.querySelector(".planning-list");
   if (!state.goals.length) {
@@ -1055,23 +1115,17 @@ function renderGoalsView() {
     list.append(empty);
     return;
   }
-  for (const goal of state.goals) {
-    const card = document.createElement("form");
-    card.className = "planning-card";
+  state.goals.forEach((goal, index) => {
+    const card = document.createElement("article");
+    card.className = "planning-card goal-card";
     card.dataset.goalId = goal.id;
+    card.style.setProperty("--goal-color", goalAccent(index));
     card.innerHTML = `
-      <label>
-        Name
-        <input name="name" type="text" required>
-      </label>
-      <label>
-        Description
-        <textarea name="description"></textarea>
-      </label>
+      <input class="goal-title-input" name="name" type="text" required aria-label="Life goal name">
+      <textarea class="goal-description-input" name="description" aria-label="Life goal description"></textarea>
       <div class="goal-task-outline"></div>
       <div class="detail-actions">
         <button class="danger-button delete-goal-button" type="button">Delete</button>
-        <button class="primary-button" type="submit">Save goal</button>
       </div>
     `;
     card.querySelector("[name='name']").value = goal.name;
@@ -1080,7 +1134,7 @@ function renderGoalsView() {
     outline.append(makeGoalTaskOutline(goal.id, "active"));
     outline.append(makeGoalTaskOutline(goal.id, "done"));
     list.append(card);
-  }
+  });
 }
 
 function renderIdeasView() {
@@ -1108,24 +1162,15 @@ function renderIdeasView() {
     return;
   }
   for (const idea of state.ideas) {
-    const card = document.createElement("form");
+    const card = document.createElement("article");
     card.className = "planning-card idea-card";
     card.dataset.ideaId = idea.id;
     card.style.borderLeftColor = areaColor(idea.area);
     card.style.background = `linear-gradient(90deg, ${areaTint(idea.area)}, #fff 46%)`;
     card.innerHTML = `
-      <label>
-        Idea
-        <input name="text" type="text" required>
-      </label>
-      <label>
-        Area
-        <select name="area"></select>
-      </label>
-      <div class="detail-actions">
-        <button class="danger-button delete-idea-button" type="button">Delete</button>
-        <button class="primary-button" type="submit">Save idea</button>
-      </div>
+      <input name="text" type="text" required aria-label="Idea text">
+      <select name="area" aria-label="Idea area"></select>
+      <button class="danger-button delete-idea-button" type="button">Delete</button>
     `;
     card.querySelector("[name='text']").value = idea.text;
     const select = card.querySelector("select");
@@ -1137,6 +1182,34 @@ function renderIdeasView() {
     }
     select.value = idea.area;
     list.append(card);
+  }
+}
+
+function renderAreasView() {
+  els.taskList.innerHTML = `
+    <form id="areas-settings-form" class="planning-form area-settings-form">
+      <input name="name" type="text" placeholder="New area" required>
+      <input name="color" type="color" value="#39ff14" aria-label="Area color">
+      <button class="primary-button" type="submit">Add area</button>
+    </form>
+    <div class="planning-list area-settings-list"></div>
+  `;
+  const list = els.taskList.querySelector(".area-settings-list");
+  for (const area of state.areas) {
+    const row = document.createElement("div");
+    row.className = "area-settings-row";
+    row.dataset.area = area.name;
+    row.style.borderLeftColor = area.color;
+    row.innerHTML = `
+      <input class="area-name-input" type="text" aria-label="Area name">
+      <input class="area-color-input" type="color" aria-label="Area color">
+      <span class="area-usage"></span>
+    `;
+    row.querySelector(".area-name-input").value = area.name;
+    row.querySelector(".area-color-input").value = area.color;
+    const usage = state.tasks.filter((task) => task.area === area.name).length + state.ideas.filter((idea) => idea.area === area.name).length;
+    row.querySelector(".area-usage").textContent = `${usage} item${usage === 1 ? "" : "s"}`;
+    list.append(row);
   }
 }
 
@@ -1407,7 +1480,7 @@ function makeTimelineTask(task, x, y) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  if (!task || state.view === "goals" || state.view === "ideas") {
+  if (!task || state.view === "goals" || state.view === "ideas" || state.view === "areas") {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
     return;
@@ -1430,14 +1503,15 @@ function renderDetail() {
 
 function render() {
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
-  const titles = { goals: "Life Goals", today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done", ideas: "Ideas", graph: "Graph", timeline: "Timeline" };
+  const titles = { goals: "Life Goals", today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done", ideas: "Ideas", graph: "Graph", timeline: "Timeline", areas: "Areas" };
+  const isPlanningView = state.view === "goals" || state.view === "ideas" || state.view === "areas";
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
   els.plannerGrid.classList.toggle("graph-mode", state.view === "graph");
   els.plannerGrid.classList.toggle("timeline-mode", state.view === "timeline");
-  els.plannerGrid.classList.toggle("planning-mode", state.view === "goals" || state.view === "ideas");
-  els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline" || state.view === "goals" || state.view === "ideas");
+  els.plannerGrid.classList.toggle("planning-mode", isPlanningView);
+  els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline" || isPlanningView);
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view];
   els.boardTitle.textContent = state.view === "graph" ? "Task graph" : state.view === "timeline" ? "Task timeline" : titles[state.view];
@@ -1641,29 +1715,101 @@ els.taskList.addEventListener("click", (event) => {
 els.taskList.addEventListener("submit", async (event) => {
   const goalForm = event.target.closest("#goal-form");
   const ideaForm = event.target.closest("#idea-form");
-  const goalCard = event.target.closest("[data-goal-id]");
-  const ideaCard = event.target.closest("[data-idea-id]");
-  if (!goalForm && !ideaForm && !goalCard && !ideaCard) return;
+  const areasForm = event.target.closest("#areas-settings-form");
+  if (!goalForm && !ideaForm && !areasForm) return;
   event.preventDefault();
   const form = new FormData(event.target);
   if (goalForm) {
     await persistGoal({ name: form.get("name").trim(), description: form.get("description").trim() });
   } else if (ideaForm) {
     await persistIdea({ text: form.get("text").trim(), area: form.get("area") || "Life" });
-  } else if (goalCard) {
-    await persistGoal({
-      id: goalCard.dataset.goalId,
-      name: form.get("name").trim(),
-      description: form.get("description").trim(),
-      created_at: state.goals.find((goal) => goal.id === goalCard.dataset.goalId)?.created_at
-    });
-  } else if (ideaCard) {
-    await persistIdea({
-      id: ideaCard.dataset.ideaId,
-      text: form.get("text").trim(),
-      area: form.get("area") || "Life",
-      created_at: state.ideas.find((idea) => idea.id === ideaCard.dataset.ideaId)?.created_at
-    });
+  } else if (areasForm) {
+    ensureArea(form.get("name").trim(), form.get("color") || "#39ff14");
+    event.target.reset();
+    event.target.querySelector("[name='color']").value = "#39ff14";
+    render();
+  }
+});
+
+function autosaveGoalCard(card) {
+  const goal = state.goals.find((item) => item.id === card.dataset.goalId);
+  if (!goal) return;
+  const name = card.querySelector("[name='name']").value.trim();
+  if (!name) return;
+  queueAutosave(`goal:${goal.id}`, () =>
+    persistGoal(
+      {
+        id: goal.id,
+        name,
+        description: card.querySelector("[name='description']").value.trim(),
+        created_at: goal.created_at
+      },
+      { render: false }
+    )
+  );
+}
+
+function autosaveIdeaCard(card) {
+  const idea = state.ideas.find((item) => item.id === card.dataset.ideaId);
+  if (!idea) return;
+  const text = card.querySelector("[name='text']").value.trim();
+  if (!text) return;
+  queueAutosave(`idea:${idea.id}`, () =>
+    persistIdea(
+      {
+        id: idea.id,
+        text,
+        area: card.querySelector("[name='area']").value || "Life",
+        created_at: idea.created_at
+      },
+      { render: false }
+    )
+  );
+}
+
+function updateAreaRow(row, shouldRender = false) {
+  const original = row.dataset.area;
+  const area = state.areas.find((item) => item.name === original);
+  if (!area) return;
+  const nextName = row.querySelector(".area-name-input").value.trim();
+  if (nextName && nextName !== area.name) {
+    state.tasks = state.tasks.map((task) => (task.area === area.name ? { ...task, area: nextName } : task));
+    state.ideas = state.ideas.map((idea) => (idea.area === area.name ? { ...idea, area: nextName } : idea));
+    area.name = nextName;
+    row.dataset.area = nextName;
+  }
+  area.color = row.querySelector(".area-color-input").value;
+  saveAreas();
+  saveLocal();
+  if (shouldRender) render();
+}
+
+els.taskList.addEventListener("input", (event) => {
+  const goalCard = event.target.closest("[data-goal-id]");
+  if (goalCard) {
+    autosaveGoalCard(goalCard);
+    return;
+  }
+  const ideaCard = event.target.closest("[data-idea-id]");
+  if (ideaCard) {
+    autosaveIdeaCard(ideaCard);
+    return;
+  }
+  const areaRow = event.target.closest(".area-settings-row");
+  if (areaRow) {
+    updateAreaRow(areaRow, false);
+  }
+});
+
+els.taskList.addEventListener("change", (event) => {
+  const ideaCard = event.target.closest("[data-idea-id]");
+  if (ideaCard) {
+    autosaveIdeaCard(ideaCard);
+    return;
+  }
+  const areaRow = event.target.closest(".area-settings-row");
+  if (areaRow) {
+    updateAreaRow(areaRow, true);
   }
 });
 
@@ -1800,9 +1946,8 @@ els.tagFilters.addEventListener("click", (event) => {
   render();
 });
 
-els.detailForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await patchTask(detail.id.value, {
+function detailPayload() {
+  return {
     title: detail.title.value.trim(),
     notes: detail.notes.value.trim(),
     parent_id: detail.parent.value || null,
@@ -1813,13 +1958,22 @@ els.detailForm.addEventListener("submit", async (event) => {
     priority: detail.priority.value,
     due_date: detail.due.value || null,
     energy: detail.energy.value
-  });
+  };
+}
+
+function queueDetailAutosave() {
+  if (!detail.id.value || !detail.title.value.trim()) return;
+  queueAutosave(`task:${detail.id.value}`, () => patchTask(detail.id.value, detailPayload(), { render: false }));
+}
+
+els.detailForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await patchTask(detail.id.value, detailPayload());
 });
 
-els.manageAreasButton.addEventListener("click", () => {
-  renderAreas();
-  els.areasDialog.showModal();
-});
+els.detailForm.addEventListener("input", queueDetailAutosave);
+
+els.detailForm.addEventListener("change", queueDetailAutosave);
 
 els.addAreaButton.addEventListener("click", () => {
   const name = els.newAreaName.value.trim();
@@ -1832,20 +1986,7 @@ els.addAreaButton.addEventListener("click", () => {
 els.areaList.addEventListener("input", (event) => {
   const row = event.target.closest(".area-row");
   if (!row) return;
-  const original = row.dataset.area;
-  const area = state.areas.find((item) => item.name === original);
-  if (!area) return;
-  const nextName = row.querySelector(".area-name-input").value.trim();
-  if (event.target.classList.contains("area-name-input") && nextName) {
-    state.tasks = state.tasks.map((task) => task.area === area.name ? { ...task, area: nextName } : task);
-    area.name = nextName;
-    row.dataset.area = nextName;
-  }
-  if (event.target.classList.contains("area-color-input")) {
-    area.color = event.target.value;
-  }
-  saveAreas();
-  render();
+  updateAreaRow(row, true);
 });
 
 els.completeButton.addEventListener("click", async () => {
