@@ -115,11 +115,30 @@ create table if not exists planner_goals (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists planner_task_goal_links (
+  task_id uuid not null references planner_tasks(id) on delete cascade,
+  goal_id uuid not null references planner_goals(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (task_id, goal_id)
+);
+
+create table if not exists planner_project_types (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
 create table if not exists planner_projects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   description text default '',
+  project_type_id uuid,
   start_date date,
   end_date date,
   target_date date,
@@ -129,6 +148,7 @@ create table if not exists planner_projects (
 
 alter table planner_projects add column if not exists start_date date;
 alter table planner_projects add column if not exists end_date date;
+alter table planner_projects add column if not exists project_type_id uuid;
 
 create table if not exists planner_ideas (
   id uuid primary key default gen_random_uuid(),
@@ -146,6 +166,11 @@ alter table planner_tasks
   drop constraint if exists planner_tasks_project_id_fkey,
   add constraint planner_tasks_project_id_fkey
   foreign key (project_id) references planner_projects(id) on delete set null;
+
+alter table planner_projects
+  drop constraint if exists planner_projects_project_type_id_fkey,
+  add constraint planner_projects_project_type_id_fkey
+  foreign key (project_type_id) references planner_project_types(id) on delete set null;
 
 create table if not exists planner_areas (
   id uuid primary key default gen_random_uuid(),
@@ -200,6 +225,8 @@ alter table planner_ideas
   foreign key (area_id) references planner_areas(id) on delete set null;
 
 alter table planner_goals enable row level security;
+alter table planner_task_goal_links enable row level security;
+alter table planner_project_types enable row level security;
 alter table planner_projects enable row level security;
 alter table planner_ideas enable row level security;
 alter table planner_areas enable row level security;
@@ -208,7 +235,12 @@ alter table planner_relationship_types enable row level security;
 alter table planner_people enable row level security;
 
 create index if not exists planner_goals_user_id_idx on planner_goals(user_id);
+create index if not exists planner_task_goal_links_user_id_idx on planner_task_goal_links(user_id);
+create index if not exists planner_task_goal_links_goal_id_idx on planner_task_goal_links(goal_id);
+create index if not exists planner_project_types_user_id_idx on planner_project_types(user_id);
+create index if not exists planner_project_types_sort_order_idx on planner_project_types(sort_order);
 create index if not exists planner_projects_user_id_idx on planner_projects(user_id);
+create index if not exists planner_projects_project_type_id_idx on planner_projects(project_type_id);
 create index if not exists planner_projects_start_date_idx on planner_projects(start_date);
 create index if not exists planner_projects_end_date_idx on planner_projects(end_date);
 create index if not exists planner_projects_target_date_idx on planner_projects(target_date);
@@ -225,6 +257,8 @@ create index if not exists planner_people_skill_ids_idx on planner_people using 
 create index if not exists planner_people_relationship_type_id_idx on planner_people(relationship_type_id);
 
 drop policy if exists "planner_goals_all_for_authenticated_user" on planner_goals;
+drop policy if exists "planner_task_goal_links_all_for_authenticated_user" on planner_task_goal_links;
+drop policy if exists "planner_project_types_all_for_authenticated_user" on planner_project_types;
 drop policy if exists "planner_projects_all_for_authenticated_user" on planner_projects;
 drop policy if exists "planner_ideas_all_for_authenticated_user" on planner_ideas;
 drop policy if exists "planner_areas_all_for_authenticated_user" on planner_areas;
@@ -234,6 +268,18 @@ drop policy if exists "planner_people_all_for_authenticated_user" on planner_peo
 
 create policy "planner_goals_all_for_authenticated_user"
 on planner_goals for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_task_goal_links_all_for_authenticated_user"
+on planner_task_goal_links for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_project_types_all_for_authenticated_user"
+on planner_project_types for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);

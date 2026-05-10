@@ -308,6 +308,31 @@ textarea {
   outline: none;
 }
 
+.field-label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.field-label > input,
+.field-label > select,
+.field-label > textarea,
+.field-label > .skill-picker {
+  color: var(--ink);
+  font-size: var(--font-base);
+  font-weight: 400;
+  text-transform: none;
+}
+
+.form-submit {
+  align-self: end;
+}
+
 textarea {
   min-height: var(--textarea-height);
   resize: vertical;
@@ -391,7 +416,7 @@ textarea:focus {
 
 .task-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(145px, 0.8fr) minmax(145px, 0.8fr) minmax(145px, 0.8fr) 105px 135px 82px;
+  grid-template-columns: minmax(150px, 1.1fr) repeat(4, minmax(118px, 0.78fr)) minmax(94px, 0.6fr) minmax(128px, 0.72fr) minmax(100px, 0.65fr) 74px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -993,7 +1018,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(160px, 0.9fr) minmax(220px, 1.3fr) 140px 140px auto;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(130px, 0.75fr) minmax(220px, 1.25fr) 130px 130px auto;
 }
 
 .project-list {
@@ -1004,7 +1029,7 @@ body.resizing .resize-handle::before {
 .project-card {
   border-left-width: 1px;
   border-top: 6px solid #476c9b;
-  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1.2fr) minmax(240px, 0.95fr) auto;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(130px, 0.65fr) minmax(220px, 1.05fr) minmax(240px, 0.95fr) auto;
   align-items: center;
   background: linear-gradient(180deg, rgba(71, 108, 155, 0.12), #fff 48%);
 }
@@ -1093,13 +1118,38 @@ body.resizing .resize-handle::before {
 }
 
 .assignment-view {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 1.1fr);
-  gap: var(--ui-gap);
+  gap: 88px;
   padding: var(--task-list-pad);
 }
 
+.assignment-lines {
+  position: absolute;
+  inset: calc(var(--task-list-pad) + 48px) calc(var(--task-list-pad) + 28%);
+  width: auto;
+  height: calc(100% - 96px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.assignment-line {
+  stroke: #8aa5bf;
+  stroke-width: 1.4;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}
+
+.assignment-line.active {
+  stroke: var(--teal);
+  stroke-width: 2.4;
+  opacity: 0.95;
+}
+
 .assignment-panel {
+  position: relative;
+  z-index: 1;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -1136,6 +1186,10 @@ body.resizing .resize-handle::before {
   border-color: var(--teal);
   background: #eef7f6;
   box-shadow: 0 0 0 3px rgba(14, 124, 116, 0.12);
+}
+
+.assignment-task.linked {
+  border-left: 6px solid #476c9b;
 }
 
 .assignment-task span,
@@ -1512,7 +1566,7 @@ dialog::backdrop {
     grid-template-columns: 1fr 1fr;
   }
 
-  .task-form input:first-child {
+  .task-form .field-label:first-child {
     grid-column: 1 / -1;
   }
 }

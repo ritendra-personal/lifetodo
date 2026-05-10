@@ -42,6 +42,7 @@
           <button class="view-button nested" data-view="areas" type="button">Areas <span id="count-areas">0</span></button>
           <button class="view-button nested" data-view="skills" type="button">Skills <span id="count-skills">0</span></button>
           <button class="view-button nested" data-view="relationships" type="button">Relationships <span id="count-relationships">0</span></button>
+          <button class="view-button nested" data-view="project-types" type="button">Project Types <span id="count-project-types">0</span></button>
         </nav>
 
         <section class="tag-panel" aria-label="Tag filters">
@@ -86,25 +87,41 @@
 
         <section id="entry-panel" class="entry-panel" aria-label="Add task">
           <form id="task-form" class="task-form">
-            <input id="title" name="title" type="text" placeholder="New task" autocomplete="off" required>
-            <select id="parent-id" name="parentId" aria-label="Parent task">
-              <option value="">No parent</option>
-            </select>
-            <select id="area" name="area" aria-label="Area"></select>
-            <select id="goal-id" name="goalId" aria-label="Life goal">
-              <option value="">No goal</option>
-            </select>
-            <select id="project-id" name="projectId" aria-label="Project">
-              <option value="">No project</option>
-            </select>
-            <select id="priority" name="priority" aria-label="Priority">
-              <option>Medium</option>
-              <option>High</option>
-              <option>Low</option>
-            </select>
-            <input id="due-date" name="dueDate" type="date" aria-label="Due date">
-            <input id="tags" name="tags" type="text" placeholder="Tags" aria-label="Tags">
-            <button class="primary-button" type="submit">Add</button>
+            <label class="field-label">Title
+              <input id="title" name="title" type="text" placeholder="New task" autocomplete="off" required>
+            </label>
+            <label class="field-label">Parent task
+              <select id="parent-id" name="parentId" aria-label="Parent task">
+                <option value="">No parent</option>
+              </select>
+            </label>
+            <label class="field-label">Area
+              <select id="area" name="area" aria-label="Area"></select>
+            </label>
+            <label class="field-label">Life goal
+              <select id="goal-id" name="goalId" aria-label="Life goal">
+                <option value="">No goal</option>
+              </select>
+            </label>
+            <label class="field-label">Project
+              <select id="project-id" name="projectId" aria-label="Project">
+                <option value="">No project</option>
+              </select>
+            </label>
+            <label class="field-label">Priority
+              <select id="priority" name="priority" aria-label="Priority">
+                <option>Medium</option>
+                <option>High</option>
+                <option>Low</option>
+              </select>
+            </label>
+            <label class="field-label">Due
+              <input id="due-date" name="dueDate" type="date" aria-label="Due date">
+            </label>
+            <label class="field-label">Tags
+              <input id="tags" name="tags" type="text" placeholder="Tags" aria-label="Tags">
+            </label>
+            <button class="primary-button form-submit" type="submit">Add</button>
           </form>
         </section>
 
