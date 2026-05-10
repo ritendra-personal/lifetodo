@@ -110,7 +110,7 @@ button {
   padding: var(--sidebar-pad-y) var(--sidebar-pad-x);
   display: flex;
   flex-direction: column;
-  gap: var(--major-gap);
+  gap: calc(var(--major-gap) * 0.72);
 }
 
 .brand {
@@ -157,7 +157,7 @@ button {
 
 .views {
   display: grid;
-  gap: var(--task-list-gap);
+  gap: 4px;
 }
 
 .tag-panel {
@@ -193,7 +193,7 @@ button {
 }
 
 .view-button {
-  min-height: var(--control-height);
+  min-height: 31px;
   border: 0;
   border-radius: 8px;
   color: #eef4f5;
@@ -206,11 +206,11 @@ button {
 }
 
 .view-button.nested {
-  padding-left: 24px;
+  padding-left: 20px;
 }
 
 .nav-group-label {
-  margin: 10px 0 -2px;
+  margin: 6px 0 -1px;
   padding: 0 12px;
   color: #c9d3da;
   font-size: 0.72rem;
@@ -892,6 +892,11 @@ body.resizing .resize-handle::before {
   grid-template-columns: minmax(0, 1fr) 92px auto;
 }
 
+.named-settings-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  max-width: 680px;
+}
+
 .area-settings-list {
   max-width: 760px;
 }
@@ -911,6 +916,76 @@ body.resizing .resize-handle::before {
 .area-usage {
   color: var(--muted);
   white-space: nowrap;
+}
+
+.people-form {
+  grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(160px, 0.9fr) minmax(180px, 1fr) auto;
+}
+
+.people-list {
+  display: grid;
+  gap: var(--task-list-gap);
+}
+
+.person-card {
+  grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(160px, 0.9fr) minmax(180px, 1fr) auto;
+  align-items: center;
+}
+
+.assignment-view {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 1.1fr);
+  gap: var(--ui-gap);
+  padding: var(--task-list-pad);
+}
+
+.assignment-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  min-height: 420px;
+  padding: var(--task-pad-y) var(--task-pad-x);
+  display: grid;
+  align-content: start;
+  gap: var(--task-list-gap);
+}
+
+.assignment-panel h4 {
+  margin: 0 0 4px;
+}
+
+.assignment-task-list,
+.assignment-goal-list {
+  display: grid;
+  gap: var(--task-list-gap);
+}
+
+.assignment-task,
+.assignment-goal {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: var(--task-pad-y) var(--task-pad-x);
+  text-align: left;
+  display: grid;
+  gap: 3px;
+}
+
+.assignment-task.active,
+.assignment-goal.active {
+  border-color: var(--teal);
+  background: #eef7f6;
+  box-shadow: 0 0 0 3px rgba(14, 124, 116, 0.12);
+}
+
+.assignment-task span,
+.assignment-goal strong {
+  font-weight: 800;
+}
+
+.assignment-task small,
+.assignment-goal span {
+  color: var(--muted);
 }
 
 .goal-task-outline {
@@ -1312,11 +1387,16 @@ dialog::backdrop {
 
   .idea-card,
   .area-settings-form,
-  .area-settings-row {
+  .area-settings-row,
+  .people-form,
+  .person-card,
+  .assignment-view,
+  .named-settings-form {
     grid-template-columns: 1fr;
   }
 
-  .idea-card .danger-button {
+  .idea-card .danger-button,
+  .person-card .danger-button {
     justify-self: stretch;
   }
 

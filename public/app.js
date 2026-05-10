@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.4.2";
+const APP_VERSION = "1.5.0";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -15,10 +15,17 @@ const defaultAreas = [
   { name: "Creative", color: "#d85b49" }
 ];
 
+const defaultSkills = ["Acting", "AI", "Writing"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+const defaultRelationshipTypes = ["Strong", "OK", "Bad"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+
 const state = {
   tasks: [],
   goals: [],
   ideas: [],
+  people: [],
+  skills: loadNamedOptions("planner-skills", defaultSkills),
+  relationshipTypes: loadNamedOptions("planner-relationship-types", defaultRelationshipTypes),
+  selectedAssignmentTaskId: "",
   selectedId: null,
   view: "today",
   search: "",
@@ -29,6 +36,7 @@ const state = {
   draggingId: null,
   syncError: "",
   syncMessage: "",
+  peopleCloudReady: false,
   config: null,
   supabase: null,
   session: null,
@@ -95,10 +103,14 @@ const counts = {
   backlog: document.querySelector("#count-backlog"),
   done: document.querySelector("#count-done"),
   goals: document.querySelector("#count-goals"),
+  goalAssignments: document.querySelector("#count-goal-assignments"),
+  people: document.querySelector("#count-people"),
   ideas: document.querySelector("#count-ideas"),
   graph: document.querySelector("#count-graph"),
   timeline: document.querySelector("#count-timeline"),
   areas: document.querySelector("#count-areas"),
+  skills: document.querySelector("#count-skills"),
+  relationships: document.querySelector("#count-relationships"),
   open: document.querySelector("#stat-open"),
   focus: document.querySelector("#stat-focus")
 };
@@ -114,8 +126,23 @@ function loadAreas() {
   }
 }
 
+function loadNamedOptions(key, defaults) {
+  const raw = localStorage.getItem(key);
+  try {
+    const parsed = raw ? JSON.parse(raw) : defaults;
+    return (parsed.length ? parsed : defaults).map(normalizeNamedOption);
+  } catch {
+    return defaults.map(normalizeNamedOption);
+  }
+}
+
 function saveAreas() {
   localStorage.setItem("planner-areas", JSON.stringify(state.areas));
+}
+
+function saveNamedOptions() {
+  localStorage.setItem("planner-skills", JSON.stringify(state.skills));
+  localStorage.setItem("planner-relationship-types", JSON.stringify(state.relationshipTypes));
 }
 
 function setDensity(density) {
@@ -322,6 +349,30 @@ function normalizeArea(area, index = 0) {
   };
 }
 
+function normalizeNamedOption(option, index = 0) {
+  if (typeof option === "string") option = { name: option };
+  return {
+    id: option.id || makeId(),
+    name: option.name || "",
+    sort_order: Number(option.sort_order ?? option.sortOrder ?? index * 1000) || 0,
+    created_at: option.created_at || nowIso(),
+    updated_at: option.updated_at || nowIso()
+  };
+}
+
+function normalizePerson(person) {
+  return {
+    id: person.id || makeId(),
+    user_id: person.user_id || person.userId || state.user?.id || null,
+    first_name: person.first_name || person.firstName || "",
+    last_name: person.last_name || person.lastName || "",
+    skill_ids: parseIds(person.skill_ids || person.skillIds),
+    relationship_type_id: person.relationship_type_id || person.relationshipTypeId || "",
+    created_at: person.created_at || nowIso(),
+    updated_at: person.updated_at || nowIso()
+  };
+}
+
 function normalizeTask(task) {
   const order = Number(task.sort_order ?? task.sortOrder);
   const areaName = task.area || "Life";
@@ -472,9 +523,11 @@ function loadLocal() {
   const raw = localStorage.getItem("planner-tasks");
   const rawGoals = localStorage.getItem("planner-goals");
   const rawIdeas = localStorage.getItem("planner-ideas");
+  const rawPeople = localStorage.getItem("planner-people");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
   state.ideas = rawIdeas ? JSON.parse(rawIdeas).map(normalizeIdea) : [];
+  state.people = rawPeople ? JSON.parse(rawPeople).map(normalizePerson) : [];
   state.syncError = "";
   state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
   saveLocal();
@@ -484,6 +537,7 @@ function saveLocal() {
   localStorage.setItem("planner-tasks", JSON.stringify(state.tasks));
   localStorage.setItem("planner-goals", JSON.stringify(state.goals));
   localStorage.setItem("planner-ideas", JSON.stringify(state.ideas));
+  localStorage.setItem("planner-people", JSON.stringify(state.people));
   state.syncMessage = "Saved locally in this browser only.";
 }
 
@@ -516,6 +570,11 @@ function nextSortOrder(parentId = "") {
 function nextAreaSortOrder() {
   if (!state.areas.length) return 1000;
   return Math.max(...state.areas.map((area) => Number(area.sort_order) || 0)) + 1000;
+}
+
+function nextNamedOptionSortOrder(items) {
+  if (!items.length) return 1000;
+  return Math.max(...items.map((item) => Number(item.sort_order) || 0)) + 1000;
 }
 
 function selectableParents(excludeId = "") {
@@ -622,6 +681,7 @@ async function loadTasks() {
         await Promise.all(areas.map((area) => persistArea(area, { render: false })));
       }
     }
+    const peopleData = await loadPeopleData();
     state.syncError = "";
     state.syncMessage = state.syncMessage || `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} for ${keyLabel()}.`;
     if (areas.length) {
@@ -631,6 +691,12 @@ async function loadTasks() {
     state.tasks = ensureSortOrders(rows.map(normalizeTask));
     state.goals = goals.map(normalizeGoal);
     state.ideas = ideas.map(normalizeIdea);
+    if (peopleData) {
+      state.people = peopleData.people;
+      state.skills = peopleData.skills;
+      state.relationshipTypes = peopleData.relationshipTypes;
+      saveNamedOptions();
+    }
     render();
   } catch (error) {
     state.syncError = error.message;
@@ -814,6 +880,134 @@ async function persistArea(area, options = {}) {
   } catch (error) {
     state.syncError = error.message;
     if (options.render !== false) render();
+  }
+}
+
+async function loadPeopleData() {
+  try {
+    const [{ data: skills, error: skillsError }, { data: relationshipTypes, error: relationshipError }, { data: people, error: peopleError }] =
+      await Promise.all([
+        state.supabase.from("planner_skills").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
+        state.supabase.from("planner_relationship_types").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
+        state.supabase.from("planner_people").select("*").eq("user_id", state.user.id).order("first_name", { ascending: true })
+      ]);
+    if (skillsError || relationshipError || peopleError) throw skillsError || relationshipError || peopleError;
+    state.peopleCloudReady = true;
+    const normalizedSkills = skills.map(normalizeNamedOption);
+    const normalizedRelationships = relationshipTypes.map(normalizeNamedOption);
+    if (!normalizedSkills.length) {
+      await Promise.all(state.skills.map((skill) => persistNamedOption("skills", skill, { render: false })));
+    }
+    if (!normalizedRelationships.length) {
+      await Promise.all(state.relationshipTypes.map((relationship) => persistNamedOption("relationships", relationship, { render: false })));
+    }
+    return {
+      skills: normalizedSkills.length ? normalizedSkills : state.skills,
+      relationshipTypes: normalizedRelationships.length ? normalizedRelationships : state.relationshipTypes,
+      people: people.map(normalizePerson)
+    };
+  } catch (error) {
+    console.warn("Supabase people tables unavailable; using local people data", error);
+    state.peopleCloudReady = false;
+    state.syncMessage = "People are local until you run the latest Supabase migration.";
+    return null;
+  }
+}
+
+function optionConfig(type) {
+  return type === "skills"
+    ? { table: "planner_skills", stateKey: "skills", label: "skill" }
+    : { table: "planner_relationship_types", stateKey: "relationshipTypes", label: "relationship" };
+}
+
+async function persistNamedOption(type, option, options = {}) {
+  const config = optionConfig(type);
+  const normalized = normalizeNamedOption({ ...option, updated_at: nowIso() });
+  const list = state[config.stateKey];
+  state[config.stateKey] = list.some((item) => item.id === normalized.id)
+    ? list.map((item) => (item.id === normalized.id ? normalized : item))
+    : [...list, normalized];
+  saveNamedOptions();
+  if (!isSupabaseReady() || !state.peopleCloudReady) {
+    if (options.render !== false) render();
+    return;
+  }
+  try {
+    const { data, error } = await state.supabase
+      .from(config.table)
+      .upsert({ ...normalized, user_id: state.user.id })
+      .select()
+      .single();
+    if (error) throw error;
+    const saved = normalizeNamedOption(data);
+    state[config.stateKey] = state[config.stateKey].map((item) => (item.id === saved.id ? saved : item));
+    state.syncMessage = `Saved ${config.label} for ${keyLabel()}.`;
+    state.syncError = "";
+    if (options.render !== false) render();
+  } catch (error) {
+    state.syncError = error.message;
+    if (options.render !== false) render();
+  }
+}
+
+async function persistPerson(person, options = {}) {
+  const normalized = normalizePerson({ ...person, user_id: state.user?.id || null, updated_at: nowIso() });
+  if (!normalized.first_name) return;
+  const exists = state.people.some((item) => item.id === normalized.id);
+  state.people = exists
+    ? state.people.map((item) => (item.id === normalized.id ? normalized : item))
+    : [normalized, ...state.people];
+  saveLocal();
+  if (!isSupabaseReady() || !state.peopleCloudReady) {
+    if (options.render !== false) render();
+    return;
+  }
+  try {
+    const { data, error } = await state.supabase
+      .from("planner_people")
+      .upsert({
+        id: normalized.id,
+        user_id: state.user.id,
+        first_name: normalized.first_name,
+        last_name: normalized.last_name,
+        skill_ids: normalized.skill_ids,
+        relationship_type_id: normalized.relationship_type_id || null,
+        created_at: normalized.created_at,
+        updated_at: normalized.updated_at
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    const saved = normalizePerson(data);
+    state.people = state.people.map((item) => (item.id === saved.id ? saved : item));
+    state.syncMessage = `Saved person for ${keyLabel()}.`;
+    state.syncError = "";
+    if (options.render !== false) render();
+  } catch (error) {
+    state.syncError = error.message;
+    if (options.render !== false) render();
+  }
+}
+
+async function deletePerson(id) {
+  const person = state.people.find((item) => item.id === id);
+  if (!person) return;
+  if (!window.confirm(`Delete ${person.first_name}${person.last_name ? ` ${person.last_name}` : ""}?`)) return;
+  state.people = state.people.filter((item) => item.id !== id);
+  saveLocal();
+  if (!isSupabaseReady() || !state.peopleCloudReady) {
+    render();
+    return;
+  }
+  try {
+    const { error } = await state.supabase.from("planner_people").delete().eq("id", id);
+    if (error) throw error;
+    state.syncMessage = `Deleted person for ${keyLabel()}.`;
+    state.syncError = "";
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
   }
 }
 
@@ -1005,10 +1199,14 @@ function renderCounts() {
   counts.backlog.textContent = bucketCounts.backlog;
   counts.done.textContent = bucketCounts.done;
   counts.goals.textContent = state.goals.length;
+  counts.goalAssignments.textContent = state.tasks.filter((task) => !task.parent_id && task.status !== "done").length;
+  counts.people.textContent = state.people.length;
   counts.ideas.textContent = state.ideas.length;
   counts.graph.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.areas.textContent = state.areas.length;
+  counts.skills.textContent = state.skills.length;
+  counts.relationships.textContent = state.relationshipTypes.length;
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
   counts.focus.textContent = state.tasks.filter((task) => task.status !== "done" && task.priority === "High").length;
 }
@@ -1085,12 +1283,28 @@ function renderTasks() {
     renderGoalsView();
     return;
   }
+  if (state.view === "goal-assignments") {
+    renderGoalAssignmentsView();
+    return;
+  }
+  if (state.view === "people") {
+    renderPeopleView();
+    return;
+  }
   if (state.view === "ideas") {
     renderIdeasView();
     return;
   }
   if (state.view === "areas") {
     renderAreasView();
+    return;
+  }
+  if (state.view === "skills") {
+    renderNamedSettingsView("skills");
+    return;
+  }
+  if (state.view === "relationships") {
+    renderNamedSettingsView("relationships");
     return;
   }
   if (state.view === "graph") {
@@ -1352,6 +1566,167 @@ function renderAreasView() {
     row.querySelector(".area-usage").textContent = `${usage} item${usage === 1 ? "" : "s"}`;
     list.append(row);
   }
+}
+
+function renderNamedSettingsView(type) {
+  const config = optionConfig(type);
+  const title = type === "skills" ? "Skills" : "Relationships";
+  const items = state[config.stateKey];
+  els.taskList.innerHTML = `
+    <form id="named-settings-form" class="planning-form named-settings-form" data-option-type="${type}">
+      <input name="name" type="text" placeholder="New ${config.label}" required>
+      <button class="primary-button" type="submit">Add ${config.label}</button>
+    </form>
+    <div class="planning-list area-settings-list"></div>
+  `;
+  const list = els.taskList.querySelector(".area-settings-list");
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = `No ${title.toLowerCase()} yet.`;
+    list.append(empty);
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "area-settings-row named-settings-row";
+    row.dataset.optionId = item.id;
+    row.dataset.optionType = type;
+    row.innerHTML = `
+      <input class="named-option-input" type="text" aria-label="${title.slice(0, -1)} name">
+      <span class="area-usage"></span>
+    `;
+    row.querySelector(".named-option-input").value = item.name;
+    const usage = type === "skills"
+      ? state.people.filter((person) => person.skill_ids.includes(item.id)).length
+      : state.people.filter((person) => person.relationship_type_id === item.id).length;
+    row.querySelector(".area-usage").textContent = `${usage} person${usage === 1 ? "" : "s"}`;
+    list.append(row);
+  }
+}
+
+function personFullName(person) {
+  return `${person.first_name}${person.last_name ? ` ${person.last_name}` : ""}`;
+}
+
+function renderPeopleView() {
+  els.taskList.innerHTML = `
+    <form id="person-form" class="planning-form people-form">
+      <input name="firstName" type="text" placeholder="First name" required>
+      <input name="lastName" type="text" placeholder="Last name">
+      <select name="relationshipTypeId" aria-label="Relationship"></select>
+      <select name="skillIds" aria-label="Skills" multiple size="3"></select>
+      <button class="primary-button" type="submit">Add person</button>
+    </form>
+    <div class="planning-list people-list"></div>
+  `;
+  fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
+  fillSkillsSelect(els.taskList.querySelector("select[name='skillIds']"), []);
+  const list = els.taskList.querySelector(".people-list");
+  if (!state.people.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No people yet.";
+    list.append(empty);
+    return;
+  }
+  for (const person of state.people) {
+    const card = document.createElement("article");
+    card.className = "planning-card person-card";
+    card.dataset.personId = person.id;
+    card.innerHTML = `
+      <input name="firstName" type="text" required aria-label="First name">
+      <input name="lastName" type="text" aria-label="Last name">
+      <select name="relationshipTypeId" aria-label="Relationship"></select>
+      <select name="skillIds" aria-label="Skills" multiple size="3"></select>
+      <button class="danger-button delete-person-button" type="button">Delete</button>
+    `;
+    card.querySelector("[name='firstName']").value = person.first_name;
+    card.querySelector("[name='lastName']").value = person.last_name;
+    fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
+    fillSkillsSelect(card.querySelector("[name='skillIds']"), person.skill_ids);
+    list.append(card);
+  }
+}
+
+function renderGoalAssignmentsView() {
+  const topLevelTasks = state.tasks
+    .filter((task) => !task.parent_id && task.status !== "done")
+    .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+  if (!state.selectedAssignmentTaskId || !topLevelTasks.some((task) => task.id === state.selectedAssignmentTaskId)) {
+    state.selectedAssignmentTaskId = topLevelTasks[0]?.id || "";
+  }
+  const selectedTask = topLevelTasks.find((task) => task.id === state.selectedAssignmentTaskId);
+  els.taskList.innerHTML = `
+    <div class="assignment-view">
+      <section class="assignment-panel">
+        <h4>Top-level tasks</h4>
+        <div class="assignment-task-list"></div>
+      </section>
+      <section class="assignment-panel">
+        <h4>Life goals</h4>
+        <div class="assignment-goal-list"></div>
+      </section>
+    </div>
+  `;
+  const taskList = els.taskList.querySelector(".assignment-task-list");
+  const goalList = els.taskList.querySelector(".assignment-goal-list");
+  if (!topLevelTasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No top-level tasks to assign.";
+    taskList.append(empty);
+  }
+  for (const task of topLevelTasks) {
+    const button = document.createElement("button");
+    button.className = `assignment-task ${task.id === state.selectedAssignmentTaskId ? "active" : ""}`;
+    button.type = "button";
+    button.dataset.assignmentTaskId = task.id;
+    button.innerHTML = `<span></span><small></small>`;
+    button.querySelector("span").textContent = task.title;
+    button.querySelector("small").textContent = task.goal_id ? state.goals.find((goal) => goal.id === task.goal_id)?.name || "Linked goal" : "No goal";
+    taskList.append(button);
+  }
+  const unassigned = document.createElement("button");
+  unassigned.className = `assignment-goal ${selectedTask && !selectedTask.goal_id ? "active" : ""}`;
+  unassigned.type = "button";
+  unassigned.dataset.assignmentGoalId = "";
+  unassigned.innerHTML = `<strong>No goal</strong><span>Leave selected task unassigned</span>`;
+  goalList.append(unassigned);
+  for (const goal of state.goals) {
+    const button = document.createElement("button");
+    button.className = `assignment-goal ${selectedTask?.goal_id === goal.id ? "active" : ""}`;
+    button.type = "button";
+    button.dataset.assignmentGoalId = goal.id;
+    const count = state.tasks.filter((task) => !task.parent_id && task.goal_id === goal.id).length;
+    button.innerHTML = `<strong></strong><span></span>`;
+    button.querySelector("strong").textContent = goal.name;
+    button.querySelector("span").textContent = `${count} top-level task${count === 1 ? "" : "s"}`;
+    goalList.append(button);
+  }
+}
+
+function fillSkillsSelect(select, selected = []) {
+  const values = new Set(parseIds(selected));
+  select.innerHTML = "";
+  for (const skill of state.skills) {
+    const option = document.createElement("option");
+    option.value = skill.id;
+    option.textContent = skill.name;
+    option.selected = values.has(skill.id);
+    select.append(option);
+  }
+}
+
+function fillRelationshipSelect(select, selected = "") {
+  select.innerHTML = '<option value="">No relationship</option>';
+  for (const relationship of state.relationshipTypes) {
+    const option = document.createElement("option");
+    option.value = relationship.id;
+    option.textContent = relationship.name;
+    select.append(option);
+  }
+  select.value = selected || "";
 }
 
 function taskMatchesGlobalFilters(task) {
@@ -1621,7 +1996,8 @@ function makeTimelineTask(task, x, y) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  if (!task || state.view === "goals" || state.view === "ideas" || state.view === "areas") {
+  const detailHiddenViews = ["goals", "goal-assignments", "people", "ideas", "areas", "skills", "relationships"];
+  if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
     return;
@@ -1644,8 +2020,22 @@ function renderDetail() {
 
 function render() {
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
-  const titles = { goals: "Life Goals", today: "Today", upcoming: "Upcoming", backlog: "Backlog", done: "Done", ideas: "Ideas", graph: "Graph", timeline: "Timeline", areas: "Areas" };
-  const isPlanningView = state.view === "goals" || state.view === "ideas" || state.view === "areas";
+  const titles = {
+    goals: "Life Goals",
+    "goal-assignments": "Assign Tasks",
+    today: "Today",
+    upcoming: "Upcoming",
+    backlog: "Backlog",
+    done: "Done",
+    people: "People",
+    ideas: "Ideas",
+    graph: "Graph",
+    timeline: "Timeline",
+    areas: "Areas",
+    skills: "Skills",
+    relationships: "Relationships"
+  };
+  const isPlanningView = ["goals", "goal-assignments", "people", "ideas", "areas", "skills", "relationships"].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -1788,6 +2178,25 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const assignmentTask = event.target.closest("[data-assignment-task-id]");
+  if (assignmentTask) {
+    state.selectedAssignmentTaskId = assignmentTask.dataset.assignmentTaskId;
+    renderTasks();
+    return;
+  }
+  const assignmentGoal = event.target.closest("[data-assignment-goal-id]");
+  if (assignmentGoal) {
+    if (state.selectedAssignmentTaskId) {
+      patchTask(state.selectedAssignmentTaskId, { goal_id: assignmentGoal.dataset.assignmentGoalId || null });
+    }
+    return;
+  }
+  const deletePersonButton = event.target.closest(".delete-person-button");
+  if (deletePersonButton) {
+    const card = deletePersonButton.closest("[data-person-id]");
+    if (card) deletePerson(card.dataset.personId);
+    return;
+  }
   const goalTaskLink = event.target.closest(".goal-task-link");
   if (goalTaskLink) {
     state.selectedId = goalTaskLink.dataset.taskId;
@@ -1858,7 +2267,9 @@ els.taskList.addEventListener("submit", async (event) => {
   const goalForm = event.target.closest("#goal-form");
   const ideaForm = event.target.closest("#idea-form");
   const areasForm = event.target.closest("#areas-settings-form");
-  if (!goalForm && !ideaForm && !areasForm) return;
+  const personForm = event.target.closest("#person-form");
+  const namedSettingsForm = event.target.closest("#named-settings-form");
+  if (!goalForm && !ideaForm && !areasForm && !personForm && !namedSettingsForm) return;
   event.preventDefault();
   const form = new FormData(event.target);
   if (goalForm) {
@@ -1875,6 +2286,21 @@ els.taskList.addEventListener("submit", async (event) => {
     event.target.reset();
     event.target.querySelector("[name='color']").value = "#39ff14";
     render();
+  } else if (personForm) {
+    await persistPerson({
+      first_name: form.get("firstName").trim(),
+      last_name: form.get("lastName").trim(),
+      relationship_type_id: form.get("relationshipTypeId") || "",
+      skill_ids: form.getAll("skillIds")
+    });
+  } else if (namedSettingsForm) {
+    const type = namedSettingsForm.dataset.optionType;
+    const config = optionConfig(type);
+    const option = normalizeNamedOption({
+      name: form.get("name").trim(),
+      sort_order: nextNamedOptionSortOrder(state[config.stateKey])
+    });
+    await persistNamedOption(type, option);
   }
 });
 
@@ -1941,6 +2367,38 @@ function updateAreaRow(row, shouldRender = false) {
   if (shouldRender) render();
 }
 
+function autosavePersonCard(card) {
+  const person = state.people.find((item) => item.id === card.dataset.personId);
+  if (!person) return;
+  const firstName = card.querySelector("[name='firstName']").value.trim();
+  if (!firstName) return;
+  queueAutosave(`person:${person.id}`, () =>
+    persistPerson(
+      {
+        id: person.id,
+        first_name: firstName,
+        last_name: card.querySelector("[name='lastName']").value.trim(),
+        relationship_type_id: card.querySelector("[name='relationshipTypeId']").value || "",
+        skill_ids: [...card.querySelector("[name='skillIds']").selectedOptions].map((option) => option.value),
+        created_at: person.created_at
+      },
+      { render: false }
+    )
+  );
+}
+
+function updateNamedOptionRow(row, shouldRender = false) {
+  const config = optionConfig(row.dataset.optionType);
+  const option = state[config.stateKey].find((item) => item.id === row.dataset.optionId);
+  if (!option) return;
+  const name = row.querySelector(".named-option-input").value.trim();
+  if (!name) return;
+  option.name = name;
+  saveNamedOptions();
+  queueAutosave(`${row.dataset.optionType}:${option.id}`, () => persistNamedOption(row.dataset.optionType, option, { render: false }));
+  if (shouldRender) render();
+}
+
 els.taskList.addEventListener("input", (event) => {
   const goalCard = event.target.closest("[data-goal-id]");
   if (goalCard) {
@@ -1950,6 +2408,16 @@ els.taskList.addEventListener("input", (event) => {
   const ideaCard = event.target.closest("[data-idea-id]");
   if (ideaCard) {
     autosaveIdeaCard(ideaCard);
+    return;
+  }
+  const optionRow = event.target.closest("[data-option-id]");
+  if (optionRow) {
+    updateNamedOptionRow(optionRow, false);
+    return;
+  }
+  const personCard = event.target.closest("[data-person-id]");
+  if (personCard) {
+    autosavePersonCard(personCard);
     return;
   }
   const areaRow = event.target.closest(".area-settings-row");
@@ -1962,6 +2430,16 @@ els.taskList.addEventListener("change", (event) => {
   const ideaCard = event.target.closest("[data-idea-id]");
   if (ideaCard) {
     autosaveIdeaCard(ideaCard);
+    return;
+  }
+  const optionRow = event.target.closest("[data-option-id]");
+  if (optionRow) {
+    updateNamedOptionRow(optionRow, true);
+    return;
+  }
+  const personCard = event.target.closest("[data-person-id]");
+  if (personCard) {
+    autosavePersonCard(personCard);
     return;
   }
   const areaRow = event.target.closest(".area-settings-row");
@@ -2214,6 +2692,7 @@ els.keyButton.addEventListener("click", async () => {
 await loadConfig();
 await initSupabase();
 await claimLegacyTasks();
+saveNamedOptions();
 await loadTasks();
 
 let resizing = false;
