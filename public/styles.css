@@ -946,6 +946,19 @@ body.resizing .resize-handle::before {
   align-items: center;
 }
 
+.people-table-head > *,
+.person-card > * {
+  min-height: 100%;
+  border-right: 1px solid var(--line);
+  padding-right: var(--ui-gap);
+}
+
+.people-table-head > *:last-child,
+.person-card > *:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
+
 .people-table-head {
   gap: var(--ui-gap);
   padding: 8px var(--task-pad-x);
@@ -970,6 +983,32 @@ body.resizing .resize-handle::before {
 .people-empty {
   border: 0;
   border-radius: 0;
+}
+
+.people-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(160px, 220px);
+  gap: var(--ui-gap);
+  margin-bottom: calc(var(--major-gap) * 1.15);
+}
+
+.project-form {
+  grid-template-columns: minmax(160px, 0.9fr) minmax(220px, 1.3fr) 150px auto;
+}
+
+.project-list {
+  display: grid;
+  gap: var(--task-list-gap);
+}
+
+.project-card {
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.3fr) 150px auto auto;
+  align-items: center;
+}
+
+.project-task-count {
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .skill-picker {
@@ -1482,6 +1521,9 @@ dialog::backdrop {
   .person-card,
   .skill-picker,
   .assignment-view,
+  .people-filter-bar,
+  .project-form,
+  .project-card,
   .named-settings-form {
     grid-template-columns: 1fr;
   }

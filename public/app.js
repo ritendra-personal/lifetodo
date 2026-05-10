@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -22,6 +22,7 @@ const state = {
   tasks: [],
   goals: [],
   ideas: [],
+  projects: [],
   people: [],
   skills: loadNamedOptions("planner-skills", defaultSkills),
   relationshipTypes: loadNamedOptions("planner-relationship-types", defaultRelationshipTypes),
@@ -37,6 +38,7 @@ const state = {
   syncError: "",
   syncMessage: "",
   peopleCloudReady: false,
+  projectsCloudReady: false,
   config: null,
   supabase: null,
   session: null,
@@ -61,6 +63,7 @@ const els = {
   plannerGrid: document.querySelector("#planner-grid"),
   area: document.querySelector("#area"),
   goal: document.querySelector("#goal-id"),
+  project: document.querySelector("#project-id"),
   areasDialog: document.querySelector("#areas-dialog"),
   areaList: document.querySelector("#area-list"),
   newAreaName: document.querySelector("#new-area-name"),
@@ -89,6 +92,7 @@ const detail = {
   notes: document.querySelector("#detail-notes"),
   parent: document.querySelector("#detail-parent"),
   goal: document.querySelector("#detail-goal"),
+  project: document.querySelector("#detail-project"),
   dependencies: document.querySelector("#detail-dependencies"),
   tags: document.querySelector("#detail-tags"),
   area: document.querySelector("#detail-area"),
@@ -105,6 +109,8 @@ const counts = {
   goals: document.querySelector("#count-goals"),
   goalAssignments: document.querySelector("#count-goal-assignments"),
   people: document.querySelector("#count-people"),
+  peopleFilter: document.querySelector("#count-people-filter"),
+  projects: document.querySelector("#count-projects"),
   ideas: document.querySelector("#count-ideas"),
   graph: document.querySelector("#count-graph"),
   timeline: document.querySelector("#count-timeline"),
@@ -338,6 +344,18 @@ function normalizeIdea(idea) {
   };
 }
 
+function normalizeProject(project) {
+  return {
+    id: project.id || makeId(),
+    user_id: project.user_id || project.userId || state.user?.id || null,
+    name: project.name || "",
+    description: project.description || "",
+    target_date: project.target_date || project.targetDate || "",
+    created_at: project.created_at || nowIso(),
+    updated_at: project.updated_at || nowIso()
+  };
+}
+
 function normalizeArea(area, index = 0) {
   return {
     id: area.id || makeId(),
@@ -381,6 +399,7 @@ function normalizeTask(task) {
     owner_key: task.owner_key || state.plannerKey || "local",
     user_id: task.user_id || task.userId || null,
     goal_id: task.goal_id || task.goalId || "",
+    project_id: task.project_id || task.projectId || "",
     parent_id: task.parent_id || task.parentId || "",
     title: task.title || "",
     notes: task.notes || "",
@@ -405,6 +424,7 @@ function databasePayload(task) {
     owner_key: state.plannerKey || state.user?.id || "local",
     user_id: state.user?.id || null,
     goal_id: task.goal_id || null,
+    project_id: task.project_id || null,
     parent_id: task.parent_id || null,
     title: task.title,
     notes: task.notes,
@@ -421,6 +441,7 @@ function databasePayload(task) {
     completed_at: task.completed_at
   };
   if (task.dependency_ids?.length) payload.dependency_ids = parseIds(task.dependency_ids);
+  if (!state.projectsCloudReady) delete payload.project_id;
   return payload;
 }
 
@@ -431,6 +452,8 @@ function databasePatchPayload(changes) {
   }
   if ("parent_id" in payload) payload.parent_id = payload.parent_id || null;
   if ("goal_id" in payload) payload.goal_id = payload.goal_id || null;
+  if ("project_id" in payload) payload.project_id = payload.project_id || null;
+  if (!state.projectsCloudReady) delete payload.project_id;
   if ("due_date" in payload) payload.due_date = payload.due_date || null;
   if ("area_id" in payload) payload.area_id = payload.area_id || null;
   if ("area" in payload) payload.area = areaNameFor(payload);
@@ -523,10 +546,12 @@ function loadLocal() {
   const raw = localStorage.getItem("planner-tasks");
   const rawGoals = localStorage.getItem("planner-goals");
   const rawIdeas = localStorage.getItem("planner-ideas");
+  const rawProjects = localStorage.getItem("planner-projects");
   const rawPeople = localStorage.getItem("planner-people");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
   state.ideas = rawIdeas ? JSON.parse(rawIdeas).map(normalizeIdea) : [];
+  state.projects = rawProjects ? JSON.parse(rawProjects).map(normalizeProject) : [];
   state.people = rawPeople ? JSON.parse(rawPeople).map(normalizePerson) : [];
   state.syncError = "";
   state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
@@ -537,6 +562,7 @@ function saveLocal() {
   localStorage.setItem("planner-tasks", JSON.stringify(state.tasks));
   localStorage.setItem("planner-goals", JSON.stringify(state.goals));
   localStorage.setItem("planner-ideas", JSON.stringify(state.ideas));
+  localStorage.setItem("planner-projects", JSON.stringify(state.projects));
   localStorage.setItem("planner-people", JSON.stringify(state.people));
   state.syncMessage = "Saved locally in this browser only.";
 }
@@ -665,6 +691,7 @@ async function loadTasks() {
       .eq("user_id", state.user.id)
       .order("created_at", { ascending: false });
     if (ideasError) throw ideasError;
+    const projects = await loadProjectsData();
     let areas = [];
     const { data: areaRows, error: areasError } = await state.supabase
       .from("planner_areas")
@@ -691,6 +718,7 @@ async function loadTasks() {
     state.tasks = ensureSortOrders(rows.map(normalizeTask));
     state.goals = goals.map(normalizeGoal);
     state.ideas = ideas.map(normalizeIdea);
+    if (projects) state.projects = projects;
     if (peopleData) {
       state.people = peopleData.people;
       state.skills = peopleData.skills;
@@ -796,6 +824,90 @@ async function persistGoal(goal, options = {}) {
   } catch (error) {
     state.syncError = error.message;
     if (options.render !== false) render();
+  }
+}
+
+async function loadProjectsData() {
+  try {
+    const { data, error } = await state.supabase
+      .from("planner_projects")
+      .select("*")
+      .eq("user_id", state.user.id)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    state.projectsCloudReady = true;
+    return data.map(normalizeProject);
+  } catch (error) {
+    console.warn("Supabase projects table unavailable; using local projects", error);
+    state.projectsCloudReady = false;
+    state.syncMessage = "Projects are local until you run the latest Supabase migration.";
+    return null;
+  }
+}
+
+async function persistProject(project, options = {}) {
+  const normalized = normalizeProject({ ...project, user_id: state.user?.id || null, updated_at: nowIso() });
+  if (!normalized.name) return;
+  const exists = state.projects.some((item) => item.id === normalized.id);
+  state.projects = exists
+    ? state.projects.map((item) => (item.id === normalized.id ? normalized : item))
+    : [normalized, ...state.projects];
+  saveLocal();
+  if (!isSupabaseReady() || !state.projectsCloudReady) {
+    if (options.render !== false) render();
+    return;
+  }
+  try {
+    const { data, error } = await state.supabase
+      .from("planner_projects")
+      .upsert({
+        id: normalized.id,
+        user_id: state.user.id,
+        name: normalized.name,
+        description: normalized.description,
+        target_date: normalized.target_date || null,
+        created_at: normalized.created_at,
+        updated_at: normalized.updated_at
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    const saved = normalizeProject(data);
+    state.projects = state.projects.map((item) => (item.id === saved.id ? saved : item));
+    state.syncMessage = `Saved project for ${keyLabel()}.`;
+    state.syncError = "";
+    if (options.render !== false) render();
+  } catch (error) {
+    state.syncError = error.message;
+    if (options.render !== false) render();
+  }
+}
+
+async function deleteProject(id) {
+  const project = state.projects.find((item) => item.id === id);
+  if (!project) return;
+  const linkedCount = state.tasks.filter((task) => task.project_id === id).length;
+  const message = linkedCount
+    ? `Delete "${project.name}"? ${linkedCount} linked task${linkedCount === 1 ? "" : "s"} will be unlinked, not deleted.`
+    : `Delete "${project.name}"?`;
+  if (!window.confirm(message)) return;
+  state.projects = state.projects.filter((item) => item.id !== id);
+  state.tasks = state.tasks.map((task) => (task.project_id === id ? { ...task, project_id: "" } : task));
+  saveLocal();
+  if (!isSupabaseReady() || !state.projectsCloudReady) {
+    render();
+    return;
+  }
+  try {
+    await state.supabase.from("planner_tasks").update({ project_id: null, updated_at: nowIso() }).eq("project_id", id);
+    const { error } = await state.supabase.from("planner_projects").delete().eq("id", id);
+    if (error) throw error;
+    state.syncMessage = `Deleted project for ${keyLabel()}.`;
+    state.syncError = "";
+    render();
+  } catch (error) {
+    state.syncError = error.message;
+    render();
   }
 }
 
@@ -1201,6 +1313,8 @@ function renderCounts() {
   counts.goals.textContent = state.goals.length;
   counts.goalAssignments.textContent = state.tasks.filter((task) => !task.parent_id && task.status !== "done").length;
   counts.people.textContent = state.people.length;
+  counts.peopleFilter.textContent = state.people.length;
+  counts.projects.textContent = state.projects.length;
   counts.ideas.textContent = state.ideas.length;
   counts.graph.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
@@ -1217,6 +1331,17 @@ function fillGoalSelect(select, selected = "") {
     const option = document.createElement("option");
     option.value = goal.id;
     option.textContent = goal.name;
+    select.append(option);
+  }
+  select.value = selected || "";
+}
+
+function fillProjectSelect(select, selected = "") {
+  select.innerHTML = '<option value="">No project</option>';
+  for (const project of state.projects) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name;
     select.append(option);
   }
   select.value = selected || "";
@@ -1270,10 +1395,12 @@ function renderAreas() {
 function renderParentControls() {
   fillParentSelect(document.querySelector("#parent-id"), "", "");
   fillGoalSelect(els.goal, "");
+  fillProjectSelect(els.project, "");
   if (state.selectedId) {
     const task = state.tasks.find((item) => item.id === state.selectedId);
     fillParentSelect(detail.parent, task?.parent_id || "", state.selectedId);
     fillGoalSelect(detail.goal, task?.goal_id || "");
+    fillProjectSelect(detail.project, task?.project_id || "");
     fillDependencySelect(detail.dependencies, task?.dependency_ids || [], state.selectedId);
   }
 }
@@ -1289,6 +1416,14 @@ function renderTasks() {
   }
   if (state.view === "people") {
     renderPeopleView();
+    return;
+  }
+  if (state.view === "people-filter") {
+    renderPeopleFilterView();
+    return;
+  }
+  if (state.view === "projects") {
+    renderProjectsView();
     return;
   }
   if (state.view === "ideas") {
@@ -1654,6 +1789,124 @@ function renderPeopleView() {
     card.querySelector("[name='lastName']").value = person.last_name;
     fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
     fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
+    list.append(card);
+  }
+}
+
+function renderPeopleFilterView() {
+  els.taskList.innerHTML = `
+    <div class="people-filter-bar">
+      <select name="skillFilter" aria-label="Filter by skill"></select>
+      <select name="relationshipFilter" aria-label="Filter by relationship"></select>
+    </div>
+    <div class="people-table">
+      <div class="people-table-head">
+        <span>First Name</span>
+        <span>Last Name</span>
+        <span>Relationship</span>
+        <span>Skills</span>
+        <span></span>
+      </div>
+      <div class="planning-list people-list"></div>
+    </div>
+  `;
+  const skillSelect = els.taskList.querySelector("[name='skillFilter']");
+  const relationshipSelect = els.taskList.querySelector("[name='relationshipFilter']");
+  skillSelect.innerHTML = '<option value="">All skills</option>';
+  for (const skill of state.skills) {
+    const option = document.createElement("option");
+    option.value = skill.id;
+    option.textContent = skill.name;
+    skillSelect.append(option);
+  }
+  relationshipSelect.innerHTML = '<option value="">All relationships</option>';
+  for (const relationship of state.relationshipTypes) {
+    const option = document.createElement("option");
+    option.value = relationship.id;
+    option.textContent = relationship.name;
+    relationshipSelect.append(option);
+  }
+  const skillFilter = sessionStorage.getItem("people-skill-filter") || "";
+  const relationshipFilter = sessionStorage.getItem("people-relationship-filter") || "";
+  skillSelect.value = skillFilter;
+  relationshipSelect.value = relationshipFilter;
+  const people = filteredPeople(skillFilter, relationshipFilter);
+  const list = els.taskList.querySelector(".people-list");
+  if (!people.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state people-empty";
+    empty.textContent = "No people match these filters.";
+    list.append(empty);
+    return;
+  }
+  for (const person of people) {
+    list.append(makePeopleReadRow(person));
+  }
+}
+
+function filteredPeople(skillId, relationshipId) {
+  return state.people.filter((person) => {
+    if (skillId && !person.skill_ids.includes(skillId)) return false;
+    if (relationshipId && person.relationship_type_id !== relationshipId) return false;
+    return true;
+  });
+}
+
+function makePeopleReadRow(person) {
+  const row = document.createElement("div");
+  row.className = "person-card person-read-row";
+  row.innerHTML = `
+    <span></span>
+    <span></span>
+    <span></span>
+    <span></span>
+    <button class="ghost-button person-edit-button" type="button">Edit</button>
+  `;
+  row.querySelectorAll("span")[0].textContent = person.first_name;
+  row.querySelectorAll("span")[1].textContent = person.last_name || "";
+  row.querySelectorAll("span")[2].textContent = state.relationshipTypes.find((item) => item.id === person.relationship_type_id)?.name || "";
+  row.querySelectorAll("span")[3].textContent = person.skill_ids
+    .map((id) => state.skills.find((skill) => skill.id === id)?.name)
+    .filter(Boolean)
+    .join(", ");
+  row.querySelector("button").dataset.personEditId = person.id;
+  return row;
+}
+
+function renderProjectsView() {
+  els.taskList.innerHTML = `
+    <form id="project-form" class="planning-form project-form">
+      <input name="name" type="text" placeholder="Project name" required>
+      <textarea name="description" placeholder="Description"></textarea>
+      <input name="targetDate" type="date" aria-label="Project date">
+      <button class="primary-button" type="submit">Add project</button>
+    </form>
+    <div class="planning-list project-list"></div>
+  `;
+  const list = els.taskList.querySelector(".project-list");
+  if (!state.projects.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No projects yet.";
+    list.append(empty);
+    return;
+  }
+  for (const project of state.projects) {
+    const card = document.createElement("article");
+    card.className = "planning-card project-card";
+    card.dataset.projectId = project.id;
+    card.innerHTML = `
+      <input name="name" type="text" required aria-label="Project name">
+      <textarea name="description" aria-label="Project description"></textarea>
+      <input name="targetDate" type="date" aria-label="Project date">
+      <div class="project-task-count"></div>
+      <button class="danger-button delete-project-button" type="button">Delete</button>
+    `;
+    card.querySelector("[name='name']").value = project.name;
+    card.querySelector("[name='description']").value = project.description;
+    card.querySelector("[name='targetDate']").value = project.target_date || "";
+    const count = state.tasks.filter((task) => task.project_id === project.id).length;
+    card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
     list.append(card);
   }
 }
@@ -2027,7 +2280,7 @@ function makeTimelineTask(task, x, y) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["goals", "goal-assignments", "people", "ideas", "areas", "skills", "relationships"];
+  const detailHiddenViews = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -2041,6 +2294,7 @@ function renderDetail() {
   detail.notes.value = task.notes;
   detail.parent.value = task.parent_id || "";
   detail.goal.value = task.goal_id || "";
+  detail.project.value = task.project_id || "";
   detail.tags.value = task.tags.join(", ");
   detail.area.value = task.area_id || areaIdForName(task.area);
   detail.priority.value = task.priority;
@@ -2059,6 +2313,8 @@ function render() {
     backlog: "Backlog",
     done: "Done",
     people: "People",
+    "people-filter": "Filtered People",
+    projects: "Projects",
     ideas: "Ideas",
     graph: "Graph",
     timeline: "Timeline",
@@ -2066,7 +2322,7 @@ function render() {
     skills: "Skills",
     relationships: "Relationships"
   };
-  const isPlanningView = ["goals", "goal-assignments", "people", "ideas", "areas", "skills", "relationships"].includes(state.view);
+  const isPlanningView = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships"].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -2191,6 +2447,7 @@ els.taskForm.addEventListener("submit", async (event) => {
     title: form.get("title").trim(),
     parent_id: form.get("parentId") || "",
     goal_id: form.get("goalId") || "",
+    project_id: form.get("projectId") || "",
     area_id: form.get("area") || null,
     area: areaById(form.get("area"))?.name || "Life",
     priority: form.get("priority"),
@@ -2204,6 +2461,7 @@ els.taskForm.addEventListener("submit", async (event) => {
   document.querySelector("#priority").value = "Medium";
   document.querySelector("#parent-id").value = "";
   document.querySelector("#goal-id").value = "";
+  document.querySelector("#project-id").value = "";
   state.selectedId = task.id;
   await persistTask(task);
 });
@@ -2226,6 +2484,18 @@ els.taskList.addEventListener("click", (event) => {
   if (deletePersonButton) {
     const card = deletePersonButton.closest("[data-person-id]");
     if (card) deletePerson(card.dataset.personId);
+    return;
+  }
+  const personEditButton = event.target.closest("[data-person-edit-id]");
+  if (personEditButton) {
+    state.view = "people";
+    render();
+    return;
+  }
+  const deleteProjectButton = event.target.closest(".delete-project-button");
+  if (deleteProjectButton) {
+    const card = deleteProjectButton.closest("[data-project-id]");
+    if (card) deleteProject(card.dataset.projectId);
     return;
   }
   const removeSkillButton = event.target.closest(".skill-remove-button");
@@ -2308,8 +2578,9 @@ els.taskList.addEventListener("submit", async (event) => {
   const ideaForm = event.target.closest("#idea-form");
   const areasForm = event.target.closest("#areas-settings-form");
   const personForm = event.target.closest("#person-form");
+  const projectForm = event.target.closest("#project-form");
   const namedSettingsForm = event.target.closest("#named-settings-form");
-  if (!goalForm && !ideaForm && !areasForm && !personForm && !namedSettingsForm) return;
+  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm) return;
   event.preventDefault();
   const form = new FormData(event.target);
   if (goalForm) {
@@ -2332,6 +2603,12 @@ els.taskList.addEventListener("submit", async (event) => {
       last_name: form.get("lastName").trim(),
       relationship_type_id: form.get("relationshipTypeId") || "",
       skill_ids: form.getAll("skillIds")
+    });
+  } else if (projectForm) {
+    await persistProject({
+      name: form.get("name").trim(),
+      description: form.get("description").trim(),
+      target_date: form.get("targetDate") || ""
     });
   } else if (namedSettingsForm) {
     const type = namedSettingsForm.dataset.optionType;
@@ -2427,6 +2704,25 @@ function autosavePersonCard(card) {
   );
 }
 
+function autosaveProjectCard(card) {
+  const project = state.projects.find((item) => item.id === card.dataset.projectId);
+  if (!project) return;
+  const name = card.querySelector("[name='name']").value.trim();
+  if (!name) return;
+  queueAutosave(`project:${project.id}`, () =>
+    persistProject(
+      {
+        id: project.id,
+        name,
+        description: card.querySelector("[name='description']").value.trim(),
+        target_date: card.querySelector("[name='targetDate']").value || "",
+        created_at: project.created_at
+      },
+      { render: false }
+    )
+  );
+}
+
 function updateNamedOptionRow(row, shouldRender = false) {
   const config = optionConfig(row.dataset.optionType);
   const option = state[config.stateKey].find((item) => item.id === row.dataset.optionId);
@@ -2460,6 +2756,11 @@ els.taskList.addEventListener("input", (event) => {
     autosavePersonCard(personCard);
     return;
   }
+  const projectCard = event.target.closest("[data-project-id]");
+  if (projectCard) {
+    autosaveProjectCard(projectCard);
+    return;
+  }
   const areaRow = event.target.closest(".area-settings-row");
   if (areaRow) {
     updateAreaRow(areaRow, false);
@@ -2467,6 +2768,15 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter']");
+  if (peopleFilter) {
+    const skillFilter = els.taskList.querySelector("[name='skillFilter']")?.value || "";
+    const relationshipFilter = els.taskList.querySelector("[name='relationshipFilter']")?.value || "";
+    sessionStorage.setItem("people-skill-filter", skillFilter);
+    sessionStorage.setItem("people-relationship-filter", relationshipFilter);
+    renderTasks();
+    return;
+  }
   const skillAdd = event.target.closest(".skill-add-select");
   if (skillAdd) {
     const picker = skillAdd.closest(".skill-picker");
@@ -2490,6 +2800,11 @@ els.taskList.addEventListener("change", (event) => {
   const personCard = event.target.closest("[data-person-id]");
   if (personCard) {
     autosavePersonCard(personCard);
+    return;
+  }
+  const projectCard = event.target.closest("[data-project-id]");
+  if (projectCard) {
+    autosaveProjectCard(projectCard);
     return;
   }
   const areaRow = event.target.closest(".area-settings-row");
@@ -2637,6 +2952,7 @@ function detailPayload() {
     notes: detail.notes.value.trim(),
     parent_id: detail.parent.value || null,
     goal_id: detail.goal.value || null,
+    project_id: detail.project.value || null,
     dependency_ids: [...detail.dependencies.selectedOptions].map((option) => option.value),
     tags: parseTags(detail.tags.value),
     area_id: detail.area.value || null,
@@ -2689,6 +3005,8 @@ els.subtaskButton.addEventListener("click", async () => {
   const task = normalizeTask({
     title: `Subtask of ${parent.title}`,
     parent_id: parent.id,
+    goal_id: parent.goal_id,
+    project_id: parent.project_id,
     area_id: parent.area_id || areaIdForName(parent.area),
     area: areaNameFor(parent),
     priority: parent.priority,
