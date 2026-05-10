@@ -1,12 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.7.2";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
 const autosaveTimers = new Map();
 let assignmentDrag = null;
 let suppressAssignmentClick = false;
+let assignmentDrawFrame = 0;
+let assignmentResizeObserver = null;
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -195,10 +197,25 @@ function renderSyncStatus() {
   }
 }
 
+function refreshSharedPlannerUi() {
+  renderCounts();
+  renderTagFilters();
+  renderAreas();
+  renderParentControls();
+}
+
 function showSyncMessage(message) {
   state.syncError = "";
   state.syncMessage = message;
   renderSyncStatus();
+}
+
+function withAutosaveTimeout(callback, timeoutMs = 10000) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("Autosave timed out. Try Sync, or reload and try again.")), timeoutMs);
+  });
+  return Promise.race([Promise.resolve().then(callback), timeout]).finally(() => clearTimeout(timeoutId));
 }
 
 function queueAutosave(key, callback) {
@@ -210,7 +227,7 @@ function queueAutosave(key, callback) {
       autosaveTimers.delete(key);
       showSyncMessage("Saving...");
       try {
-        await callback();
+        await withAutosaveTimeout(callback);
         if (!state.syncError) showSyncMessage(`Saved at ${savedAtLabel()}.`);
         else renderSyncStatus();
       } catch (error) {
@@ -917,6 +934,7 @@ async function persistGoal(goal, options = {}) {
   } catch (error) {
     state.syncError = error.message;
     if (options.render !== false) render();
+    else throw error;
   }
 }
 
@@ -992,6 +1010,7 @@ async function persistProject(project, options = {}) {
   } catch (error) {
     state.syncError = error.message;
     if (options.render !== false) render();
+    else throw error;
   }
 }
 
@@ -1044,6 +1063,7 @@ async function persistIdea(idea, options = {}) {
   } catch (error) {
     state.syncError = error.message;
     if (options.render !== false) render();
+    else throw error;
   }
 }
 
@@ -1104,6 +1124,7 @@ async function persistArea(area, options = {}) {
   } catch (error) {
     state.syncError = error.message;
     if (options.render !== false) render();
+    else throw error;
   }
 }
 
@@ -1175,6 +1196,7 @@ async function persistNamedOption(type, option, options = {}) {
   } catch (error) {
     state.syncError = error.message;
     if (options.render !== false) render();
+    else throw error;
   }
 }
 
@@ -2165,13 +2187,37 @@ function renderGoalAssignmentsView() {
     empty.textContent = "No life goals yet.";
     goalList.append(empty);
   }
-  if (topLevelTasks.length && state.goals.length) requestAnimationFrame(drawAssignmentLines);
+  watchAssignmentLayout();
+  if (topLevelTasks.length && state.goals.length) scheduleAssignmentLines();
   else lines.innerHTML = "";
+}
+
+function scheduleAssignmentLines() {
+  if (state.view !== "goal-assignments" || assignmentDrag) return;
+  if (assignmentDrawFrame) return;
+  assignmentDrawFrame = requestAnimationFrame(() => {
+    assignmentDrawFrame = 0;
+    drawAssignmentLines();
+  });
+}
+
+function watchAssignmentLayout() {
+  if (assignmentResizeObserver) assignmentResizeObserver.disconnect();
+  assignmentResizeObserver = null;
+  const map = els.taskList.querySelector(".assignment-map");
+  if (!map || typeof ResizeObserver === "undefined") return;
+  assignmentResizeObserver = new ResizeObserver(scheduleAssignmentLines);
+  assignmentResizeObserver.observe(map);
+  map.querySelectorAll(".assignment-panel, .assignment-task, .assignment-goal").forEach((element) => {
+    assignmentResizeObserver.observe(element);
+  });
 }
 
 function drawAssignmentLines() {
   const svg = els.taskList.querySelector(".assignment-lines");
   if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
   svg.innerHTML = "";
   for (const task of state.tasks.filter((item) => !item.parent_id && item.status !== "done")) {
     const taskHandle = els.taskList.querySelector(`[data-assignment-task-id="${CSS.escape(task.id)}"] .task-handle`);
@@ -2194,6 +2240,7 @@ function drawAssignmentLines() {
 
 function assignmentSvgPoint(svg, clientX, clientY) {
   const rect = svg.getBoundingClientRect();
+  if (!rect.width || !rect.height) return { x: 0, y: 0 };
   return {
     x: ((clientX - rect.left) / rect.width) * 100,
     y: ((clientY - rect.top) / rect.height) * 100
@@ -2938,6 +2985,8 @@ document.addEventListener("pointerup", (event) => {
   finishAssignmentDrag(event);
 });
 
+window.addEventListener("resize", scheduleAssignmentLines);
+
 function autosaveGoalCard(card) {
   const goal = state.goals.find((item) => item.id === card.dataset.goalId);
   if (!goal) return;
@@ -2997,6 +3046,7 @@ function updateAreaRow(row, shouldRender = false) {
   queueAutosave(`area:${area.id}`, async () => {
     await persistArea(area, { render: false, oldName: persistedName });
     row.dataset.persistedArea = area.name;
+    refreshSharedPlannerUi();
   });
   if (shouldRender) render();
 }
@@ -3050,7 +3100,10 @@ function updateNamedOptionRow(row, shouldRender = false) {
   if (!name) return;
   option.name = name;
   saveNamedOptions();
-  queueAutosave(`${row.dataset.optionType}:${option.id}`, () => persistNamedOption(row.dataset.optionType, option, { render: false }));
+  queueAutosave(`${row.dataset.optionType}:${option.id}`, async () => {
+    await persistNamedOption(row.dataset.optionType, option, { render: false });
+    refreshSharedPlannerUi();
+  });
   if (shouldRender) render();
 }
 
