@@ -205,6 +205,18 @@ button {
   text-align: left;
 }
 
+.view-button.nested {
+  padding-left: 24px;
+}
+
+.nav-group-label {
+  margin: 8px 0 -2px;
+  color: #c9d3da;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .view-button:hover,
 .view-button.active {
   background: rgba(255, 255, 255, 0.13);
@@ -374,7 +386,7 @@ textarea:focus {
 
 .task-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(150px, 0.8fr) minmax(150px, 0.9fr) 115px 145px minmax(120px, 0.7fr) 90px;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(145px, 0.8fr) minmax(145px, 0.8fr) minmax(145px, 0.8fr) 105px 135px minmax(110px, 0.7fr) 82px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -437,10 +449,20 @@ textarea:focus {
   grid-template-columns: 1fr;
 }
 
+.planner-grid.planning-mode {
+  grid-template-columns: 1fr;
+}
+
 .planner-grid.graph-mode .resize-handle,
 .planner-grid.graph-mode .detail-pane,
 .planner-grid.timeline-mode .resize-handle,
-.planner-grid.timeline-mode .detail-pane {
+.planner-grid.timeline-mode .detail-pane,
+.planner-grid.planning-mode .resize-handle,
+.planner-grid.planning-mode .detail-pane {
+  display: none;
+}
+
+.planner-grid.planning-mode .board-tools {
   display: none;
 }
 
@@ -707,7 +729,8 @@ body.resizing .resize-handle::before {
 }
 
 .planner-grid.graph-mode .task-board,
-.planner-grid.timeline-mode .task-board {
+.planner-grid.timeline-mode .task-board,
+.planner-grid.planning-mode .task-board {
   min-height: calc(100vh - 172px);
 }
 
@@ -760,6 +783,52 @@ body.resizing .resize-handle::before {
 .mini-meta {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.planning-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: var(--ui-gap);
+  padding: var(--task-list-pad);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.planning-form textarea {
+  min-height: var(--control-height);
+}
+
+.idea-form {
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+}
+
+.planning-list {
+  display: grid;
+  gap: var(--task-list-gap);
+}
+
+.planning-card {
+  border: 1px solid var(--line);
+  border-left: 8px solid var(--teal);
+  border-radius: 8px;
+  background: #fff;
+  padding: var(--task-pad-y) var(--task-pad-x);
+  display: grid;
+  gap: var(--task-gap);
+}
+
+.planning-card h4,
+.planning-card p {
+  margin: 0;
+}
+
+.planning-card h4 {
+  font-size: 1rem;
+}
+
+.planning-card p {
+  color: var(--muted);
 }
 
 .timeline-view {
