@@ -1062,7 +1062,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(150px, 0.85fr) minmax(130px, 0.75fr) minmax(220px, 1.25fr) 130px 130px auto;
+  grid-template-columns: minmax(145px, 0.8fr) minmax(120px, 0.7fr) minmax(130px, 0.72fr) minmax(210px, 1.1fr) 128px 128px auto;
 }
 
 .project-list {
@@ -1073,7 +1073,7 @@ body.resizing .resize-handle::before {
 .project-card {
   border-left-width: 1px;
   border-top: 6px solid #476c9b;
-  grid-template-columns: minmax(180px, 0.85fr) minmax(130px, 0.65fr) minmax(220px, 1.05fr) minmax(240px, 0.95fr) auto;
+  grid-template-columns: minmax(170px, 0.85fr) minmax(120px, 0.58fr) minmax(130px, 0.62fr) minmax(210px, 1fr) minmax(220px, 0.88fr) auto;
   align-items: center;
   background: linear-gradient(180deg, rgba(71, 108, 155, 0.12), #fff 48%);
 }
@@ -1110,6 +1110,101 @@ body.resizing .resize-handle::before {
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.project-people {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: var(--task-pad-y);
+}
+
+.project-people-head,
+.project-person-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.7fr) minmax(260px, 1fr) auto;
+  align-items: center;
+  gap: var(--ui-gap);
+}
+
+.project-person-add {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: var(--ui-gap);
+}
+
+.project-person-list {
+  display: grid;
+  gap: 6px;
+}
+
+.project-person-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.project-person-name {
+  font-weight: 800;
+}
+
+.project-person-empty {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.role-picker {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.role-add-select {
+  flex: 0 0 130px;
+  min-height: 28px;
+  border-radius: 6px;
+}
+
+.role-pills {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  overflow-x: auto;
+}
+
+.role-pill {
+  min-height: 23px;
+  border: 1px solid #476c9b;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  color: #294a73;
+  background: #eef4fb;
+  white-space: nowrap;
+}
+
+.role-remove-button {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  color: #294a73;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .skill-picker {
@@ -1706,8 +1801,16 @@ dialog::backdrop {
   .people-filter-bar,
   .project-form,
   .project-card,
+  .project-people-head,
+  .project-person-add,
+  .project-person-row,
+  .role-picker,
   .named-settings-form {
     grid-template-columns: 1fr;
+  }
+
+  .project-person-add {
+    grid-column: auto;
   }
 
   .idea-card .danger-button,

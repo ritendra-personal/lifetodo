@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.7.6";
+const APP_VERSION = "1.8.0";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -22,6 +22,8 @@ const defaultAreas = [
 const defaultSkills = ["Acting", "AI", "Writing"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultRelationshipTypes = ["Strong", "OK", "Bad"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultProjectTypes = ["Play", "Short Film", "Performance"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+const defaultProjectStatuses = ["Not started", "In progress", "Completed", "Deprioritized"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+const defaultRoles = ["Director", "Producer", "Writer", "Actor"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 
 const state = {
   tasks: [],
@@ -29,10 +31,13 @@ const state = {
   ideas: [],
   projects: [],
   people: [],
+  projectAssignments: [],
   goalLinks: [],
   skills: loadNamedOptions("planner-skills", defaultSkills),
   relationshipTypes: loadNamedOptions("planner-relationship-types", defaultRelationshipTypes),
   projectTypes: loadNamedOptions("planner-project-types", defaultProjectTypes),
+  projectStatuses: loadNamedOptions("planner-project-statuses", defaultProjectStatuses),
+  roles: loadNamedOptions("planner-roles", defaultRoles),
   selectedAssignmentTaskId: "",
   selectedId: null,
   view: "today",
@@ -126,6 +131,8 @@ const counts = {
   skills: document.querySelector("#count-skills"),
   relationships: document.querySelector("#count-relationships"),
   projectTypes: document.querySelector("#count-project-types"),
+  projectStatuses: document.querySelector("#count-project-statuses"),
+  roles: document.querySelector("#count-roles"),
   open: document.querySelector("#stat-open"),
   focus: document.querySelector("#stat-focus")
 };
@@ -159,6 +166,8 @@ function saveNamedOptions() {
   localStorage.setItem("planner-skills", JSON.stringify(state.skills));
   localStorage.setItem("planner-relationship-types", JSON.stringify(state.relationshipTypes));
   localStorage.setItem("planner-project-types", JSON.stringify(state.projectTypes));
+  localStorage.setItem("planner-project-statuses", JSON.stringify(state.projectStatuses));
+  localStorage.setItem("planner-roles", JSON.stringify(state.roles));
 }
 
 function setDensity(density) {
@@ -398,11 +407,25 @@ function normalizeProject(project) {
     name: project.name || "",
     description: project.description || "",
     project_type_id: project.project_type_id || project.projectTypeId || "",
+    project_status_id: project.project_status_id || project.projectStatusId || project.status_id || projectStatusIdForName(project.status),
+    status: project.status || "",
     start_date: project.start_date || project.startDate || "",
     end_date: project.end_date || project.endDate || legacyDate,
     target_date: legacyDate,
     created_at: project.created_at || nowIso(),
     updated_at: project.updated_at || nowIso()
+  };
+}
+
+function normalizeProjectAssignment(assignment) {
+  return {
+    id: assignment.id || makeId(),
+    user_id: assignment.user_id || assignment.userId || state.user?.id || null,
+    project_id: assignment.project_id || assignment.projectId || "",
+    person_id: assignment.person_id || assignment.personId || "",
+    role_ids: parseIds(assignment.role_ids || assignment.roleIds),
+    created_at: assignment.created_at || nowIso(),
+    updated_at: assignment.updated_at || nowIso()
   };
 }
 
@@ -601,11 +624,13 @@ function loadLocal() {
   const rawGoals = localStorage.getItem("planner-goals");
   const rawIdeas = localStorage.getItem("planner-ideas");
   const rawProjects = localStorage.getItem("planner-projects");
+  const rawProjectAssignments = localStorage.getItem("planner-project-assignments");
   const rawPeople = localStorage.getItem("planner-people");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
   state.ideas = rawIdeas ? JSON.parse(rawIdeas).map(normalizeIdea) : [];
   state.projects = rawProjects ? JSON.parse(rawProjects).map(normalizeProject) : [];
+  state.projectAssignments = rawProjectAssignments ? JSON.parse(rawProjectAssignments).map(normalizeProjectAssignment) : [];
   state.people = rawPeople ? JSON.parse(rawPeople).map(normalizePerson) : [];
   state.syncError = "";
   state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
@@ -617,6 +642,7 @@ function saveLocal() {
   localStorage.setItem("planner-goals", JSON.stringify(state.goals));
   localStorage.setItem("planner-ideas", JSON.stringify(state.ideas));
   localStorage.setItem("planner-projects", JSON.stringify(state.projects));
+  localStorage.setItem("planner-project-assignments", JSON.stringify(state.projectAssignments));
   localStorage.setItem("planner-people", JSON.stringify(state.people));
   state.syncMessage = "Saved locally in this browser only.";
 }
@@ -942,7 +968,10 @@ async function loadProjectsData() {
   try {
     const [
       { data: projects, error: projectsError },
-      { data: projectTypes, error: projectTypesError }
+      { data: projectTypes, error: projectTypesError },
+      { data: projectStatuses, error: projectStatusesError },
+      { data: roles, error: rolesError },
+      { data: assignments, error: assignmentsError }
     ] = await Promise.all([
       state.supabase
         .from("planner_projects")
@@ -953,15 +982,43 @@ async function loadProjectsData() {
         .from("planner_project_types")
         .select("*")
         .eq("user_id", state.user.id)
-        .order("sort_order", { ascending: true })
+        .order("sort_order", { ascending: true }),
+      state.supabase
+        .from("planner_project_statuses")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("sort_order", { ascending: true }),
+      state.supabase
+        .from("planner_roles")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("sort_order", { ascending: true }),
+      state.supabase
+        .from("planner_project_people")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("created_at", { ascending: true })
     ]);
-    if (projectsError || projectTypesError) throw projectsError || projectTypesError;
+    if (projectsError || projectTypesError || projectStatusesError || rolesError || assignmentsError) {
+      throw projectsError || projectTypesError || projectStatusesError || rolesError || assignmentsError;
+    }
     state.projectsCloudReady = true;
     const normalizedProjectTypes = projectTypes.map(normalizeNamedOption);
+    const normalizedProjectStatuses = projectStatuses.map(normalizeNamedOption);
+    const normalizedRoles = roles.map(normalizeNamedOption);
     if (!normalizedProjectTypes.length) {
       await Promise.all(state.projectTypes.map((type) => persistNamedOption("project-types", type, { render: false })));
     }
+    if (!normalizedProjectStatuses.length) {
+      await Promise.all(state.projectStatuses.map((status) => persistNamedOption("project-statuses", status, { render: false })));
+    }
+    if (!normalizedRoles.length) {
+      await Promise.all(state.roles.map((role) => persistNamedOption("roles", role, { render: false })));
+    }
     state.projectTypes = normalizedProjectTypes.length ? normalizedProjectTypes : state.projectTypes;
+    state.projectStatuses = normalizedProjectStatuses.length ? normalizedProjectStatuses : state.projectStatuses;
+    state.roles = normalizedRoles.length ? normalizedRoles : state.roles;
+    state.projectAssignments = assignments.map(normalizeProjectAssignment);
     saveNamedOptions();
     return projects.map(normalizeProject);
   } catch (error) {
@@ -993,6 +1050,8 @@ async function persistProject(project, options = {}) {
         name: normalized.name,
         description: normalized.description,
         project_type_id: normalized.project_type_id || null,
+        project_status_id: normalized.project_status_id || null,
+        status: projectStatusName(normalized),
         start_date: normalized.start_date || null,
         end_date: normalized.end_date || null,
         target_date: normalized.target_date || null,
@@ -1018,11 +1077,13 @@ async function deleteProject(id) {
   const project = state.projects.find((item) => item.id === id);
   if (!project) return;
   const linkedCount = state.tasks.filter((task) => task.project_id === id).length;
+  const assignedCount = state.projectAssignments.filter((assignment) => assignment.project_id === id).length;
   const message = linkedCount
-    ? `Delete "${project.name}"? ${linkedCount} linked task${linkedCount === 1 ? "" : "s"} will be unlinked, not deleted.`
+    ? `Delete "${project.name}"? ${linkedCount} linked task${linkedCount === 1 ? "" : "s"} and ${assignedCount} person assignment${assignedCount === 1 ? "" : "s"} will be unlinked, not deleted.`
     : `Delete "${project.name}"?`;
   if (!window.confirm(message)) return;
   state.projects = state.projects.filter((item) => item.id !== id);
+  state.projectAssignments = state.projectAssignments.filter((assignment) => assignment.project_id !== id);
   state.tasks = state.tasks.map((task) => (task.project_id === id ? { ...task, project_id: "" } : task));
   saveLocal();
   if (!isSupabaseReady() || !state.projectsCloudReady) {
@@ -1031,6 +1092,7 @@ async function deleteProject(id) {
   }
   try {
     await state.supabase.from("planner_tasks").update({ project_id: null, updated_at: nowIso() }).eq("project_id", id);
+    await state.supabase.from("planner_project_people").delete().eq("project_id", id);
     const { error } = await state.supabase.from("planner_projects").delete().eq("id", id);
     if (error) throw error;
     state.syncMessage = `Deleted project for ${keyLabel()}.`;
@@ -1039,6 +1101,67 @@ async function deleteProject(id) {
   } catch (error) {
     state.syncError = error.message;
     render();
+  }
+}
+
+async function persistProjectAssignment(assignment, options = {}) {
+  const normalized = normalizeProjectAssignment({ ...assignment, user_id: state.user?.id || null, updated_at: nowIso() });
+  if (!normalized.project_id || !normalized.person_id) return;
+  const exists = state.projectAssignments.some((item) => item.id === normalized.id);
+  state.projectAssignments = exists
+    ? state.projectAssignments.map((item) => (item.id === normalized.id ? normalized : item))
+    : [...state.projectAssignments, normalized];
+  saveLocal();
+  if (!isSupabaseReady() || !state.projectsCloudReady) {
+    if (options.render !== false) render();
+    return;
+  }
+  try {
+    const { data, error } = await state.supabase
+      .from("planner_project_people")
+      .upsert({
+        id: normalized.id,
+        user_id: state.user.id,
+        project_id: normalized.project_id,
+        person_id: normalized.person_id,
+        role_ids: normalized.role_ids,
+        created_at: normalized.created_at,
+        updated_at: normalized.updated_at
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    const saved = normalizeProjectAssignment(data);
+    state.projectAssignments = state.projectAssignments.map((item) => (item.id === saved.id ? saved : item));
+    state.syncMessage = `Saved project person for ${keyLabel()}.`;
+    state.syncError = "";
+    if (options.render !== false) render();
+  } catch (error) {
+    state.syncError = error.message;
+    if (options.render !== false) render();
+    else throw error;
+  }
+}
+
+async function deleteProjectAssignment(id, options = {}) {
+  const assignment = state.projectAssignments.find((item) => item.id === id);
+  if (!assignment) return;
+  state.projectAssignments = state.projectAssignments.filter((item) => item.id !== id);
+  saveLocal();
+  if (!isSupabaseReady() || !state.projectsCloudReady) {
+    if (options.render !== false) render();
+    return;
+  }
+  try {
+    const { error } = await state.supabase.from("planner_project_people").delete().eq("id", id);
+    if (error) throw error;
+    state.syncMessage = `Removed project person for ${keyLabel()}.`;
+    state.syncError = "";
+    if (options.render !== false) render();
+  } catch (error) {
+    state.syncError = error.message;
+    if (options.render !== false) render();
+    else throw error;
   }
 }
 
@@ -1166,6 +1289,12 @@ function optionConfig(type) {
   if (type === "project-types") {
     return { table: "planner_project_types", stateKey: "projectTypes", label: "project type", cloudFlag: "projectsCloudReady" };
   }
+  if (type === "project-statuses") {
+    return { table: "planner_project_statuses", stateKey: "projectStatuses", label: "project status", cloudFlag: "projectsCloudReady" };
+  }
+  if (type === "roles") {
+    return { table: "planner_roles", stateKey: "roles", label: "role", cloudFlag: "projectsCloudReady" };
+  }
   return { table: "planner_relationship_types", stateKey: "relationshipTypes", label: "relationship", cloudFlag: "peopleCloudReady" };
 }
 
@@ -1244,12 +1373,14 @@ async function deletePerson(id) {
   if (!person) return;
   if (!window.confirm(`Delete ${person.first_name}${person.last_name ? ` ${person.last_name}` : ""}?`)) return;
   state.people = state.people.filter((item) => item.id !== id);
+  state.projectAssignments = state.projectAssignments.filter((assignment) => assignment.person_id !== id);
   saveLocal();
   if (!isSupabaseReady() || !state.peopleCloudReady) {
     render();
     return;
   }
   try {
+    if (state.projectsCloudReady) await state.supabase.from("planner_project_people").delete().eq("person_id", id);
     const { error } = await state.supabase.from("planner_people").delete().eq("id", id);
     if (error) throw error;
     state.syncMessage = `Deleted person for ${keyLabel()}.`;
@@ -1471,6 +1602,8 @@ function renderCounts() {
   counts.skills.textContent = state.skills.length;
   counts.relationships.textContent = state.relationshipTypes.length;
   counts.projectTypes.textContent = state.projectTypes.length;
+  counts.projectStatuses.textContent = state.projectStatuses.length;
+  counts.roles.textContent = state.roles.length;
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
   counts.focus.textContent = state.tasks.filter((task) => task.status !== "done" && task.priority === "High").length;
 }
@@ -1506,6 +1639,25 @@ function fillProjectTypeSelect(select, selected = "") {
     select.append(option);
   }
   select.value = selected || "";
+}
+
+function fillProjectStatusSelect(select, selected = "") {
+  select.innerHTML = '<option value="">No status</option>';
+  for (const status of state.projectStatuses) {
+    const option = document.createElement("option");
+    option.value = status.id;
+    option.textContent = status.name;
+    select.append(option);
+  }
+  select.value = selected || "";
+}
+
+function projectStatusName(project) {
+  return state.projectStatuses.find((status) => status.id === project.project_status_id)?.name || project.status || "";
+}
+
+function projectStatusIdForName(name) {
+  return state.projectStatuses.find((status) => status.name === name)?.id || "";
 }
 
 function renderTagFilters() {
@@ -1605,6 +1757,14 @@ function renderTasks() {
   }
   if (state.view === "project-types") {
     renderNamedSettingsView("project-types");
+    return;
+  }
+  if (state.view === "project-statuses") {
+    renderNamedSettingsView("project-statuses");
+    return;
+  }
+  if (state.view === "roles") {
+    renderNamedSettingsView("roles");
     return;
   }
   if (state.view === "graph") {
@@ -1882,12 +2042,13 @@ function renderAreasView() {
 
 function renderNamedSettingsView(type) {
   const config = optionConfig(type);
-  const titles = { skills: "Skills", relationships: "Relationships", "project-types": "Project Types" };
+  const titles = { skills: "Skills", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles" };
   const title = titles[type] || "Settings";
   const items = state[config.stateKey];
+  const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
   els.taskList.innerHTML = `
     <form id="named-settings-form" class="planning-form named-settings-form" data-option-type="${type}">
-      <label class="field-label">${title.slice(0, -1)}
+      <label class="field-label">${fieldLabel}
         <input name="name" type="text" placeholder="New ${config.label}" required>
       </label>
       <button class="primary-button form-submit" type="submit">Add ${config.label}</button>
@@ -1908,7 +2069,7 @@ function renderNamedSettingsView(type) {
     row.dataset.optionId = item.id;
     row.dataset.optionType = type;
     row.innerHTML = `
-      <input class="named-option-input" type="text" aria-label="${title.slice(0, -1)} name">
+      <input class="named-option-input" type="text" aria-label="${fieldLabel} name">
       <span class="area-usage"></span>
     `;
     row.querySelector(".named-option-input").value = item.name;
@@ -1916,8 +2077,12 @@ function renderNamedSettingsView(type) {
       ? state.people.filter((person) => person.skill_ids.includes(item.id)).length
       : type === "project-types"
         ? state.projects.filter((project) => project.project_type_id === item.id).length
-        : state.people.filter((person) => person.relationship_type_id === item.id).length;
-    row.querySelector(".area-usage").textContent = `${usage} ${type === "project-types" ? "project" : "person"}${usage === 1 ? "" : "s"}`;
+        : type === "project-statuses"
+          ? state.projects.filter((project) => project.project_status_id === item.id).length
+          : type === "roles"
+            ? state.projectAssignments.filter((assignment) => assignment.role_ids.includes(item.id)).length
+            : state.people.filter((person) => person.relationship_type_id === item.id).length;
+    row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses"].includes(type) ? "project" : type === "roles" ? "assignment" : "person"}${usage === 1 ? "" : "s"}`;
     list.append(row);
   }
 }
@@ -2072,6 +2237,9 @@ function renderProjectsView() {
       <label class="field-label">Type
         <select name="projectTypeId" aria-label="Project type"></select>
       </label>
+      <label class="field-label">Status
+        <select name="projectStatusId" aria-label="Project status"></select>
+      </label>
       <label class="field-label">Description
         <textarea name="description" placeholder="Description"></textarea>
       </label>
@@ -2086,6 +2254,7 @@ function renderProjectsView() {
     <div class="planning-list project-list"></div>
   `;
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
+  fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");
   const list = els.taskList.querySelector(".project-list");
   if (!state.projects.length) {
     const empty = document.createElement("div");
@@ -2104,6 +2273,7 @@ function renderProjectsView() {
         <div class="project-task-count"></div>
       </div>
       <select name="projectTypeId" aria-label="Project type"></select>
+      <select name="projectStatusId" aria-label="Project status"></select>
       <textarea name="description" aria-label="Project description"></textarea>
       <div class="project-date-pair">
         <label>
@@ -2115,16 +2285,100 @@ function renderProjectsView() {
           <input name="endDate" type="date" aria-label="Project end date">
         </label>
       </div>
+      <div class="project-people">
+        <div class="project-people-head">
+          <strong>People</strong>
+          <div class="project-person-add">
+            <select name="projectPersonId" aria-label="Add project person"></select>
+            <button class="ghost-button add-project-person-button" type="button">Add</button>
+          </div>
+        </div>
+        <div class="project-person-list"></div>
+      </div>
       <button class="danger-button delete-project-button" type="button">Delete</button>
     `;
     card.querySelector("[name='name']").value = project.name;
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
+    fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
     card.querySelector("[name='description']").value = project.description;
     card.querySelector("[name='startDate']").value = project.start_date || "";
     card.querySelector("[name='endDate']").value = project.end_date || "";
     const count = state.tasks.filter((task) => task.project_id === project.id).length;
     card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
+    fillProjectPersonSelect(card.querySelector("[name='projectPersonId']"), project.id);
+    renderProjectPersonList(card, project.id);
     list.append(card);
+  }
+}
+
+function fillProjectPersonSelect(select, projectId) {
+  const assigned = new Set(state.projectAssignments.filter((assignment) => assignment.project_id === projectId).map((assignment) => assignment.person_id));
+  select.innerHTML = '<option value="">Add person...</option>';
+  for (const person of state.people.filter((item) => !assigned.has(item.id)).sort((a, b) => personFullName(a).localeCompare(personFullName(b)))) {
+    const option = document.createElement("option");
+    option.value = person.id;
+    option.textContent = personFullName(person);
+    select.append(option);
+  }
+}
+
+function fillRolePicker(container, selected = []) {
+  const values = new Set(parseIds(selected));
+  container.innerHTML = "";
+  const select = document.createElement("select");
+  select.className = "role-add-select";
+  select.name = "roleAdd";
+  select.setAttribute("aria-label", "Add role");
+  select.innerHTML = '<option value="">Add role...</option>';
+  for (const role of state.roles.filter((item) => !values.has(item.id))) {
+    const option = document.createElement("option");
+    option.value = role.id;
+    option.textContent = role.name;
+    select.append(option);
+  }
+  container.append(select);
+  const pills = document.createElement("div");
+  pills.className = "role-pills";
+  container.append(pills);
+  for (const role of state.roles) {
+    if (!values.has(role.id)) continue;
+    const pill = document.createElement("span");
+    pill.className = "role-pill";
+    pill.innerHTML = `
+      <input name="roleIds" type="hidden">
+      <span></span>
+      <button class="role-remove-button" type="button" aria-label="Remove role">x</button>
+    `;
+    pill.querySelector("input").value = role.id;
+    pill.querySelector("span").textContent = role.name;
+    pills.append(pill);
+  }
+}
+
+function renderProjectPersonList(card, projectId) {
+  const list = card.querySelector(".project-person-list");
+  list.innerHTML = "";
+  const assignments = state.projectAssignments.filter((assignment) => assignment.project_id === projectId);
+  if (!assignments.length) {
+    const empty = document.createElement("div");
+    empty.className = "project-person-empty";
+    empty.textContent = "No people assigned.";
+    list.append(empty);
+    return;
+  }
+  for (const assignment of assignments) {
+    const person = state.people.find((item) => item.id === assignment.person_id);
+    const row = document.createElement("div");
+    row.className = "project-person-row";
+    row.dataset.projectAssignmentId = assignment.id;
+    row.innerHTML = `
+      <span class="project-person-name"></span>
+      <div class="role-picker" role="group" aria-label="Project roles"></div>
+      <button class="ghost-button remove-project-person-button" type="button">Remove</button>
+    `;
+    row.querySelector(".project-person-name").textContent = person ? personFullName(person) : "Unknown person";
+    fillRolePicker(row.querySelector(".role-picker"), assignment.role_ids);
+    list.append(row);
   }
 }
 
@@ -2643,7 +2897,7 @@ function makeTimelineTask(task, x, y) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types"];
+  const detailHiddenViews = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -2684,9 +2938,11 @@ function render() {
     areas: "Areas",
     skills: "Skills",
     relationships: "Relationships",
-    "project-types": "Project Types"
+    "project-types": "Project Types",
+    "project-statuses": "Project Statuses",
+    roles: "Roles"
   };
-  const isPlanningView = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types"].includes(state.view);
+  const isPlanningView = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -2868,6 +3124,30 @@ els.taskList.addEventListener("click", (event) => {
     if (card) deleteProject(card.dataset.projectId);
     return;
   }
+  const addProjectPersonButton = event.target.closest(".add-project-person-button");
+  if (addProjectPersonButton) {
+    const card = addProjectPersonButton.closest("[data-project-id]");
+    const personId = card?.querySelector("[name='projectPersonId']")?.value || "";
+    if (card && personId) {
+      persistProjectAssignment({ project_id: card.dataset.projectId, person_id: personId, role_ids: [] });
+    }
+    return;
+  }
+  const removeProjectPersonButton = event.target.closest(".remove-project-person-button");
+  if (removeProjectPersonButton) {
+    const row = removeProjectPersonButton.closest("[data-project-assignment-id]");
+    if (row) deleteProjectAssignment(row.dataset.projectAssignmentId);
+    return;
+  }
+  const removeRoleButton = event.target.closest(".role-remove-button");
+  if (removeRoleButton) {
+    const picker = removeRoleButton.closest(".role-picker");
+    const row = removeRoleButton.closest("[data-project-assignment-id]");
+    removeRoleButton.closest(".role-pill")?.remove();
+    if (row) autosaveProjectAssignmentRow(row);
+    else if (picker) fillRolePicker(picker, [...picker.querySelectorAll("[name='roleIds']")].map((input) => input.value));
+    return;
+  }
   const removeSkillButton = event.target.closest(".skill-remove-button");
   if (removeSkillButton) {
     const picker = removeSkillButton.closest(".skill-picker");
@@ -2979,6 +3259,7 @@ els.taskList.addEventListener("submit", async (event) => {
       name: form.get("name").trim(),
       description: form.get("description").trim(),
       project_type_id: form.get("projectTypeId") || "",
+      project_status_id: form.get("projectStatusId") || "",
       start_date: form.get("startDate") || "",
       end_date: form.get("endDate") || ""
     });
@@ -3113,9 +3394,27 @@ function autosaveProjectCard(card) {
         name,
         description: card.querySelector("[name='description']").value.trim(),
         project_type_id: card.querySelector("[name='projectTypeId']").value || "",
+        project_status_id: card.querySelector("[name='projectStatusId']").value || "",
         start_date: card.querySelector("[name='startDate']").value || "",
         end_date: card.querySelector("[name='endDate']").value || "",
         created_at: project.created_at
+      },
+      { render: false }
+    )
+  );
+}
+
+function autosaveProjectAssignmentRow(row) {
+  const assignment = state.projectAssignments.find((item) => item.id === row.dataset.projectAssignmentId);
+  if (!assignment) return;
+  queueAutosave(`project-assignment:${assignment.id}`, () =>
+    persistProjectAssignment(
+      {
+        id: assignment.id,
+        project_id: assignment.project_id,
+        person_id: assignment.person_id,
+        role_ids: [...row.querySelectorAll("[name='roleIds']")].map((input) => input.value),
+        created_at: assignment.created_at
       },
       { render: false }
     )
@@ -3187,6 +3486,16 @@ els.taskList.addEventListener("change", (event) => {
     if (skillAdd.value && !selected.includes(skillAdd.value)) selected.push(skillAdd.value);
     fillSkillPicker(picker, selected);
     if (card) autosavePersonCard(card);
+    return;
+  }
+  const roleAdd = event.target.closest(".role-add-select");
+  if (roleAdd) {
+    const picker = roleAdd.closest(".role-picker");
+    const row = roleAdd.closest("[data-project-assignment-id]");
+    const selected = [...picker.querySelectorAll("[name='roleIds']")].map((input) => input.value);
+    if (roleAdd.value && !selected.includes(roleAdd.value)) selected.push(roleAdd.value);
+    fillRolePicker(picker, selected);
+    if (row) autosaveProjectAssignmentRow(row);
     return;
   }
   const ideaCard = event.target.closest("[data-idea-id]");
