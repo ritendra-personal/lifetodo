@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.13";
+const APP_VERSION = "1.10.15";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -195,6 +195,78 @@ function saveNamedOptions() {
   localStorage.setItem("planner-project-types", JSON.stringify(state.projectTypes));
   localStorage.setItem("planner-project-statuses", JSON.stringify(state.projectStatuses));
   localStorage.setItem("planner-roles", JSON.stringify(state.roles));
+}
+
+function creationDraftKey(form) {
+  if (!form?.id) return "";
+  const suffix = form.id === "named-settings-form" ? `:${form.dataset.optionType || "settings"}` : "";
+  return `planner-draft:${form.id}${suffix}`;
+}
+
+function serializeCreationDraft(form) {
+  const data = {};
+  for (const element of form.elements) {
+    if (!element.name || element.disabled || element.type === "submit" || element.type === "button") continue;
+    if (element.type === "checkbox") {
+      data[element.name] = element.checked;
+    } else if (element.type === "radio") {
+      if (element.checked) data[element.name] = element.value;
+    } else {
+      const value = element.value;
+      if (data[element.name] === undefined) data[element.name] = value;
+      else if (Array.isArray(data[element.name])) data[element.name].push(value);
+      else data[element.name] = [data[element.name], value];
+    }
+  }
+  return data;
+}
+
+function draftHasValue(draft) {
+  return Object.values(draft).some((value) => Array.isArray(value) ? value.some(Boolean) : Boolean(value));
+}
+
+function saveCreationDraft(form) {
+  const key = creationDraftKey(form);
+  if (!key) return;
+  const draft = serializeCreationDraft(form);
+  if (draftHasValue(draft)) localStorage.setItem(key, JSON.stringify(draft));
+  else localStorage.removeItem(key);
+}
+
+function clearCreationDraft(form) {
+  const key = creationDraftKey(form);
+  if (key) localStorage.removeItem(key);
+}
+
+function restoreCreationDraft(form) {
+  const key = creationDraftKey(form);
+  if (!key) return null;
+  try {
+    const draft = JSON.parse(localStorage.getItem(key) || "null");
+    if (!draft) return null;
+    for (const [name, value] of Object.entries(draft)) {
+      if (name === "skillIds") continue;
+      const elements = [...form.elements].filter((element) => element.name === name);
+      if (!elements.length) continue;
+      if (elements[0].type === "checkbox") {
+        elements[0].checked = Boolean(value);
+      } else if (elements[0].type === "radio") {
+        elements.forEach((element) => {
+          element.checked = element.value === value;
+        });
+      } else {
+        elements[0].value = Array.isArray(value) ? value[0] || "" : value;
+      }
+    }
+    return draft;
+  } catch {
+    localStorage.removeItem(key);
+    return null;
+  }
+}
+
+function closestCreationForm(target) {
+  return target.closest("#goal-form, #idea-form, #areas-settings-form, #person-form, #project-form, #named-settings-form");
 }
 
 function setDensity(density) {
@@ -1583,8 +1655,16 @@ async function persistPerson(person, options = {}) {
     : [normalized, ...state.people];
   saveLocal();
   if (!isSupabaseReady() || !state.peopleCloudReady) {
+    if (options.requireCloud) {
+      state.syncError = "Person was saved locally only; database is not connected or the people tables are not ready.";
+      state.syncMessage = "";
+      if (options.render !== false) render();
+      throw new Error(state.syncError);
+    }
+    state.syncMessage = "Saved person locally in this browser only.";
+    state.syncError = "";
     if (options.render !== false) render();
-    return;
+    return { savedToCloud: false };
   }
   try {
     const { data, error } = await state.supabase
@@ -1604,12 +1684,16 @@ async function persistPerson(person, options = {}) {
     if (error) throw error;
     const saved = normalizePerson(data);
     state.people = state.people.map((item) => (item.id === saved.id ? saved : item));
-    state.syncMessage = `Saved person for ${keyLabel()}.`;
+    state.syncMessage = `Saved person to database at ${savedAtLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
+    return { savedToCloud: true };
   } catch (error) {
-    state.syncError = error.message;
+    state.syncError = `Person was not saved to database: ${error.message}`;
+    state.syncMessage = "";
     if (options.render !== false) render();
+    if (options.requireCloud) throw new Error(state.syncError);
+    return { savedToCloud: false };
   }
 }
 
@@ -2738,6 +2822,7 @@ function renderGoalsView() {
       <div class="planning-list goal-grid"></div>
     </section>
   `;
+  restoreCreationDraft(els.taskList.querySelector("#goal-form"));
   const list = els.taskList.querySelector(".planning-list");
   if (!state.goals.length) {
     const empty = document.createElement("div");
@@ -2800,6 +2885,7 @@ function renderIdeasView() {
     option.textContent = area.name;
     areaSelect.append(option);
   }
+  restoreCreationDraft(els.taskList.querySelector("#idea-form"));
   const list = els.taskList.querySelector(".planning-list");
   if (!state.ideas.length) {
     const empty = document.createElement("div");
@@ -2845,6 +2931,7 @@ function renderAreasView() {
     </form>
     <div class="planning-list area-settings-list"></div>
   `;
+  restoreCreationDraft(els.taskList.querySelector("#areas-settings-form"));
   const list = els.taskList.querySelector(".area-settings-list");
   for (const area of state.areas) {
     const row = document.createElement("div");
@@ -2883,6 +2970,7 @@ function renderNamedSettingsView(type) {
     </form>
     <div class="planning-list area-settings-list"></div>
   `;
+  restoreCreationDraft(els.taskList.querySelector("#named-settings-form"));
   const list = els.taskList.querySelector(".area-settings-list");
   if (!items.length) {
     const empty = document.createElement("div");
@@ -2959,7 +3047,8 @@ function renderPeopleView() {
     </section>
   `;
   fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
-  fillSkillPicker(els.taskList.querySelector(".skill-picker"), []);
+  const personDraft = restoreCreationDraft(els.taskList.querySelector("#person-form"));
+  fillSkillPicker(els.taskList.querySelector("#person-form .skill-picker"), personDraft?.skillIds || []);
   const list = els.taskList.querySelector(".people-list");
   if (!state.people.length) {
     const empty = document.createElement("div");
@@ -3161,6 +3250,8 @@ function renderProjectsView() {
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
   fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");
   applyProjectStatusTone(els.taskList.querySelector("select[name='projectStatusId']"), projectStatusNameForId(state.projectStatuses[0]?.id || ""));
+  restoreCreationDraft(els.taskList.querySelector("#project-form"));
+  applyProjectStatusTone(els.taskList.querySelector("select[name='projectStatusId']"), projectStatusNameForId(els.taskList.querySelector("select[name='projectStatusId']")?.value || ""));
   normalizeDateRangeInputs(els.taskList.querySelector("#project-form"));
   const list = els.taskList.querySelector(".project-list");
   if (!state.projects.length) {
@@ -4455,9 +4546,13 @@ els.taskList.addEventListener("click", (event) => {
   if (removeSkillButton) {
     const picker = removeSkillButton.closest(".skill-picker");
     const card = removeSkillButton.closest("[data-person-id]");
+    const form = removeSkillButton.closest("#person-form");
     removeSkillButton.closest(".skill-pill")?.remove();
     if (card) autosavePersonCard(card);
-    else if (picker) fillSkillPicker(picker, [...picker.querySelectorAll("[name='skillIds']")].map((input) => input.value));
+    else if (picker) {
+      fillSkillPicker(picker, [...picker.querySelectorAll("[name='skillIds']")].map((input) => input.value));
+      if (form) saveCreationDraft(form);
+    }
     return;
   }
   const goalTaskLink = event.target.closest(".goal-task-link");
@@ -4609,25 +4704,36 @@ els.taskList.addEventListener("submit", async (event) => {
     await patchTask(taskFocusForm.dataset.taskFocusId, focusedTaskPayload(taskFocusForm));
   } else if (goalForm) {
     await persistGoal({ name: form.get("name").trim(), description: form.get("description").trim() });
+    clearCreationDraft(event.target);
   } else if (ideaForm) {
     await persistIdea({
       text: form.get("text").trim(),
       area_id: form.get("area") || null,
       area: areaById(form.get("area"))?.name || "Life"
     });
+    clearCreationDraft(event.target);
   } else if (areasForm) {
     const area = ensureArea(form.get("name").trim(), form.get("color") || "#39ff14");
     if (area) await persistArea(area, { render: false });
+    clearCreationDraft(event.target);
     event.target.reset();
     event.target.querySelector("[name='color']").value = "#39ff14";
     render();
   } else if (personForm) {
-    await persistPerson({
-      first_name: form.get("firstName").trim(),
-      last_name: form.get("lastName").trim(),
-      relationship_type_id: form.get("relationshipTypeId") || "",
-      skill_ids: form.getAll("skillIds")
-    });
+    try {
+      await persistPerson(
+        {
+          first_name: form.get("firstName").trim(),
+          last_name: form.get("lastName").trim(),
+          relationship_type_id: form.get("relationshipTypeId") || "",
+          skill_ids: form.getAll("skillIds")
+        },
+        { requireCloud: true }
+      );
+      clearCreationDraft(event.target);
+    } catch {
+      saveCreationDraft(event.target);
+    }
   } else if (projectForm) {
     normalizeDateRangeInputs(projectForm);
     await persistProject({
@@ -4638,6 +4744,7 @@ els.taskList.addEventListener("submit", async (event) => {
       start_date: form.get("startDate") || "",
       end_date: form.get("endDate") || ""
     });
+    clearCreationDraft(event.target);
   } else if (namedSettingsForm) {
     const type = namedSettingsForm.dataset.optionType;
     const config = optionConfig(type);
@@ -4646,6 +4753,7 @@ els.taskList.addEventListener("submit", async (event) => {
       sort_order: nextNamedOptionSortOrder(state[config.stateKey])
     });
     await persistNamedOption(type, option);
+    clearCreationDraft(event.target);
   }
 });
 
@@ -4821,6 +4929,15 @@ els.taskList.addEventListener("input", (event) => {
     queueFocusedTaskAutosave(taskFocusForm);
     return;
   }
+  const creationForm = closestCreationForm(event.target);
+  if (creationForm && !event.target.closest(".skill-add-select") && !event.target.closest(".role-add-select")) {
+    if (creationForm.id === "project-form") {
+      normalizeDateRangeInputs(creationForm, { anchorEnd: event.target.name === "startDate" });
+      if (event.target.name === "projectStatusId") applyProjectStatusTone(event.target, projectStatusNameForId(event.target.value));
+    }
+    saveCreationDraft(creationForm);
+    return;
+  }
   const goalCard = event.target.closest("[data-goal-id]");
   if (goalCard) {
     autosaveGoalCard(goalCard);
@@ -4864,6 +4981,12 @@ els.taskList.addEventListener("change", (event) => {
   if (event.target.name === "projectStatusId") {
     applyProjectStatusTone(event.target, projectStatusNameForId(event.target.value));
   }
+  const creationForm = closestCreationForm(event.target);
+  if (creationForm && !event.target.closest(".skill-add-select") && !event.target.closest(".role-add-select")) {
+    if (creationForm.id === "project-form") normalizeDateRangeInputs(creationForm, { anchorEnd: event.target.name === "startDate" });
+    saveCreationDraft(creationForm);
+    return;
+  }
   const selectedOnlyToggle = event.target.closest(".assignment-selected-only");
   if (selectedOnlyToggle) {
     state.assignmentSelectedOnly = selectedOnlyToggle.checked;
@@ -4888,10 +5011,12 @@ els.taskList.addEventListener("change", (event) => {
   if (skillAdd) {
     const picker = skillAdd.closest(".skill-picker");
     const card = skillAdd.closest("[data-person-id]");
+    const form = skillAdd.closest("#person-form");
     const selected = [...picker.querySelectorAll("[name='skillIds']")].map((input) => input.value);
     if (skillAdd.value && !selected.includes(skillAdd.value)) selected.push(skillAdd.value);
     fillSkillPicker(picker, selected);
     if (card) autosavePersonCard(card);
+    else if (form) saveCreationDraft(form);
     return;
   }
   const roleAdd = event.target.closest(".role-add-select");
