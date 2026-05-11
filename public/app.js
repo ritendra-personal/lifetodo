@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.9";
+const APP_VERSION = "1.10.0";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2812,6 +2812,7 @@ function renderPeopleFilterView() {
       <select name="skillFilter" aria-label="Filter by skill"></select>
       <select name="relationshipFilter" aria-label="Filter by relationship"></select>
       <select name="projectFilter" aria-label="Filter by project"></select>
+      <select name="roleFilter" aria-label="Filter by role"></select>
       <button class="ghost-button clear-people-filters" type="button">Clear filters</button>
     </div>
     <div class="people-table people-filter-table">
@@ -2829,6 +2830,7 @@ function renderPeopleFilterView() {
   const skillSelect = els.taskList.querySelector("[name='skillFilter']");
   const relationshipSelect = els.taskList.querySelector("[name='relationshipFilter']");
   const projectSelect = els.taskList.querySelector("[name='projectFilter']");
+  const roleSelect = els.taskList.querySelector("[name='roleFilter']");
   skillSelect.innerHTML = '<option value="">All skills</option>';
   for (const skill of state.skills) {
     const option = document.createElement("option");
@@ -2850,13 +2852,22 @@ function renderPeopleFilterView() {
     option.textContent = project.name || "Untitled project";
     projectSelect.append(option);
   }
+  roleSelect.innerHTML = '<option value="">All roles</option>';
+  for (const role of state.roles.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+    const option = document.createElement("option");
+    option.value = role.id;
+    option.textContent = role.name;
+    roleSelect.append(option);
+  }
   const skillFilter = sessionStorage.getItem("people-skill-filter") || "";
   const relationshipFilter = sessionStorage.getItem("people-relationship-filter") || "";
   const projectFilter = sessionStorage.getItem("people-project-filter") || "";
+  const roleFilter = sessionStorage.getItem("people-role-filter") || "";
   skillSelect.value = skillFilter;
   relationshipSelect.value = relationshipFilter;
   projectSelect.value = projectFilter;
-  const people = filteredPeople(skillFilter, relationshipFilter, projectFilter);
+  roleSelect.value = roleFilter;
+  const people = filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter);
   const list = els.taskList.querySelector(".people-list");
   if (!people.length) {
     const empty = document.createElement("div");
@@ -2870,11 +2881,12 @@ function renderPeopleFilterView() {
   }
 }
 
-function filteredPeople(skillId, relationshipId, projectId = "") {
+function filteredPeople(skillId, relationshipId, projectId = "", roleId = "") {
   return state.people.filter((person) => {
     if (skillId && !person.skill_ids.includes(skillId)) return false;
     if (relationshipId && person.relationship_type_id !== relationshipId) return false;
     if (projectId && !state.projectAssignments.some((assignment) => assignment.person_id === person.id && assignment.project_id === projectId)) return false;
+    if (roleId && !state.projectAssignments.some((assignment) => assignment.person_id === person.id && assignment.role_ids.includes(roleId))) return false;
     return true;
   });
 }
@@ -4030,6 +4042,7 @@ els.taskList.addEventListener("click", (event) => {
     sessionStorage.removeItem("people-skill-filter");
     sessionStorage.removeItem("people-relationship-filter");
     sessionStorage.removeItem("people-project-filter");
+    sessionStorage.removeItem("people-role-filter");
     renderTasks();
     return;
   }
@@ -4484,14 +4497,16 @@ els.taskList.addEventListener("change", (event) => {
   if (event.target.name === "projectStatusId") {
     applyProjectStatusTone(event.target, projectStatusNameForId(event.target.value));
   }
-  const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter']");
+  const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter'], [name='roleFilter']");
   if (peopleFilter) {
     const skillFilter = els.taskList.querySelector("[name='skillFilter']")?.value || "";
     const relationshipFilter = els.taskList.querySelector("[name='relationshipFilter']")?.value || "";
     const projectFilter = els.taskList.querySelector("[name='projectFilter']")?.value || "";
+    const roleFilter = els.taskList.querySelector("[name='roleFilter']")?.value || "";
     sessionStorage.setItem("people-skill-filter", skillFilter);
     sessionStorage.setItem("people-relationship-filter", relationshipFilter);
     sessionStorage.setItem("people-project-filter", projectFilter);
+    sessionStorage.setItem("people-role-filter", roleFilter);
     renderTasks();
     return;
   }
