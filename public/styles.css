@@ -10,6 +10,10 @@
   --gold: #b1791f;
   --blue: #476c9b;
   --shadow: 0 18px 50px rgba(31, 36, 48, 0.12);
+  --hover-surface: #f2fbfa;
+  --hover-line: #8ccfca;
+  --hover-shadow: 0 10px 24px rgba(31, 36, 48, 0.1);
+  --focus-ring: 0 0 0 3px rgba(14, 124, 116, 0.18);
 }
 
 * {
@@ -96,6 +100,48 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+button,
+.task-item,
+.planning-card,
+.person-card,
+.project-card,
+.project-person-row,
+.assignment-task,
+.assignment-goal,
+.goal-task-link,
+.timeline-task,
+.home-stat-card,
+.home-map-item,
+.home-focus-item,
+.tag-filter,
+.view-button {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+button:focus-visible,
+.task-item:focus-visible,
+.planning-card:focus-within,
+.person-card:focus-within,
+.project-card:focus-within,
+.project-person-row:focus-within,
+.assignment-task:focus-visible,
+.assignment-goal:focus-visible,
+.goal-task-link:focus-visible,
+.timeline-task:focus-visible,
+.home-stat-card:focus-visible,
+.home-map-item:focus-visible,
+.home-focus-item:focus-visible {
+  outline: 0;
+  border-color: var(--teal);
+  box-shadow: var(--focus-ring);
 }
 
 .shell {
@@ -192,6 +238,11 @@ button {
   background: rgba(255, 255, 255, 0.14);
 }
 
+.tag-filter:hover {
+  border-color: rgba(255, 255, 255, 0.42);
+  transform: translateY(-1px);
+}
+
 .view-button {
   min-height: 27px;
   border: 0;
@@ -225,6 +276,11 @@ button {
 .view-button:hover,
 .view-button.active {
   background: rgba(255, 255, 255, 0.13);
+}
+
+.view-button:hover {
+  color: #fff;
+  transform: translateX(2px);
 }
 
 .view-button span {
@@ -306,6 +362,17 @@ textarea {
   min-height: var(--control-height);
   padding: 0 var(--control-pad-x);
   outline: none;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--hover-line);
+  background: #fbfefd;
 }
 
 .field-label {
@@ -451,6 +518,8 @@ textarea:focus {
 
 .primary-button:hover {
   background: var(--teal-dark);
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-1px);
 }
 
 .ghost-button {
@@ -459,9 +528,30 @@ textarea:focus {
   border-color: var(--line);
 }
 
+.ghost-button:hover {
+  border-color: var(--hover-line);
+  background: var(--hover-surface);
+  color: var(--teal-dark);
+  box-shadow: 0 8px 18px rgba(31, 36, 48, 0.08);
+  transform: translateY(-1px);
+}
+
 .danger-button {
   color: #fff;
   background: var(--coral);
+}
+
+.danger-button:hover {
+  background: #bd4d3d;
+  box-shadow: 0 8px 18px rgba(216, 91, 73, 0.22);
+  transform: translateY(-1px);
+}
+
+button:disabled,
+button:disabled:hover {
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .planner-grid {
@@ -595,6 +685,18 @@ body.resizing .resize-handle::before {
   box-shadow: 0 0 0 3px rgba(14, 124, 116, 0.12);
 }
 
+.task-item:hover {
+  border-color: var(--hover-line);
+  background: var(--hover-surface);
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-1px);
+}
+
+.task-item.active:hover {
+  border-color: var(--teal);
+  background: #eef7f6;
+}
+
 .task-item.dragging {
   opacity: 0.55;
 }
@@ -645,6 +747,11 @@ body.resizing .resize-handle::before {
   margin-top: 1px;
   padding: 0;
   cursor: pointer;
+}
+
+.check:hover {
+  background: var(--hover-surface);
+  box-shadow: 0 0 0 4px rgba(14, 124, 116, 0.12);
 }
 
 .task-item.done .check {
@@ -854,6 +961,18 @@ body.resizing .resize-handle::before {
   gap: var(--task-gap);
 }
 
+.planning-card:hover,
+.person-card:hover,
+.project-card:hover,
+.project-person-row:hover {
+  border-color: var(--hover-line);
+  box-shadow: var(--hover-shadow);
+}
+
+.planning-card:hover {
+  background: linear-gradient(90deg, var(--hover-surface), #fff 48%);
+}
+
 .planning-card h4,
 .planning-card p {
   margin: 0;
@@ -879,6 +998,10 @@ body.resizing .resize-handle::before {
   border-top: 8px solid var(--goal-color, var(--teal));
   background: linear-gradient(180deg, color-mix(in srgb, var(--goal-color, var(--teal)) 18%, white), #fff 44%);
   min-height: 260px;
+}
+
+.goal-card:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--goal-color, var(--teal)) 24%, white), #fff 48%);
 }
 
 .goal-title-input,
@@ -1099,9 +1222,23 @@ body.resizing .resize-handle::before {
   box-shadow: 0 12px 28px rgba(31, 36, 48, 0.07);
 }
 
+.home-stat-card:hover,
+.home-map-item:hover,
+.home-focus-item:hover {
+  border-color: var(--hover-line);
+  background: var(--hover-surface);
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-2px);
+}
+
 .home-stat-card.primary {
   border-color: rgba(14, 124, 116, 0.4);
   background: linear-gradient(135deg, rgba(14, 124, 116, 0.14), #fff 62%);
+}
+
+.home-stat-card.primary:hover {
+  border-color: var(--teal);
+  background: linear-gradient(135deg, rgba(14, 124, 116, 0.2), #fff 64%);
 }
 
 .home-stat-card span,
@@ -1275,6 +1412,10 @@ body.resizing .resize-handle::before {
   background: linear-gradient(180deg, rgba(71, 108, 155, 0.12), #fff 48%);
 }
 
+.project-card:hover {
+  background: linear-gradient(180deg, rgba(71, 108, 155, 0.18), #fff 50%);
+}
+
 .project-description-input {
   min-width: 280px;
 }
@@ -1347,6 +1488,10 @@ body.resizing .resize-handle::before {
   padding: 6px;
 }
 
+.project-person-row:hover {
+  background: var(--hover-surface);
+}
+
 .project-person-name {
   font-weight: 800;
 }
@@ -1408,6 +1553,12 @@ body.resizing .resize-handle::before {
   font-weight: 800;
 }
 
+.role-remove-button:hover,
+.skill-remove-button:hover {
+  color: #fff;
+  background: var(--teal);
+}
+
 .skill-picker {
   min-height: var(--control-height);
   border: 1px solid var(--line);
@@ -1418,6 +1569,12 @@ body.resizing .resize-handle::before {
   grid-template-columns: minmax(130px, 0.75fr) minmax(0, 1fr);
   align-items: start;
   gap: 5px;
+}
+
+.skill-picker:hover,
+.skill-picker:focus-within {
+  border-color: var(--hover-line);
+  background: #fbfefd;
 }
 
 .skill-add-select {
@@ -1541,6 +1698,14 @@ body.resizing .resize-handle::before {
   cursor: grabbing;
 }
 
+.assignment-task:hover,
+.assignment-goal:hover {
+  border-color: var(--hover-line);
+  background: var(--hover-surface);
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-1px);
+}
+
 .assignment-task.active,
 .assignment-goal.active {
   border-color: var(--teal);
@@ -1562,6 +1727,11 @@ body.resizing .resize-handle::before {
   background: #fff;
   transform: translateY(-50%);
   box-shadow: 0 0 0 4px rgba(14, 124, 116, 0.1);
+}
+
+.connector-handle:hover {
+  background: var(--teal);
+  box-shadow: 0 0 0 7px rgba(14, 124, 116, 0.15);
 }
 
 .task-handle {
@@ -1634,6 +1804,9 @@ body.resizing .resize-handle::before {
 
 .goal-task-link:hover {
   border-color: var(--teal);
+  background: var(--hover-surface);
+  box-shadow: 0 8px 18px rgba(31, 36, 48, 0.08);
+  transform: translateY(-1px);
 }
 
 .goal-task-link.done {
@@ -1803,6 +1976,13 @@ body.resizing .resize-handle::before {
 .timeline-task.active {
   border-color: var(--teal);
   box-shadow: 0 0 0 3px rgba(14, 124, 116, 0.15), 0 12px 28px rgba(31, 36, 48, 0.12);
+}
+
+.timeline-task:hover {
+  border-color: var(--hover-line);
+  background: var(--hover-surface);
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-1px);
 }
 
 .timeline-task.done {
