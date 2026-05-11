@@ -1133,6 +1133,42 @@ body.resizing .resize-handle::before {
   font-size: 0.82rem;
 }
 
+.section-head-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ui-gap);
+  flex-wrap: wrap;
+}
+
+.view-mode-toggle {
+  display: inline-flex;
+  min-height: 30px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.view-mode-toggle button {
+  min-height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.76rem;
+}
+
+.view-mode-toggle button:hover,
+.view-mode-toggle button.active {
+  background: var(--teal);
+  color: #fff;
+  box-shadow: none;
+  transform: none;
+}
+
 .idea-form {
   grid-template-columns: minmax(0, 1fr) 180px auto;
 }
@@ -1720,6 +1756,14 @@ body.resizing .resize-handle::before {
 
 .project-card:hover {
   background: linear-gradient(180deg, var(--project-status-tint, rgba(138, 148, 166, 0.15)), #fff 56%);
+}
+
+.minimal-project-list .project-people {
+  display: none;
+}
+
+.minimal-project-card {
+  grid-template-columns: minmax(170px, 0.78fr) minmax(118px, 0.42fr) minmax(128px, 0.48fr) minmax(320px, 1.4fr) minmax(210px, 0.72fr) auto;
 }
 
 [name="projectStatusId"] {

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.7";
+const APP_VERSION = "1.10.8";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -63,6 +63,7 @@ const state = {
   tagFilter: "",
   sort: "manual",
   peopleSort: loadPeopleSort(),
+  projectViewMode: localStorage.getItem("project-view-mode") === "minimal" ? "minimal" : "full",
   showDone: localStorage.getItem("show-done") === "true",
   density: densityOptions.includes(localStorage.getItem("planner-density")) ? localStorage.getItem("planner-density") : "comfort",
   draggingId: null,
@@ -3106,6 +3107,7 @@ function personProjectPills(person) {
 }
 
 function renderProjectsView() {
+  const isMinimal = state.projectViewMode === "minimal";
   els.taskList.innerHTML = `
     <section class="creation-panel">
       <div class="planning-section-head">
@@ -3136,9 +3138,15 @@ function renderProjectsView() {
     <section class="directory-panel">
       <div class="planning-section-head">
         <h4>Projects</h4>
-        <span>${state.projects.length} ${state.projects.length === 1 ? "project" : "projects"}</span>
+        <div class="section-head-tools">
+          <span>${state.projects.length} ${state.projects.length === 1 ? "project" : "projects"}</span>
+          <div class="view-mode-toggle" aria-label="Project view mode">
+            <button class="${isMinimal ? "" : "active"}" type="button" data-project-view-mode="full">Full</button>
+            <button class="${isMinimal ? "active" : ""}" type="button" data-project-view-mode="minimal">Minimal</button>
+          </div>
+        </div>
       </div>
-      <div class="planning-list project-list"></div>
+      <div class="planning-list project-list${isMinimal ? " minimal-project-list" : ""}"></div>
     </section>
   `;
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
@@ -3155,7 +3163,7 @@ function renderProjectsView() {
   }
   for (const project of state.projects) {
     const card = document.createElement("article");
-    card.className = "planning-card project-card";
+    card.className = `planning-card project-card${isMinimal ? " minimal-project-card" : ""}`;
     card.dataset.projectId = project.id;
     applyProjectStatusTone(card, projectStatusName(project));
     card.innerHTML = `
@@ -3201,8 +3209,10 @@ function renderProjectsView() {
     normalizeDateRangeInputs(card);
     const count = state.tasks.filter((task) => task.project_id === project.id).length;
     card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
-    fillProjectPersonSelect(card.querySelector("[name='projectPersonId']"), project.id);
-    renderProjectPersonList(card, project.id);
+    if (!isMinimal) {
+      fillProjectPersonSelect(card.querySelector("[name='projectPersonId']"), project.id);
+      renderProjectPersonList(card, project.id);
+    }
     list.append(card);
   }
 }
@@ -4220,6 +4230,13 @@ els.taskList.addEventListener("click", (event) => {
     sessionStorage.removeItem("people-relationship-filter");
     sessionStorage.removeItem("people-project-filter");
     sessionStorage.removeItem("people-role-filter");
+    renderTasks();
+    return;
+  }
+  const projectViewModeButton = event.target.closest("[data-project-view-mode]");
+  if (projectViewModeButton) {
+    state.projectViewMode = projectViewModeButton.dataset.projectViewMode === "minimal" ? "minimal" : "full";
+    localStorage.setItem("project-view-mode", state.projectViewMode);
     renderTasks();
     return;
   }
