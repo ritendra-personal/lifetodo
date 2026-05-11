@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.9";
+const APP_VERSION = "1.9.0";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -3357,22 +3357,22 @@ function render() {
   const titles = {
     home: "Home",
     goals: "Life Goals",
-    "goal-assignments": "Assign Tasks",
+    "goal-assignments": "Tasks to Life Goals",
     today: "Today",
     upcoming: "Upcoming",
     backlog: "Backlog",
     done: "Done",
     people: "People",
-    "people-filter": "Filtered People",
+    "people-filter": "People Filter",
     projects: "Projects",
     ideas: "Ideas",
-    graph: "Graph",
+    graph: "Task Graph",
     timeline: "Timeline",
     areas: "Areas",
     skills: "Skills",
     relationships: "Relationships",
     "project-types": "Project Types",
-    "project-statuses": "Project Statuses",
+    "project-statuses": "Project Status",
     roles: "Roles"
   };
   const isPlanningView = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"].includes(state.view);
@@ -3385,7 +3385,7 @@ function render() {
   els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline" || isPlanningView);
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view];
-  els.boardTitle.textContent = state.view === "graph" ? "Task graph" : state.view === "timeline" ? "Task timeline" : titles[state.view];
+  els.boardTitle.textContent = state.view === "graph" ? "Task Graph" : state.view === "timeline" ? "Task timeline" : titles[state.view];
   els.storageStatus.textContent = isSupabaseReady() ? state.user.email : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.keyButton.textContent = state.user ? "Sign out" : "Google";
