@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.15";
+const APP_VERSION = "1.10.16";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -267,6 +267,35 @@ function restoreCreationDraft(form) {
 
 function closestCreationForm(target) {
   return target.closest("#goal-form, #idea-form, #areas-settings-form, #person-form, #project-form, #named-settings-form");
+}
+
+function normalizedNaturalKey(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function personNameFromParts(firstName, lastName) {
+  return [firstName, lastName].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+}
+
+function hasDuplicateGoalName(name, excludeId = "") {
+  const key = normalizedNaturalKey(name);
+  return Boolean(key) && state.goals.some((goal) => goal.id !== excludeId && normalizedNaturalKey(goal.name) === key);
+}
+
+function hasDuplicateProjectName(name, excludeId = "") {
+  const key = normalizedNaturalKey(name);
+  return Boolean(key) && state.projects.some((project) => project.id !== excludeId && normalizedNaturalKey(project.name) === key);
+}
+
+function hasDuplicatePersonName(firstName, lastName, excludeId = "") {
+  const key = normalizedNaturalKey(personNameFromParts(firstName, lastName));
+  return Boolean(key) && state.people.some((person) => (
+    person.id !== excludeId && normalizedNaturalKey(personNameFromParts(person.first_name, person.last_name)) === key
+  ));
+}
+
+function alertDuplicate(label, value) {
+  window.alert(`${label} "${value}" already exists.`);
 }
 
 function setDensity(density) {
@@ -1259,6 +1288,12 @@ async function patchTaskWithFeedback(id, changes, options = {}) {
 async function persistGoal(goal, options = {}) {
   const normalized = normalizeGoal({ ...goal, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!isSupabaseReady()) {
+    if (options.requireCloud) {
+      state.syncError = "Life goal was not saved to database: database is not connected.";
+      state.syncMessage = "";
+      if (options.render !== false) render();
+      throw new Error(state.syncError);
+    }
     const exists = state.goals.some((item) => item.id === normalized.id);
     state.goals = exists
       ? state.goals.map((item) => (item.id === normalized.id ? normalized : item))
@@ -1271,13 +1306,16 @@ async function persistGoal(goal, options = {}) {
     const { data, error } = await state.supabase.from("planner_goals").upsert(normalized).select().single();
     if (error) throw error;
     state.goals = [normalizeGoal(data), ...state.goals.filter((item) => item.id !== data.id)];
-    state.syncMessage = `Saved goal for ${keyLabel()}.`;
+    state.syncMessage = `Saved life goal to database at ${savedAtLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
+    return { savedToCloud: true };
   } catch (error) {
-    state.syncError = error.message;
+    state.syncError = `Life goal was not saved to database: ${error.message}`;
+    state.syncMessage = "";
     if (options.render !== false) render();
-    else throw error;
+    if (options.requireCloud) throw new Error(state.syncError);
+    return { savedToCloud: false };
   }
 }
 
@@ -1349,6 +1387,13 @@ async function loadProjectsData() {
 async function persistProject(project, options = {}) {
   const normalized = normalizeProject({ ...project, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!normalized.name) return;
+  const previousProjects = state.projects;
+  if ((!isSupabaseReady() || !state.projectsCloudReady) && options.requireCloud) {
+    state.syncError = "Project was not saved to database: database is not connected or the project tables are not ready.";
+    state.syncMessage = "";
+    if (options.render !== false) render();
+    throw new Error(state.syncError);
+  }
   const exists = state.projects.some((item) => item.id === normalized.id);
   state.projects = exists
     ? state.projects.map((item) => (item.id === normalized.id ? normalized : item))
@@ -1380,13 +1425,20 @@ async function persistProject(project, options = {}) {
     if (error) throw error;
     const saved = normalizeProject(data);
     state.projects = state.projects.map((item) => (item.id === saved.id ? saved : item));
-    state.syncMessage = `Saved project for ${keyLabel()}.`;
+    state.syncMessage = `Saved project to database at ${savedAtLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
+    return { savedToCloud: true };
   } catch (error) {
-    state.syncError = error.message;
+    if (options.requireCloud) {
+      state.projects = previousProjects;
+      saveLocal();
+    }
+    state.syncError = `Project was not saved to database: ${error.message}`;
+    state.syncMessage = "";
     if (options.render !== false) render();
-    else throw error;
+    if (options.requireCloud) throw new Error(state.syncError);
+    return { savedToCloud: false };
   }
 }
 
@@ -1649,6 +1701,13 @@ async function persistNamedOption(type, option, options = {}) {
 async function persistPerson(person, options = {}) {
   const normalized = normalizePerson({ ...person, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!normalized.first_name) return;
+  const previousPeople = state.people;
+  if ((!isSupabaseReady() || !state.peopleCloudReady) && options.requireCloud) {
+    state.syncError = "Person was not saved to database: database is not connected or the people tables are not ready.";
+    state.syncMessage = "";
+    if (options.render !== false) render();
+    throw new Error(state.syncError);
+  }
   const exists = state.people.some((item) => item.id === normalized.id);
   state.people = exists
     ? state.people.map((item) => (item.id === normalized.id ? normalized : item))
@@ -1689,6 +1748,10 @@ async function persistPerson(person, options = {}) {
     if (options.render !== false) render();
     return { savedToCloud: true };
   } catch (error) {
+    if (options.requireCloud) {
+      state.people = previousPeople;
+      saveLocal();
+    }
     state.syncError = `Person was not saved to database: ${error.message}`;
     state.syncMessage = "";
     if (options.render !== false) render();
@@ -4703,8 +4766,19 @@ els.taskList.addEventListener("submit", async (event) => {
   if (taskFocusForm) {
     await patchTask(taskFocusForm.dataset.taskFocusId, focusedTaskPayload(taskFocusForm));
   } else if (goalForm) {
-    await persistGoal({ name: form.get("name").trim(), description: form.get("description").trim() });
-    clearCreationDraft(event.target);
+    const name = form.get("name").trim();
+    if (hasDuplicateGoalName(name)) {
+      alertDuplicate("Life goal", name);
+      saveCreationDraft(event.target);
+      return;
+    }
+    try {
+      await persistGoal({ name, description: form.get("description").trim() }, { requireCloud: true });
+      clearCreationDraft(event.target);
+      event.target.reset();
+    } catch {
+      saveCreationDraft(event.target);
+    }
   } else if (ideaForm) {
     await persistIdea({
       text: form.get("text").trim(),
@@ -4720,31 +4794,51 @@ els.taskList.addEventListener("submit", async (event) => {
     event.target.querySelector("[name='color']").value = "#39ff14";
     render();
   } else if (personForm) {
+    const firstName = form.get("firstName").trim();
+    const lastName = form.get("lastName").trim();
+    const fullName = personNameFromParts(firstName, lastName);
+    if (hasDuplicatePersonName(firstName, lastName)) {
+      alertDuplicate("Person", fullName);
+      saveCreationDraft(event.target);
+      return;
+    }
     try {
       await persistPerson(
         {
-          first_name: form.get("firstName").trim(),
-          last_name: form.get("lastName").trim(),
+          first_name: firstName,
+          last_name: lastName,
           relationship_type_id: form.get("relationshipTypeId") || "",
           skill_ids: form.getAll("skillIds")
         },
         { requireCloud: true }
       );
       clearCreationDraft(event.target);
+      event.target.reset();
     } catch {
       saveCreationDraft(event.target);
     }
   } else if (projectForm) {
     normalizeDateRangeInputs(projectForm);
-    await persistProject({
-      name: form.get("name").trim(),
-      description: form.get("description").trim(),
-      project_type_id: form.get("projectTypeId") || "",
-      project_status_id: form.get("projectStatusId") || "",
-      start_date: form.get("startDate") || "",
-      end_date: form.get("endDate") || ""
-    });
-    clearCreationDraft(event.target);
+    const name = form.get("name").trim();
+    if (hasDuplicateProjectName(name)) {
+      alertDuplicate("Project", name);
+      saveCreationDraft(event.target);
+      return;
+    }
+    try {
+      await persistProject({
+        name,
+        description: form.get("description").trim(),
+        project_type_id: form.get("projectTypeId") || "",
+        project_status_id: form.get("projectStatusId") || "",
+        start_date: form.get("startDate") || "",
+        end_date: form.get("endDate") || ""
+      }, { requireCloud: true });
+      clearCreationDraft(event.target);
+      event.target.reset();
+    } catch {
+      saveCreationDraft(event.target);
+    }
   } else if (namedSettingsForm) {
     const type = namedSettingsForm.dataset.optionType;
     const config = optionConfig(type);

@@ -1979,11 +1979,20 @@ body.resizing .resize-handle::before {
 
 .assignment-toolbar {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 10px;
+  right: 12px;
   z-index: 3;
   display: flex;
   justify-content: flex-end;
+  max-width: calc(100% - 24px);
+}
+
+.assignment-toolbar .toggle {
+  padding-inline: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 18px rgba(31, 41, 55, 0.08);
 }
 
 .assignment-lines {
