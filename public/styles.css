@@ -676,6 +676,16 @@ button:disabled:hover {
   display: none;
 }
 
+.planner-grid.planning-mode .task-board {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.planner-grid.planning-mode .task-list {
+  padding: 0;
+}
+
 .planner-grid.focus-mode .task-board {
   max-width: 980px;
 }
@@ -1133,7 +1143,7 @@ body.resizing .resize-handle::before {
 }
 
 .goal-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
 }
 
@@ -2659,6 +2669,10 @@ dialog::backdrop {
   .task-form .field-label:first-child {
     grid-column: 1 / -1;
   }
+
+  .goal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -2729,6 +2743,10 @@ dialog::backdrop {
 
   .task-item {
     margin-left: calc(min(var(--depth), 5) * 14px);
+  }
+
+  .goal-grid {
+    grid-template-columns: 1fr;
   }
 }
 
