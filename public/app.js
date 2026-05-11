@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.3";
+const APP_VERSION = "1.9.4";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -3377,7 +3377,7 @@ function renderGraphView() {
       <marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
         <path d="M 0 0 L 10 5 L 0 10 z"></path>
       </marker>
-      <marker id="graph-dot-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <marker id="graph-dot-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
         <path d="M 0 0 L 10 5 L 0 10 z"></path>
       </marker>
     </defs>
@@ -3409,14 +3409,32 @@ function renderGraphView() {
     const from = positions.get(fromId);
     const to = positions.get(toId);
     if (!from || !to) return;
-    const startX = from.x + from.width;
-    const startY = from.y + from.height / 2;
-    const endX = to.x;
-    const endY = to.y + to.height / 2;
-    const curve = Math.max(36, Math.abs(endX - startX) / 2);
+    const dependency = className.includes("dependency-link");
+    let startX = from.x + from.width;
+    let startY = from.y + from.height / 2;
+    let endX = to.x;
+    let endY = to.y + to.height / 2;
+    let d = "";
+
+    if (dependency && Math.abs(from.x - to.x) < 8 && to.y > from.y) {
+      startX = from.x + from.width / 2;
+      startY = from.y + from.height;
+      endX = to.x + to.width / 2;
+      endY = to.y;
+      const curve = Math.max(20, (endY - startY) / 2);
+      d = `M ${startX} ${startY} C ${startX} ${startY + curve}, ${endX} ${endY - curve}, ${endX} ${endY}`;
+    } else if (dependency && endX <= startX + 20) {
+      endX = to.x + to.width;
+      const bendX = Math.max(startX, endX) + 56;
+      d = `M ${startX} ${startY} C ${bendX} ${startY}, ${bendX} ${endY}, ${endX} ${endY}`;
+    } else {
+      const curve = Math.max(36, Math.abs(endX - startX) / 2);
+      d = `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`;
+    }
+
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", className);
-    path.setAttribute("d", `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`);
+    path.setAttribute("d", d);
     svg.append(path);
   };
 
