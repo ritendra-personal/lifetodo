@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.6";
+const APP_VERSION = "1.9.7";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -205,7 +205,7 @@ function renderSyncStatus() {
     els.syncStatus.classList.add("hidden");
   }
   if (state.syncError) {
-    els.syncError.textContent = `Database error: ${state.syncError}`;
+    els.syncError.textContent = `Save issue: ${state.syncError}. Your changes are kept in this browser; press Sync to retry.`;
     els.syncError.classList.remove("hidden");
   } else {
     els.syncError.textContent = "";
@@ -2714,31 +2714,42 @@ function personFullName(person) {
 
 function renderPeopleView() {
   els.taskList.innerHTML = `
-    <form id="person-form" class="planning-form people-form">
-      <label class="field-label">First name
-        <input name="firstName" type="text" placeholder="First name" required>
-      </label>
-      <label class="field-label">Last name
-        <input name="lastName" type="text" placeholder="Last name">
-      </label>
-      <label class="field-label">Relationship
-        <select name="relationshipTypeId" aria-label="Relationship"></select>
-      </label>
-      <div class="field-label">Skills
-        <div class="skill-picker" role="group" aria-label="Skills"></div>
+    <section class="creation-panel">
+      <div class="planning-section-head">
+        <h4>Add new People</h4>
       </div>
-      <button class="primary-button form-submit" type="submit">Add person</button>
-    </form>
-    <div class="people-table">
-      <div class="people-table-head">
-        <span>First Name</span>
-        <span>Last Name</span>
-        <span>Relationship</span>
-        <span>Skills</span>
-        <span></span>
+      <form id="person-form" class="planning-form people-form">
+        <label class="field-label">First name
+          <input name="firstName" type="text" placeholder="First name" required>
+        </label>
+        <label class="field-label">Last name
+          <input name="lastName" type="text" placeholder="Last name">
+        </label>
+        <label class="field-label">Relationship
+          <select name="relationshipTypeId" aria-label="Relationship"></select>
+        </label>
+        <div class="field-label">Skills
+          <div class="skill-picker" role="group" aria-label="Skills"></div>
+        </div>
+        <button class="primary-button form-submit" type="submit">Add person</button>
+      </form>
+    </section>
+    <section class="directory-panel">
+      <div class="planning-section-head">
+        <h4>People Directory</h4>
+        <span>${state.people.length} ${state.people.length === 1 ? "person" : "people"}</span>
       </div>
-      <div class="planning-list people-list"></div>
-    </div>
+      <div class="people-table">
+        <div class="people-table-head">
+          <span>First Name</span>
+          <span>Last Name</span>
+          <span>Relationship</span>
+          <span>Skills</span>
+          <span></span>
+        </div>
+        <div class="planning-list people-list"></div>
+      </div>
+    </section>
   `;
   fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
   fillSkillPicker(els.taskList.querySelector(".skill-picker"), []);
@@ -3800,7 +3811,7 @@ function render() {
   els.keyButton.title = state.user ? `Signed in as ${state.user.email}` : "Sign in with Google";
   els.showDone.checked = state.showDone;
   els.storageStatus.title = state.syncError || "";
-  els.storageStatus.textContent = state.syncError ? "Database error" : els.storageStatus.textContent;
+  els.storageStatus.textContent = state.syncError ? "Sync issue" : els.storageStatus.textContent;
   if (state.syncMessage && !state.syncError) {
     els.syncStatus.textContent = state.syncMessage;
     els.syncStatus.classList.remove("hidden");
@@ -3809,7 +3820,7 @@ function render() {
     els.syncStatus.classList.add("hidden");
   }
   if (state.syncError) {
-    els.syncError.textContent = `Database error: ${state.syncError}`;
+    els.syncError.textContent = `Save issue: ${state.syncError}. Your changes are kept in this browser; press Sync to retry.`;
     els.syncError.classList.remove("hidden");
   } else {
     els.syncError.textContent = "";
