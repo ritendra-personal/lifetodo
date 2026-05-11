@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.17";
+const APP_VERSION = "1.10.18";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -942,14 +942,14 @@ function loadLocal() {
   saveLocal();
 }
 
-function saveLocal() {
+function saveLocal(options = {}) {
   localStorage.setItem("planner-tasks", JSON.stringify(state.tasks));
   localStorage.setItem("planner-goals", JSON.stringify(state.goals));
   localStorage.setItem("planner-ideas", JSON.stringify(state.ideas));
   localStorage.setItem("planner-projects", JSON.stringify(state.projects));
   localStorage.setItem("planner-project-assignments", JSON.stringify(state.projectAssignments));
   localStorage.setItem("planner-people", JSON.stringify(state.people));
-  state.syncMessage = "Saved locally in this browser only.";
+  if (!options.silent) state.syncMessage = "Saved locally in this browser only.";
 }
 
 function ensureSortOrders(tasks) {
@@ -1389,6 +1389,10 @@ async function persistProject(project, options = {}) {
   const normalized = normalizeProject({ ...project, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!normalized.name) return;
   const previousProjects = state.projects;
+  if (options.requireCloud && isSupabaseReady() && !state.projectsCloudReady) {
+    const projects = await loadProjectsData();
+    if (projects) state.projects = projects;
+  }
   if ((!isSupabaseReady() || !state.projectsCloudReady) && options.requireCloud) {
     state.syncError = "Project was not saved to database: database is not connected or the project tables are not ready.";
     state.syncMessage = "";
@@ -1399,7 +1403,7 @@ async function persistProject(project, options = {}) {
   state.projects = exists
     ? state.projects.map((item) => (item.id === normalized.id ? normalized : item))
     : [normalized, ...state.projects];
-  saveLocal();
+  saveLocal({ silent: options.requireCloud });
   if (!isSupabaseReady() || !state.projectsCloudReady) {
     if (options.render !== false) render();
     return;
@@ -1433,7 +1437,7 @@ async function persistProject(project, options = {}) {
   } catch (error) {
     if (options.requireCloud) {
       state.projects = previousProjects;
-      saveLocal();
+      saveLocal({ silent: true });
     }
     state.syncError = `Project was not saved to database: ${error.message}`;
     state.syncMessage = "";
@@ -1703,6 +1707,15 @@ async function persistPerson(person, options = {}) {
   const normalized = normalizePerson({ ...person, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!normalized.first_name) return;
   const previousPeople = state.people;
+  if (options.requireCloud && isSupabaseReady() && !state.peopleCloudReady) {
+    const peopleData = await loadPeopleData();
+    if (peopleData) {
+      state.people = peopleData.people;
+      state.skills = peopleData.skills;
+      state.relationshipTypes = peopleData.relationshipTypes;
+      saveNamedOptions();
+    }
+  }
   if ((!isSupabaseReady() || !state.peopleCloudReady) && options.requireCloud) {
     state.syncError = "Person was not saved to database: database is not connected or the people tables are not ready.";
     state.syncMessage = "";
@@ -1713,7 +1726,7 @@ async function persistPerson(person, options = {}) {
   state.people = exists
     ? state.people.map((item) => (item.id === normalized.id ? normalized : item))
     : [normalized, ...state.people];
-  saveLocal();
+  saveLocal({ silent: options.requireCloud });
   if (!isSupabaseReady() || !state.peopleCloudReady) {
     if (options.requireCloud) {
       state.syncError = "Person was saved locally only; database is not connected or the people tables are not ready.";
@@ -1751,7 +1764,7 @@ async function persistPerson(person, options = {}) {
   } catch (error) {
     if (options.requireCloud) {
       state.people = previousPeople;
-      saveLocal();
+      saveLocal({ silent: true });
     }
     state.syncError = `Person was not saved to database: ${error.message}`;
     state.syncMessage = "";
@@ -4796,11 +4809,13 @@ els.taskList.addEventListener("submit", async (event) => {
       return;
     }
     try {
-      await persistGoal({ name, description: form.get("description").trim() }, { requireCloud: true });
+      await persistGoal({ name, description: form.get("description").trim() }, { requireCloud: true, render: false });
       clearCreationDraft(event.target);
       event.target.reset();
+      render();
     } catch {
       saveCreationDraft(event.target);
+      renderSyncStatus();
     }
   } else if (ideaForm) {
     await persistIdea({
@@ -4833,16 +4848,19 @@ els.taskList.addEventListener("submit", async (event) => {
           relationship_type_id: form.get("relationshipTypeId") || "",
           skill_ids: form.getAll("skillIds")
         },
-        { requireCloud: true }
+        { requireCloud: true, render: false }
       );
       clearCreationDraft(event.target);
       event.target.reset();
+      render();
     } catch {
       saveCreationDraft(event.target);
+      renderSyncStatus();
     }
   } else if (projectForm) {
-    normalizeDateRangeInputs(projectForm);
-    const name = form.get("name").trim();
+    normalizeDateRangeInputs(projectForm, { anchorEnd: Boolean(projectForm.querySelector("[name='startDate']")?.value) });
+    const projectFormData = new FormData(projectForm);
+    const name = projectFormData.get("name").trim();
     if (hasDuplicateProjectName(name)) {
       alertDuplicate("Project", name);
       saveCreationDraft(event.target);
@@ -4851,16 +4869,18 @@ els.taskList.addEventListener("submit", async (event) => {
     try {
       await persistProject({
         name,
-        description: form.get("description").trim(),
-        project_type_id: form.get("projectTypeId") || "",
-        project_status_id: form.get("projectStatusId") || "",
-        start_date: form.get("startDate") || "",
-        end_date: form.get("endDate") || ""
-      }, { requireCloud: true });
+        description: projectFormData.get("description").trim(),
+        project_type_id: projectFormData.get("projectTypeId") || "",
+        project_status_id: projectFormData.get("projectStatusId") || "",
+        start_date: projectFormData.get("startDate") || "",
+        end_date: projectFormData.get("endDate") || ""
+      }, { requireCloud: true, render: false });
       clearCreationDraft(event.target);
       event.target.reset();
+      render();
     } catch {
       saveCreationDraft(event.target);
+      renderSyncStatus();
     }
   } else if (namedSettingsForm) {
     const type = namedSettingsForm.dataset.optionType;
