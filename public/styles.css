@@ -1180,7 +1180,8 @@ body.resizing .resize-handle::before {
 
 .assignment-line {
   stroke: #8aa5bf;
-  stroke-width: 1;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1189,7 +1190,7 @@ body.resizing .resize-handle::before {
 
 .assignment-line.active {
   stroke: var(--teal);
-  stroke-width: 1.35;
+  stroke-width: 1.6;
   opacity: 0.78;
 }
 
@@ -1275,7 +1276,7 @@ body.resizing .resize-handle::before {
 
 .assignment-line-draft {
   stroke: var(--teal-dark);
-  stroke-width: 1.35;
+  stroke-width: 1.6;
   opacity: 0.82;
 }
 

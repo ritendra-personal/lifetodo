@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.7.4";
+const APP_VERSION = "1.7.5";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2139,7 +2139,7 @@ function renderGoalAssignmentsView() {
   const selectedGoalIds = new Set(selectedTask ? goalIdsForTask(selectedTask) : []);
   els.taskList.innerHTML = `
     <div class="assignment-view assignment-map">
-      <svg class="assignment-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <svg class="assignment-lines" aria-hidden="true"></svg>
       <section class="assignment-panel">
         <h4>Top-level tasks</h4>
         <div class="assignment-task-list"></div>
@@ -2218,6 +2218,7 @@ function drawAssignmentLines() {
   if (!svg) return;
   const rect = svg.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
+  svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
   svg.innerHTML = assignmentMarkerDefs();
   for (const task of state.tasks.filter((item) => !item.parent_id && item.status !== "done")) {
     const taskHandle = els.taskList.querySelector(`[data-assignment-task-id="${CSS.escape(task.id)}"] .task-handle`);
@@ -2241,10 +2242,10 @@ function drawAssignmentLines() {
 function assignmentMarkerDefs() {
   return `
     <defs>
-      <marker id="assignment-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+      <marker id="assignment-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
         <path d="M 1 1 L 9 5 L 1 9 z" fill="#8aa5bf"></path>
       </marker>
-      <marker id="assignment-arrow-active" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
+      <marker id="assignment-arrow-active" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
         <path d="M 1 1 L 9 5 L 1 9 z" fill="#0e7c74"></path>
       </marker>
     </defs>
@@ -2252,7 +2253,7 @@ function assignmentMarkerDefs() {
 }
 
 function assignmentCurvePath(start, end) {
-  const distance = Math.max(14, Math.abs(end.x - start.x) * 0.48);
+  const distance = Math.max(40, Math.abs(end.x - start.x) * 0.45);
   const control1 = { x: start.x + distance, y: start.y };
   const control2 = { x: end.x - distance, y: end.y };
   return `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`;
@@ -2262,8 +2263,8 @@ function assignmentSvgPoint(svg, clientX, clientY) {
   const rect = svg.getBoundingClientRect();
   if (!rect.width || !rect.height) return { x: 0, y: 0 };
   return {
-    x: ((clientX - rect.left) / rect.width) * 100,
-    y: ((clientY - rect.top) / rect.height) * 100
+    x: clientX - rect.left,
+    y: clientY - rect.top
   };
 }
 
@@ -2276,8 +2277,8 @@ function updateAssignmentDraft(clientX, clientY) {
   if (!assignmentDrag) return;
   const point = assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
   const end = {
-    x: Math.max(0, Math.min(100, point.x)),
-    y: Math.max(0, Math.min(100, point.y))
+    x: Math.max(0, Math.min(assignmentDrag.bounds.width, point.x)),
+    y: Math.max(0, Math.min(assignmentDrag.bounds.height, point.y))
   };
   assignmentDrag.line.setAttribute("d", assignmentCurvePath(assignmentDrag.start, end));
 }
@@ -2286,6 +2287,8 @@ function beginAssignmentDrag(handle, event) {
   const task = handle.closest("[data-assignment-task-id]");
   const svg = els.taskList.querySelector(".assignment-lines");
   if (!task || !svg) return;
+  const bounds = svg.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
   state.selectedAssignmentTaskId = task.dataset.assignmentTaskId;
   const start = assignmentHandlePoint(handle, svg);
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -2294,7 +2297,7 @@ function beginAssignmentDrag(handle, event) {
   path.setAttribute("marker-start", "url(#assignment-arrow-active)");
   path.setAttribute("marker-end", "url(#assignment-arrow-active)");
   svg.append(path);
-  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line: path, start, svg };
+  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line: path, start, svg, bounds };
   updateAssignmentDraft(event.clientX, event.clientY);
 }
 
