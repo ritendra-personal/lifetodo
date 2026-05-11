@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.7";
+const APP_VERSION = "1.8.8";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -414,6 +414,31 @@ function timelineTicks(startDate, endDate, pixelsPerDay) {
     ticks.push({ date, label: formatDate(date), major: false });
   }
   return ticks;
+}
+
+function applyDateRangePreset(container, preset) {
+  const startInput = container.querySelector("[name='startDate']");
+  const endInput = container.querySelector("[name='endDate']");
+  if (!startInput || !endInput) return;
+  if (preset === "clear") {
+    startInput.value = "";
+    endInput.value = "";
+    return;
+  }
+  const start = startInput.value || todayIso();
+  startInput.value = start;
+  if (preset === "today") endInput.value = start;
+  if (preset === "month") endInput.value = addMonthsToIso(start, 1);
+  if (preset === "quarter") endInput.value = addMonthsToIso(start, 3);
+  if (preset === "year") endInput.value = addMonthsToIso(start, 12);
+}
+
+function normalizeDateRangeInputs(container) {
+  const startInput = container.querySelector("[name='startDate']");
+  const endInput = container.querySelector("[name='endDate']");
+  if (!startInput || !endInput) return;
+  endInput.min = startInput.value || "";
+  if (startInput.value && endInput.value && endInput.value < startInput.value) endInput.value = startInput.value;
 }
 
 function defaultDueDateForView() {
@@ -2535,12 +2560,20 @@ function renderProjectsView() {
       <label class="field-label">End
         <input name="endDate" type="date" aria-label="Project end date">
       </label>
+      <div class="date-range-presets" aria-label="Project date range presets">
+        <button class="range-preset-button" data-range-preset="today" type="button">Today</button>
+        <button class="range-preset-button" data-range-preset="month" type="button">1 mo</button>
+        <button class="range-preset-button" data-range-preset="quarter" type="button">3 mo</button>
+        <button class="range-preset-button" data-range-preset="year" type="button">1 yr</button>
+        <button class="range-preset-button" data-range-preset="clear" type="button">Clear</button>
+      </div>
       <button class="primary-button form-submit" type="submit">Add project</button>
     </form>
     <div class="planning-list project-list"></div>
   `;
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
   fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");
+  normalizeDateRangeInputs(els.taskList.querySelector("#project-form"));
   const list = els.taskList.querySelector(".project-list");
   if (!state.projects.length) {
     const empty = document.createElement("div");
@@ -2570,6 +2603,13 @@ function renderProjectsView() {
           End
           <input name="endDate" type="date" aria-label="Project end date">
         </label>
+        <div class="date-range-presets" aria-label="Project date range presets">
+          <button class="range-preset-button" data-range-preset="today" type="button">Today</button>
+          <button class="range-preset-button" data-range-preset="month" type="button">1 mo</button>
+          <button class="range-preset-button" data-range-preset="quarter" type="button">3 mo</button>
+          <button class="range-preset-button" data-range-preset="year" type="button">1 yr</button>
+          <button class="range-preset-button" data-range-preset="clear" type="button">Clear</button>
+        </div>
       </div>
       <div class="project-people">
         <div class="project-people-head">
@@ -2589,6 +2629,7 @@ function renderProjectsView() {
     card.querySelector("[name='description']").value = project.description;
     card.querySelector("[name='startDate']").value = project.start_date || "";
     card.querySelector("[name='endDate']").value = project.end_date || "";
+    normalizeDateRangeInputs(card);
     const count = state.tasks.filter((task) => task.project_id === project.id).length;
     card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
     fillProjectPersonSelect(card.querySelector("[name='projectPersonId']"), project.id);
@@ -3620,6 +3661,16 @@ els.taskList.addEventListener("click", (event) => {
     if (card) deleteIdea(card.dataset.ideaId);
     return;
   }
+  const rangePresetButton = event.target.closest(".range-preset-button");
+  if (rangePresetButton) {
+    const container = rangePresetButton.closest("[data-project-id]") || rangePresetButton.closest("#project-form");
+    if (container) {
+      applyDateRangePreset(container, rangePresetButton.dataset.rangePreset);
+      normalizeDateRangeInputs(container);
+      if (container.dataset.projectId) autosaveProjectCard(container);
+    }
+    return;
+  }
   const zoomButton = event.target.closest(".timeline-zoom");
   if (zoomButton) {
     const nextIndex = Math.min(timelineZoomLevels.length - 1, Math.max(0, timelineZoomIndex() + Number(zoomButton.dataset.zoomDir)));
@@ -3700,6 +3751,7 @@ els.taskList.addEventListener("submit", async (event) => {
       skill_ids: form.getAll("skillIds")
     });
   } else if (projectForm) {
+    normalizeDateRangeInputs(projectForm);
     await persistProject({
       name: form.get("name").trim(),
       description: form.get("description").trim(),
@@ -3906,6 +3958,7 @@ els.taskList.addEventListener("input", (event) => {
   }
   const projectCard = event.target.closest("[data-project-id]");
   if (projectCard) {
+    normalizeDateRangeInputs(projectCard);
     autosaveProjectCard(projectCard);
     return;
   }
@@ -3964,6 +4017,7 @@ els.taskList.addEventListener("change", (event) => {
   }
   const projectCard = event.target.closest("[data-project-id]");
   if (projectCard) {
+    normalizeDateRangeInputs(projectCard);
     autosaveProjectCard(projectCard);
     return;
   }

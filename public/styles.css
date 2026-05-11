@@ -1396,7 +1396,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(145px, 0.75fr) minmax(120px, 0.58fr) minmax(130px, 0.62fr) minmax(320px, 1.35fr) 128px 128px auto;
+  grid-template-columns: minmax(145px, 0.75fr) minmax(120px, 0.58fr) minmax(130px, 0.62fr) minmax(300px, 1.2fr) 128px 128px minmax(260px, 0.9fr) auto;
 }
 
 .project-list {
@@ -1443,6 +1443,31 @@ body.resizing .resize-handle::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--ui-gap);
+}
+
+.date-range-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: end;
+  gap: 5px;
+}
+
+.range-preset-button {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 9px;
+  color: var(--muted);
+  background: #fff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.range-preset-button:hover {
+  border-color: var(--hover-line);
+  color: var(--teal-dark);
+  background: var(--hover-surface);
 }
 
 .project-date-pair label {
@@ -1981,6 +2006,9 @@ body.resizing .resize-handle::before {
   color: var(--muted);
   font-size: 0.78rem;
   white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .timeline-date.today {
@@ -2035,6 +2063,7 @@ body.resizing .resize-handle::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 .timeline-project-meta {
@@ -2091,6 +2120,7 @@ body.resizing .resize-handle::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 .timeline-task-meta {
@@ -2102,13 +2132,14 @@ body.resizing .resize-handle::before {
 }
 
 .compact-timeline .timeline-project {
-  min-width: 76px;
+  min-width: 150px;
+  max-width: 320px;
   min-height: 36px;
   padding: 6px 8px 6px 10px;
 }
 
 .compact-timeline .timeline-task {
-  width: 172px;
+  width: 210px;
   min-height: 46px;
   padding: 8px 10px 8px 12px;
 }
@@ -2120,13 +2151,16 @@ body.resizing .resize-handle::before {
 
 .broad-timeline .timeline-date {
   font-size: 0.72rem;
+  transform: none;
+  padding: 2px 6px;
+  border: 1px solid rgba(215, 222, 232, 0.8);
 }
 
 .broad-timeline .timeline-project {
-  min-width: 44px;
-  max-width: 280px;
-  min-height: 30px;
-  padding: 4px 7px 4px 9px;
+  min-width: 180px;
+  max-width: 360px;
+  min-height: 38px;
+  padding: 5px 8px 5px 10px;
   border-left-width: 5px;
 }
 
@@ -2135,8 +2169,8 @@ body.resizing .resize-handle::before {
 }
 
 .broad-timeline .timeline-task {
-  width: 116px;
-  min-height: 38px;
+  width: 190px;
+  min-height: 42px;
   border-left-width: 5px;
   padding: 6px 8px 6px 9px;
   grid-template-columns: minmax(0, 1fr);
@@ -2150,6 +2184,11 @@ body.resizing .resize-handle::before {
 .broad-timeline .timeline-task-title,
 .broad-timeline .timeline-project-title {
   font-size: 0.74rem;
+  line-height: 1.18;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .timeline-undated-label {
