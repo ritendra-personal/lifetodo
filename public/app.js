@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.30";
+const APP_VERSION = "1.10.31";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -446,6 +446,20 @@ function showSyncMessage(message) {
   state.syncError = "";
   state.syncMessage = message;
   renderSyncStatus();
+}
+
+function pluralCount(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function plannerLoadSummary() {
+  return `Loaded ${[
+    pluralCount(state.tasks.length, "task"),
+    pluralCount(state.projects.length, "project"),
+    pluralCount(state.people.length, "person", "people"),
+    pluralCount(state.ideas.length, "idea"),
+    pluralCount(state.goals.length, "goal")
+  ].join(", ")} for ${keyLabel()}.`;
 }
 
 function withAutosaveTimeout(callback, timeoutMs = 10000) {
@@ -1169,7 +1183,6 @@ async function loadTasksNow() {
     }
     const peopleData = await loadPeopleData();
     state.syncError = "";
-    state.syncMessage = state.syncMessage || `Loaded ${rows.length} task${rows.length === 1 ? "" : "s"} for ${keyLabel()}.`;
     if (areas.length) {
       state.areas = areas;
       saveAreas();
@@ -1189,6 +1202,7 @@ async function loadTasksNow() {
       state.relationshipTypes = peopleData.relationshipTypes;
       saveNamedOptions();
     }
+    state.syncMessage = state.syncMessage || plannerLoadSummary();
     render();
   } catch (error) {
     state.syncError = error.message;
