@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.21";
+const APP_VERSION = "1.10.22";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -76,6 +76,7 @@ const state = {
   syncMessage: "",
   peopleCloudReady: false,
   projectsCloudReady: false,
+  venuesCloudReady: false,
   goalLinksCloudReady: false,
   config: null,
   supabase: null,
@@ -449,6 +450,26 @@ function withAutosaveTimeout(callback, timeoutMs = 10000) {
   return Promise.race([Promise.resolve().then(callback), timeout]).finally(() => clearTimeout(timeoutId));
 }
 
+function setFormSaving(form, saving, label = "Saving...") {
+  const button = form?.querySelector("button[type='submit'], input[type='submit']");
+  if (!button) return;
+  if (saving) {
+    if (!button.dataset.idleText) button.dataset.idleText = button.textContent || button.value || "";
+    if ("value" in button) button.value = label;
+    else button.textContent = label;
+    button.disabled = true;
+    button.classList.add("is-saving");
+  } else {
+    const idleText = button.dataset.idleText;
+    if (idleText) {
+      if ("value" in button) button.value = idleText;
+      else button.textContent = idleText;
+    }
+    button.disabled = false;
+    button.classList.remove("is-saving");
+  }
+}
+
 function queueAutosave(key, callback) {
   clearTimeout(autosaveTimers.get(key));
   showSyncMessage("Autosave pending...");
@@ -470,7 +491,7 @@ function queueAutosave(key, callback) {
 }
 
 function areaColor(name) {
-  return state.areas.find((area) => area.name === name)?.color || "#667085";
+  return state.areas.find((area) => area.name === name)?.color || "#111827";
 }
 
 function areaById(id) {
@@ -505,7 +526,7 @@ function areaTintFor(item) {
 function areaTint(name) {
   const color = areaColor(name);
   const hex = color.replace("#", "");
-  if (hex.length !== 6) return "rgba(102, 112, 133, 0.1)";
+  if (hex.length !== 6) return "rgba(17, 24, 39, 0.1)";
   const r = parseInt(hex.slice(0, 2), 16);
   const g = parseInt(hex.slice(2, 4), 16);
   const b = parseInt(hex.slice(4, 6), 16);
@@ -1066,7 +1087,22 @@ function seedTasks() {
   ];
 }
 
+let loadTasksPromise = null;
+
 async function loadTasks() {
+  if (!loadTasksPromise) {
+    loadTasksPromise = loadTasksNow().finally(() => {
+      loadTasksPromise = null;
+    });
+  }
+  return loadTasksPromise;
+}
+
+async function waitForInitialCloudLoad() {
+  if (loadTasksPromise) await loadTasksPromise;
+}
+
+async function loadTasksNow() {
   if (!isSupabaseReady()) {
     loadLocal();
     state.syncMessage = state.supabase
@@ -1334,7 +1370,6 @@ async function loadProjectsData() {
       { data: projects, error: projectsError },
       { data: projectTypes, error: projectTypesError },
       { data: projectStatuses, error: projectStatusesError },
-      { data: venues, error: venuesError },
       { data: roles, error: rolesError },
       { data: assignments, error: assignmentsError }
     ] = await Promise.all([
@@ -1354,11 +1389,6 @@ async function loadProjectsData() {
         .eq("user_id", state.user.id)
         .order("sort_order", { ascending: true }),
       state.supabase
-        .from("planner_venues")
-        .select("*")
-        .eq("user_id", state.user.id)
-        .order("sort_order", { ascending: true }),
-      state.supabase
         .from("planner_roles")
         .select("*")
         .eq("user_id", state.user.id)
@@ -1369,14 +1399,28 @@ async function loadProjectsData() {
         .eq("user_id", state.user.id)
         .order("created_at", { ascending: true })
     ]);
-    if (projectsError || projectTypesError || projectStatusesError || venuesError || rolesError || assignmentsError) {
-      throw projectsError || projectTypesError || projectStatusesError || venuesError || rolesError || assignmentsError;
+    if (projectsError || projectTypesError || projectStatusesError || rolesError || assignmentsError) {
+      throw projectsError || projectTypesError || projectStatusesError || rolesError || assignmentsError;
     }
     state.projectsCloudReady = true;
     const normalizedProjectTypes = projectTypes.map(normalizeNamedOption);
     const normalizedProjectStatuses = projectStatuses.map(normalizeNamedOption);
-    const normalizedVenues = venues.map(normalizeNamedOption);
     const normalizedRoles = roles.map(normalizeNamedOption);
+    try {
+      const { data: venues, error: venuesError } = await state.supabase
+        .from("planner_venues")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("sort_order", { ascending: true });
+      if (venuesError) throw venuesError;
+      state.venuesCloudReady = true;
+      const normalizedVenues = venues.map(normalizeNamedOption);
+      state.venues = normalizedVenues.length ? normalizedVenues : state.venues;
+    } catch (error) {
+      state.venuesCloudReady = false;
+      state.syncMessage = state.syncMessage || "Venues are local until you run migration 012.";
+      console.warn("Supabase venues table unavailable; keeping venues local", error);
+    }
     if (!normalizedProjectTypes.length) {
       await Promise.all(state.projectTypes.map((type) => persistNamedOption("project-types", type, { render: false })));
     }
@@ -1388,7 +1432,6 @@ async function loadProjectsData() {
     }
     state.projectTypes = normalizedProjectTypes.length ? normalizedProjectTypes : state.projectTypes;
     state.projectStatuses = normalizedProjectStatuses.length ? normalizedProjectStatuses : state.projectStatuses;
-    state.venues = normalizedVenues.length ? normalizedVenues : state.venues;
     state.roles = normalizedRoles.length ? normalizedRoles : state.roles;
     state.projectAssignments = assignments.map(normalizeProjectAssignment);
     saveNamedOptions();
@@ -1425,23 +1468,24 @@ async function persistProject(project, options = {}) {
     return;
   }
   try {
+    const payload = {
+      id: normalized.id,
+      user_id: state.user.id,
+      name: normalized.name,
+      description: normalized.description,
+      project_type_id: normalized.project_type_id || null,
+      project_status_id: normalized.project_status_id || null,
+      status: projectStatusName(normalized),
+      start_date: normalized.start_date || null,
+      end_date: normalized.end_date || null,
+      target_date: normalized.target_date || null,
+      created_at: normalized.created_at,
+      updated_at: normalized.updated_at
+    };
+    if (state.venuesCloudReady) payload.venue_id = normalized.venue_id || null;
     const { data, error } = await state.supabase
       .from("planner_projects")
-      .upsert({
-        id: normalized.id,
-        user_id: state.user.id,
-        name: normalized.name,
-        description: normalized.description,
-        project_type_id: normalized.project_type_id || null,
-        project_status_id: normalized.project_status_id || null,
-        venue_id: normalized.venue_id || null,
-        status: projectStatusName(normalized),
-        start_date: normalized.start_date || null,
-        end_date: normalized.end_date || null,
-        target_date: normalized.target_date || null,
-        created_at: normalized.created_at,
-        updated_at: normalized.updated_at
-      })
+      .upsert(payload)
       .select()
       .single();
     if (error) throw error;
@@ -1642,6 +1686,41 @@ async function persistArea(area, options = {}) {
   }
 }
 
+async function deleteArea(id) {
+  const area = state.areas.find((item) => item.id === id);
+  if (!area) return;
+  const usage =
+    state.tasks.filter((task) => task.area_id === id || (!task.area_id && task.area === area.name)).length +
+    state.ideas.filter((idea) => idea.area_id === id || (!idea.area_id && idea.area === area.name)).length;
+  const message = usage
+    ? `Delete area "${area.name}"? ${usage} linked item${usage === 1 ? "" : "s"} will keep their text, but show with neutral black styling.`
+    : `Delete area "${area.name}"?`;
+  if (!window.confirm(message)) return;
+  const previousAreas = state.areas;
+  state.areas = state.areas.filter((item) => item.id !== id);
+  saveAreas();
+  saveLocal({ silent: true });
+  showSyncMessage("Deleting area...");
+  if (!isSupabaseReady()) {
+    state.syncMessage = "Deleted area locally in this browser only.";
+    render();
+    return;
+  }
+  try {
+    const { error } = await state.supabase.from("planner_areas").delete().eq("user_id", state.user.id).eq("id", id);
+    if (error) throw error;
+    state.syncError = "";
+    state.syncMessage = `Deleted area for ${keyLabel()}.`;
+    render();
+  } catch (error) {
+    state.areas = previousAreas;
+    saveAreas();
+    state.syncError = `Area was not deleted: ${error.message}`;
+    state.syncMessage = "";
+    render();
+  }
+}
+
 async function loadPeopleData() {
   try {
     const [{ data: skills, error: skillsError }, { data: relationshipTypes, error: relationshipError }, { data: people, error: peopleError }] =
@@ -1687,7 +1766,7 @@ function optionConfig(type) {
     return { table: "planner_roles", stateKey: "roles", label: "role", cloudFlag: "projectsCloudReady" };
   }
   if (type === "venues") {
-    return { table: "planner_venues", stateKey: "venues", label: "venue", cloudFlag: "projectsCloudReady" };
+    return { table: "planner_venues", stateKey: "venues", label: "venue", cloudFlag: "venuesCloudReady" };
   }
   return { table: "planner_relationship_types", stateKey: "relationshipTypes", label: "relationship", cloudFlag: "peopleCloudReady" };
 }
@@ -1720,6 +1799,85 @@ async function persistNamedOption(type, option, options = {}) {
     state.syncError = error.message;
     if (options.render !== false) render();
     else throw error;
+  }
+}
+
+function namedOptionUsage(type, id) {
+  if (type === "skills") return state.people.filter((person) => person.skill_ids.includes(id)).length;
+  if (type === "project-types") return state.projects.filter((project) => project.project_type_id === id).length;
+  if (type === "project-statuses") return state.projects.filter((project) => project.project_status_id === id).length;
+  if (type === "venues") return state.projects.filter((project) => project.venue_id === id).length;
+  if (type === "roles") return state.projectAssignments.filter((assignment) => assignment.role_ids.includes(id)).length;
+  return state.people.filter((person) => person.relationship_type_id === id).length;
+}
+
+function detachAnnotationReferences(type, id) {
+  if (type === "skills") {
+    state.people = state.people.map((person) => ({ ...person, skill_ids: person.skill_ids.filter((skillId) => skillId !== id) }));
+  } else if (type === "project-types") {
+    state.projects = state.projects.map((project) => (project.project_type_id === id ? { ...project, project_type_id: "" } : project));
+  } else if (type === "project-statuses") {
+    state.projects = state.projects.map((project) =>
+      project.project_status_id === id ? { ...project, project_status_id: "", status: "" } : project
+    );
+  } else if (type === "venues") {
+    state.projects = state.projects.map((project) => (project.venue_id === id ? { ...project, venue_id: "" } : project));
+  } else if (type === "roles") {
+    state.projectAssignments = state.projectAssignments.map((assignment) => ({
+      ...assignment,
+      role_ids: assignment.role_ids.filter((roleId) => roleId !== id)
+    }));
+  } else {
+    state.people = state.people.map((person) => (person.relationship_type_id === id ? { ...person, relationship_type_id: "" } : person));
+  }
+}
+
+async function deleteNamedOption(type, id) {
+  const config = optionConfig(type);
+  const option = state[config.stateKey].find((item) => item.id === id);
+  if (!option) return;
+  const usage = namedOptionUsage(type, id);
+  const message = usage
+    ? `Delete ${config.label} "${option.name}"? ${usage} linked item${usage === 1 ? "" : "s"} will keep their data, but show with neutral black styling where this annotation was used.`
+    : `Delete ${config.label} "${option.name}"?`;
+  if (!window.confirm(message)) return;
+  const previousItems = state[config.stateKey];
+  const previousPeople = state.people;
+  const previousProjects = state.projects;
+  const previousProjectAssignments = state.projectAssignments;
+  state[config.stateKey] = previousItems.filter((item) => item.id !== id);
+  detachAnnotationReferences(type, id);
+  saveNamedOptions();
+  saveLocal({ silent: true });
+  showSyncMessage(`Deleting ${config.label}...`);
+  if (!isSupabaseReady() || !state[config.cloudFlag]) {
+    state.syncMessage = `Deleted ${config.label} locally in this browser only.`;
+    render();
+    return;
+  }
+  try {
+    if (type === "project-statuses") {
+      const { error: updateError } = await state.supabase
+        .from("planner_projects")
+        .update({ project_status_id: null, status: "", updated_at: nowIso() })
+        .eq("user_id", state.user.id)
+        .eq("project_status_id", id);
+      if (updateError) throw updateError;
+    }
+    const { error } = await state.supabase.from(config.table).delete().eq("user_id", state.user.id).eq("id", id);
+    if (error) throw error;
+    state.syncError = "";
+    state.syncMessage = `Deleted ${config.label} for ${keyLabel()}.`;
+    render();
+  } catch (error) {
+    state[config.stateKey] = previousItems;
+    state.people = previousPeople;
+    state.projects = previousProjects;
+    state.projectAssignments = previousProjectAssignments;
+    saveNamedOptions();
+    state.syncError = `${config.label} was not deleted: ${error.message}`;
+    state.syncMessage = "";
+    render();
   }
 }
 
@@ -2096,7 +2254,8 @@ function fillVenueSelect(select, selected = "") {
 }
 
 function projectStatusName(project) {
-  return state.projectStatuses.find((status) => status.id === project.project_status_id)?.name || project.status || "";
+  if (project.project_status_id) return state.projectStatuses.find((status) => status.id === project.project_status_id)?.name || "";
+  return project.status || "";
 }
 
 function projectStatusNameForId(id) {
@@ -2112,7 +2271,7 @@ function projectStatusTone(statusName) {
   if (normalized === "not started") return { color: "#d85b49", tint: "rgba(216, 91, 73, 0.14)" };
   if (normalized === "in progress") return { color: "#d6a21e", tint: "rgba(214, 162, 30, 0.18)" };
   if (normalized === "completed") return { color: "#2f855a", tint: "rgba(47, 133, 90, 0.16)" };
-  return { color: "#8a94a6", tint: "rgba(138, 148, 166, 0.15)" };
+  return { color: "#111827", tint: "rgba(17, 24, 39, 0.1)" };
 }
 
 function applyProjectStatusTone(element, statusName) {
@@ -2138,7 +2297,7 @@ function relationshipTone(relationshipName) {
   if (normalized === "bad") return { color: "#d85b49", tint: "rgba(216, 91, 73, 0.13)" };
   if (normalized === "ok") return { color: "#d6a21e", tint: "rgba(214, 162, 30, 0.16)" };
   if (normalized === "strong") return { color: "#2f855a", tint: "rgba(47, 133, 90, 0.14)" };
-  return { color: "#8a94a6", tint: "rgba(138, 148, 166, 0.13)" };
+  return { color: "#111827", tint: "rgba(17, 24, 39, 0.1)" };
 }
 
 function applyPersonRelationshipTone(card, relationshipName) {
@@ -3095,6 +3254,7 @@ function renderAreasView() {
       <input class="area-name-input" type="text" aria-label="Area name">
       <input class="area-color-input" type="color" aria-label="Area color">
       <span class="area-usage"></span>
+      <button class="danger-button delete-area-button" type="button">Delete</button>
     `;
     row.querySelector(".area-name-input").value = area.name;
     row.querySelector(".area-color-input").value = area.color;
@@ -3138,19 +3298,10 @@ function renderNamedSettingsView(type) {
     row.innerHTML = `
       <input class="named-option-input" type="text" aria-label="${fieldLabel} name">
       <span class="area-usage"></span>
+      <button class="danger-button delete-option-button" type="button">Delete</button>
     `;
     row.querySelector(".named-option-input").value = item.name;
-    const usage = type === "skills"
-      ? state.people.filter((person) => person.skill_ids.includes(item.id)).length
-      : type === "project-types"
-        ? state.projects.filter((project) => project.project_type_id === item.id).length
-        : type === "project-statuses"
-          ? state.projects.filter((project) => project.project_status_id === item.id).length
-          : type === "venues"
-            ? state.projects.filter((project) => project.venue_id === item.id).length
-          : type === "roles"
-            ? state.projectAssignments.filter((assignment) => assignment.role_ids.includes(item.id)).length
-            : state.people.filter((person) => person.relationship_type_id === item.id).length;
+    const usage = namedOptionUsage(type, item.id);
     row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses", "venues"].includes(type) ? "project" : type === "roles" ? "assignment" : "person"}${usage === 1 ? "" : "s"}`;
     list.append(row);
   }
@@ -4678,29 +4829,37 @@ async function reorderTask(draggedId, targetId, placement) {
 
 els.taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const form = new FormData(els.taskForm);
-  const task = normalizeTask({
-    title: form.get("title").trim(),
-    parent_id: form.get("parentId") || "",
-    goal_id: form.get("goalId") || "",
-    goal_ids: parseIds(form.get("goalId") || ""),
-    project_id: form.get("projectId") || "",
-    area_id: form.get("area") || null,
-    area: areaById(form.get("area"))?.name || "Life",
-    priority: form.get("priority"),
-    due_date: form.get("dueDate") || defaultDueDateForView(),
-    tags: parseTags(form.get("tags")),
-    energy: "Medium",
-    sort_order: nextSortOrder(form.get("parentId") || "")
-  });
-  els.taskForm.reset();
-  els.area.value = areaIdForName("Life") || state.areas[0]?.id || "";
-  document.querySelector("#priority").value = "Medium";
-  document.querySelector("#parent-id").value = "";
-  document.querySelector("#goal-id").value = "";
-  document.querySelector("#project-id").value = "";
-  state.selectedId = task.id;
-  await persistTask(task);
+  setFormSaving(els.taskForm, true);
+  showSyncMessage("Saving task...");
+  try {
+    await waitForInitialCloudLoad();
+    const form = new FormData(els.taskForm);
+    const task = normalizeTask({
+      title: form.get("title").trim(),
+      parent_id: form.get("parentId") || "",
+      goal_id: form.get("goalId") || "",
+      goal_ids: parseIds(form.get("goalId") || ""),
+      project_id: form.get("projectId") || "",
+      area_id: form.get("area") || null,
+      area: areaById(form.get("area"))?.name || "Life",
+      priority: form.get("priority"),
+      due_date: form.get("dueDate") || defaultDueDateForView(),
+      tags: parseTags(form.get("tags")),
+      energy: "Medium",
+      sort_order: nextSortOrder(form.get("parentId") || "")
+    });
+    state.selectedId = task.id;
+    await persistTask(task);
+    if (state.syncError) return;
+    els.taskForm.reset();
+    els.area.value = areaIdForName("Life") || state.areas[0]?.id || "";
+    document.querySelector("#priority").value = "Medium";
+    document.querySelector("#parent-id").value = "";
+    document.querySelector("#goal-id").value = "";
+    document.querySelector("#project-id").value = "";
+  } finally {
+    setFormSaving(els.taskForm, false);
+  }
 });
 
 els.taskList.addEventListener("click", (event) => {
@@ -4775,6 +4934,18 @@ els.taskList.addEventListener("click", (event) => {
     sessionStorage.removeItem("project-status-filter");
     sessionStorage.removeItem("project-person-filter");
     renderTasks();
+    return;
+  }
+  const deleteAreaButton = event.target.closest(".delete-area-button");
+  if (deleteAreaButton) {
+    const row = deleteAreaButton.closest("[data-area-id]");
+    if (row) deleteArea(row.dataset.areaId);
+    return;
+  }
+  const deleteOptionButton = event.target.closest(".delete-option-button");
+  if (deleteOptionButton) {
+    const row = deleteOptionButton.closest("[data-option-id]");
+    if (row) deleteNamedOption(row.dataset.optionType, row.dataset.optionId);
     return;
   }
   const projectViewModeButton = event.target.closest("[data-project-view-mode]");
@@ -4991,71 +5162,124 @@ els.taskList.addEventListener("submit", async (event) => {
   if (taskFocusForm) {
     await patchTask(taskFocusForm.dataset.taskFocusId, focusedTaskPayload(taskFocusForm));
   } else if (goalForm) {
-    const name = form.get("name").trim();
-    if (hasDuplicateGoalName(name)) {
-      alertDuplicate("Life goal", name);
-      saveCreationDraft(event.target);
-      return;
-    }
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving life goal...");
     try {
-      await persistGoal({ name, description: form.get("description").trim() }, { requireCloud: true, render: false });
+      await waitForInitialCloudLoad();
+      const latestForm = new FormData(event.target);
+      const name = latestForm.get("name").trim();
+      if (hasDuplicateGoalName(name)) {
+        alertDuplicate("Life goal", name);
+        saveCreationDraft(event.target);
+        state.syncMessage = "";
+        renderSyncStatus();
+        return;
+      }
+      await persistGoal({ name, description: latestForm.get("description").trim() }, { requireCloud: true, render: false });
       clearCreationDraft(event.target);
       event.target.reset();
       render();
-    } catch {
+    } catch (error) {
       saveCreationDraft(event.target);
+      state.syncError = state.syncError || error.message || "Life goal was not saved to database.";
+      state.syncMessage = "";
       renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
     }
   } else if (ideaForm) {
-    await persistIdea({
-      text: form.get("text").trim(),
-      area_id: form.get("area") || null,
-      area: areaById(form.get("area"))?.name || "Life"
-    });
-    clearCreationDraft(event.target);
-  } else if (areasForm) {
-    const area = ensureArea(form.get("name").trim(), form.get("color") || "#39ff14");
-    if (area) await persistArea(area, { render: false });
-    clearCreationDraft(event.target);
-    event.target.reset();
-    event.target.querySelector("[name='color']").value = "#39ff14";
-    render();
-  } else if (personForm) {
-    const firstName = form.get("firstName").trim();
-    const lastName = form.get("lastName").trim();
-    const fullName = personNameFromParts(firstName, lastName);
-    if (hasDuplicatePersonName(firstName, lastName)) {
-      alertDuplicate("Person", fullName);
-      saveCreationDraft(event.target);
-      return;
-    }
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving idea...");
     try {
+      await waitForInitialCloudLoad();
+      const latestForm = new FormData(event.target);
+      await persistIdea({
+        text: latestForm.get("text").trim(),
+        area_id: latestForm.get("area") || null,
+        area: areaById(latestForm.get("area"))?.name || "Life"
+      }, { render: false });
+      clearCreationDraft(event.target);
+      event.target.reset();
+      render();
+    } catch (error) {
+      saveCreationDraft(event.target);
+      state.syncError = state.syncError || error.message || "Idea was not saved.";
+      state.syncMessage = "";
+      renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
+    }
+  } else if (areasForm) {
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving area...");
+    try {
+      await waitForInitialCloudLoad();
+      const latestForm = new FormData(event.target);
+      const area = ensureArea(latestForm.get("name").trim(), latestForm.get("color") || "#39ff14");
+      if (area) await persistArea(area, { render: false });
+      clearCreationDraft(event.target);
+      event.target.reset();
+      event.target.querySelector("[name='color']").value = "#39ff14";
+      render();
+    } catch (error) {
+      saveCreationDraft(event.target);
+      state.syncError = state.syncError || error.message || "Area was not saved.";
+      state.syncMessage = "";
+      renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
+    }
+  } else if (personForm) {
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving person...");
+    try {
+      await waitForInitialCloudLoad();
+      const latestForm = new FormData(event.target);
+      const firstName = latestForm.get("firstName").trim();
+      const lastName = latestForm.get("lastName").trim();
+      const fullName = personNameFromParts(firstName, lastName);
+      if (hasDuplicatePersonName(firstName, lastName)) {
+        alertDuplicate("Person", fullName);
+        saveCreationDraft(event.target);
+        state.syncMessage = "";
+        renderSyncStatus();
+        return;
+      }
       await persistPerson(
         {
           first_name: firstName,
           last_name: lastName,
-          relationship_type_id: form.get("relationshipTypeId") || "",
-          skill_ids: form.getAll("skillIds")
+          relationship_type_id: latestForm.get("relationshipTypeId") || "",
+          skill_ids: latestForm.getAll("skillIds")
         },
         { requireCloud: true, render: false }
       );
       clearCreationDraft(event.target);
       event.target.reset();
       render();
-    } catch {
+    } catch (error) {
       saveCreationDraft(event.target);
+      state.syncError = state.syncError || error.message || "Person was not saved to database.";
+      state.syncMessage = "";
       renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
     }
   } else if (projectForm) {
-    normalizeDateRangeInputs(projectForm, { anchorEnd: Boolean(projectForm.querySelector("[name='startDate']")?.value) });
-    const projectFormData = new FormData(projectForm);
-    const name = projectFormData.get("name").trim();
-    if (hasDuplicateProjectName(name)) {
-      alertDuplicate("Project", name);
-      saveCreationDraft(event.target);
-      return;
-    }
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving project...");
     try {
+      await waitForInitialCloudLoad();
+      normalizeDateRangeInputs(projectForm, { anchorEnd: Boolean(projectForm.querySelector("[name='startDate']")?.value) });
+      const projectFormData = new FormData(projectForm);
+      const name = projectFormData.get("name").trim();
+      if (hasDuplicateProjectName(name)) {
+        alertDuplicate("Project", name);
+        saveCreationDraft(event.target);
+        state.syncMessage = "";
+        renderSyncStatus();
+        return;
+      }
       await persistProject({
         name,
         description: projectFormData.get("description").trim(),
@@ -5068,19 +5292,38 @@ els.taskList.addEventListener("submit", async (event) => {
       clearCreationDraft(event.target);
       event.target.reset();
       render();
-    } catch {
+    } catch (error) {
       saveCreationDraft(event.target);
+      state.syncError = state.syncError || error.message || "Project was not saved to database.";
+      state.syncMessage = "";
       renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
     }
   } else if (namedSettingsForm) {
-    const type = namedSettingsForm.dataset.optionType;
-    const config = optionConfig(type);
-    const option = normalizeNamedOption({
-      name: form.get("name").trim(),
-      sort_order: nextNamedOptionSortOrder(state[config.stateKey])
-    });
-    await persistNamedOption(type, option);
-    clearCreationDraft(event.target);
+    setFormSaving(event.target, true);
+    try {
+      await waitForInitialCloudLoad();
+      const latestForm = new FormData(event.target);
+      const type = namedSettingsForm.dataset.optionType;
+      const config = optionConfig(type);
+      showSyncMessage(`Saving ${config.label}...`);
+      const option = normalizeNamedOption({
+        name: latestForm.get("name").trim(),
+        sort_order: nextNamedOptionSortOrder(state[config.stateKey])
+      });
+      await persistNamedOption(type, option, { render: false });
+      clearCreationDraft(event.target);
+      event.target.reset();
+      render();
+    } catch (error) {
+      saveCreationDraft(event.target);
+      state.syncError = state.syncError || error.message || "Annotation was not saved.";
+      state.syncMessage = "";
+      renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
+    }
   }
 });
 

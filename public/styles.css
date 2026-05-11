@@ -1389,9 +1389,13 @@ body.resizing .resize-handle::before {
   background: #fff;
   padding: var(--task-pad-y) var(--task-pad-x);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px auto;
+  grid-template-columns: minmax(0, 1fr) 92px auto auto;
   align-items: center;
   gap: var(--ui-gap);
+}
+
+.named-settings-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .area-usage {
