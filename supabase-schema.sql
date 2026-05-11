@@ -243,11 +243,15 @@ create table if not exists planner_relationship_types (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
+  color text,
   sort_order numeric not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, name)
 );
+
+alter table planner_relationship_types
+add column if not exists color text;
 
 create table if not exists planner_people (
   id uuid primary key default gen_random_uuid(),

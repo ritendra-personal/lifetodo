@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.24";
+const APP_VERSION = "1.10.25";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -23,7 +23,11 @@ const defaultAreas = [
 ];
 
 const defaultSkills = ["Acting", "AI", "Writing"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
-const defaultRelationshipTypes = ["Strong", "OK", "Bad"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+const defaultRelationshipTypes = [
+  { name: "Strong", color: "#2f855a" },
+  { name: "OK", color: "#d6a21e" },
+  { name: "Bad", color: "#d85b49" }
+].map((item, index) => ({ ...item, sort_order: (index + 1) * 1000 }));
 const defaultProjectTypes = ["Play", "Short Film", "Performance"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultProjectStatuses = ["Not started", "In progress", "Completed", "Deprioritized"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultRoles = ["Director", "Producer", "Writer", "Actor"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
@@ -525,12 +529,16 @@ function areaTintFor(item) {
 
 function areaTint(name) {
   const color = areaColor(name);
+  return colorTint(color, 0.11);
+}
+
+function colorTint(color, alpha = 0.12) {
   const hex = color.replace("#", "");
   if (hex.length !== 6) return "rgba(17, 24, 39, 0.1)";
   const r = parseInt(hex.slice(0, 2), 16);
   const g = parseInt(hex.slice(2, 4), 16);
   const b = parseInt(hex.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, 0.11)`;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function ensureArea(name, color = "#667085") {
@@ -779,6 +787,7 @@ function normalizeNamedOption(option, index = 0) {
   return {
     id: option.id || makeId(),
     name: option.name || "",
+    color: option.color || "",
     sort_order: Number(option.sort_order ?? option.sortOrder ?? index * 1000) || 0,
     created_at: option.created_at || nowIso(),
     updated_at: option.updated_at || nowIso()
@@ -1787,15 +1796,28 @@ async function persistNamedOption(type, option, options = {}) {
     return;
   }
   try {
-    const { data, error } = await state.supabase
+    const payload = { ...normalized, user_id: state.user.id };
+    if (type !== "relationships") delete payload.color;
+    let fallbackColorLocal = false;
+    let { data, error } = await state.supabase
       .from(config.table)
-      .upsert({ ...normalized, user_id: state.user.id })
+      .upsert(payload)
       .select()
       .single();
+    if (error && type === "relationships" && String(error.message || "").toLowerCase().includes("color")) {
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.color;
+      const fallback = await state.supabase.from(config.table).upsert(fallbackPayload).select().single();
+      data = fallback.data;
+      error = fallback.error;
+      fallbackColorLocal = !error;
+    }
     if (error) throw error;
     const saved = normalizeNamedOption(data);
-    state[config.stateKey] = state[config.stateKey].map((item) => (item.id === saved.id ? saved : item));
-    state.syncMessage = `Saved ${config.label} for ${keyLabel()}.`;
+    const savedWithLocalColor = type === "relationships" && normalized.color ? { ...saved, color: normalized.color } : saved;
+    state[config.stateKey] = state[config.stateKey].map((item) => (item.id === saved.id ? savedWithLocalColor : item));
+    saveNamedOptions();
+    state.syncMessage = fallbackColorLocal ? "Relationship color is local until you run migration 013." : `Saved ${config.label} for ${keyLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
   } catch (error) {
@@ -2295,7 +2317,13 @@ function relationshipNameForId(id) {
   return state.relationshipTypes.find((relationship) => relationship.id === id)?.name || "";
 }
 
+function relationshipTypeByName(name) {
+  return state.relationshipTypes.find((relationship) => relationship.name.toLowerCase() === String(name || "").toLowerCase());
+}
+
 function relationshipTone(relationshipName) {
+  const relationship = relationshipTypeByName(relationshipName);
+  if (relationship?.color) return { color: relationship.color, tint: colorTint(relationship.color, 0.14) };
   const normalized = String(relationshipName || "").trim().toLowerCase();
   if (normalized === "bad") return { color: "#d85b49", tint: "rgba(216, 91, 73, 0.13)" };
   if (normalized === "ok") return { color: "#d6a21e", tint: "rgba(214, 162, 30, 0.16)" };
@@ -3275,11 +3303,17 @@ function renderNamedSettingsView(type) {
   const title = titles[type] || "Settings";
   const items = state[config.stateKey];
   const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
+  const supportsColor = type === "relationships";
   els.taskList.innerHTML = `
-    <form id="named-settings-form" class="planning-form named-settings-form" data-option-type="${type}">
+    <form id="named-settings-form" class="planning-form named-settings-form${supportsColor ? " named-settings-form-with-color" : ""}" data-option-type="${type}">
       <label class="field-label">${fieldLabel}
         <input name="name" type="text" placeholder="New ${config.label}" required>
       </label>
+      ${supportsColor ? `
+        <label class="field-label">Color
+          <input name="color" type="color" value="#111827" aria-label="${fieldLabel} color">
+        </label>
+      ` : ""}
       <button class="primary-button form-submit" type="submit">Add ${config.label}</button>
     </form>
     <div class="planning-list area-settings-list"></div>
@@ -3296,14 +3330,17 @@ function renderNamedSettingsView(type) {
   for (const item of items) {
     const row = document.createElement("div");
     row.className = "area-settings-row named-settings-row";
+    if (supportsColor) row.classList.add("named-settings-row-with-color");
     row.dataset.optionId = item.id;
     row.dataset.optionType = type;
     row.innerHTML = `
       <input class="named-option-input" type="text" aria-label="${fieldLabel} name">
+      ${supportsColor ? `<input class="named-option-color-input" type="color" aria-label="${fieldLabel} color">` : ""}
       <span class="area-usage"></span>
       <button class="danger-button delete-option-button" type="button">Delete</button>
     `;
     row.querySelector(".named-option-input").value = item.name;
+    if (supportsColor) row.querySelector(".named-option-color-input").value = item.color || relationshipTone(item.name).color;
     const usage = namedOptionUsage(type, item.id);
     row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses", "venues"].includes(type) ? "project" : type === "roles" ? "assignment" : "person"}${usage === 1 ? "" : "s"}`;
     list.append(row);
@@ -5326,6 +5363,7 @@ els.taskList.addEventListener("submit", async (event) => {
       showSyncMessage(`Saving ${config.label}...`);
       const option = normalizeNamedOption({
         name: latestForm.get("name").trim(),
+        color: latestForm.get("color") || "",
         sort_order: nextNamedOptionSortOrder(state[config.stateKey])
       });
       await persistNamedOption(type, option, { render: false });
@@ -5502,6 +5540,8 @@ function updateNamedOptionRow(row, shouldRender = false) {
   const name = row.querySelector(".named-option-input").value.trim();
   if (!name) return;
   option.name = name;
+  const colorInput = row.querySelector(".named-option-color-input");
+  if (colorInput) option.color = colorInput.value;
   saveNamedOptions();
   queueAutosave(`${row.dataset.optionType}:${option.id}`, async () => {
     await persistNamedOption(row.dataset.optionType, option, { render: false });

@@ -1396,6 +1396,10 @@ body.resizing .resize-handle::before {
   max-width: 680px;
 }
 
+.named-settings-form-with-color {
+  grid-template-columns: minmax(0, 1fr) 92px auto;
+}
+
 .area-settings-list {
   max-width: 760px;
 }
@@ -1414,6 +1418,10 @@ body.resizing .resize-handle::before {
 
 .named-settings-row {
   grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.named-settings-row-with-color {
+  grid-template-columns: minmax(0, 1fr) 92px auto auto;
 }
 
 .area-usage {
