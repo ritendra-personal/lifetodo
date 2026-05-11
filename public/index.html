@@ -21,12 +21,8 @@
 
         <nav class="views" aria-label="Planner views">
           <button class="view-button active" data-view="home" type="button">Home <span id="count-home">0</span></button>
-          <div class="nav-group-label">Tasks</div>
-          <button class="view-button nested" data-view="today" type="button">Today <span id="count-today">0</span></button>
-          <button class="view-button nested" data-view="upcoming" type="button">Upcoming <span id="count-upcoming">0</span></button>
-          <button class="view-button nested" data-view="backlog" type="button">Backlog <span id="count-backlog">0</span></button>
-          <button class="view-button nested" data-view="done" type="button">Done <span id="count-done">0</span></button>
           <div class="nav-group-label">Key Objects</div>
+          <button class="view-button nested" data-view="tasks" type="button">Tasks <span id="count-tasks">0</span></button>
           <button class="view-button nested" data-view="goals" type="button">Life Goals <span id="count-goals">0</span></button>
           <button class="view-button nested" data-view="projects" type="button">Projects <span id="count-projects">0</span></button>
           <button class="view-button nested" data-view="people" type="button">People <span id="count-people">0</span></button>
@@ -85,6 +81,13 @@
 
         <div id="sync-status" class="sync-status hidden" role="status"></div>
         <div id="sync-error" class="sync-error hidden" role="alert"></div>
+
+        <section id="task-filter-bar" class="task-filter-bar hidden" aria-label="Task filters">
+          <button class="task-filter-button active" data-task-filter="today" type="button">Today <span id="count-today">0</span></button>
+          <button class="task-filter-button" data-task-filter="upcoming" type="button">Upcoming <span id="count-upcoming">0</span></button>
+          <button class="task-filter-button" data-task-filter="backlog" type="button">Backlog <span id="count-backlog">0</span></button>
+          <button class="task-filter-button" data-task-filter="done" type="button">Done <span id="count-done">0</span></button>
+        </section>
 
         <section id="entry-panel" class="entry-panel" aria-label="Add task">
           <form id="task-form" class="task-form">

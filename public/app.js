@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.2";
+const APP_VERSION = "1.9.3";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -44,6 +44,7 @@ const state = {
   focusedId: "",
   focusedReturnView: "home",
   view: "home",
+  taskFilter: ["today", "upcoming", "backlog", "done"].includes(localStorage.getItem("task-filter")) ? localStorage.getItem("task-filter") : "today",
   search: "",
   tagFilter: "",
   sort: "manual",
@@ -75,6 +76,7 @@ const els = {
   syncError: document.querySelector("#sync-error"),
   taskList: document.querySelector("#task-list"),
   taskForm: document.querySelector("#task-form"),
+  taskFilterBar: document.querySelector("#task-filter-bar"),
   entryPanel: document.querySelector("#entry-panel"),
   plannerGrid: document.querySelector("#planner-grid"),
   area: document.querySelector("#area"),
@@ -118,6 +120,7 @@ const detail = {
 };
 
 const counts = {
+  tasks: document.querySelector("#count-tasks"),
   today: document.querySelector("#count-today"),
   upcoming: document.querySelector("#count-upcoming"),
   backlog: document.querySelector("#count-backlog"),
@@ -428,8 +431,9 @@ function normalizeDateRangeInputs(container, options = {}) {
 }
 
 function defaultDueDateForView() {
-  if (state.view === "today") return todayIso();
-  if (state.view === "upcoming") return addDaysIso(1);
+  const filter = state.view === "tasks" ? state.taskFilter : state.view;
+  if (filter === "today") return todayIso();
+  if (filter === "upcoming") return addDaysIso(1);
   return "";
 }
 
@@ -1628,7 +1632,7 @@ function descendantIds(id) {
 
 function taskBucket(task) {
   const today = todayIso();
-  if (task.status === "done" && !state.showDone) return "done";
+  if (task.status === "done") return "done";
   if (!task.due_date) return "backlog";
   if (task.due_date <= today) return "today";
   return "upcoming";
@@ -1641,9 +1645,10 @@ function filteredTasks() {
   return state.tasks
     .filter((task) => {
       if (state.view === "graph" || state.view === "timeline") return task.status !== "done" || state.showDone;
-      if (state.view === "done") return task.status === "done";
+      const taskFilter = state.view === "tasks" ? state.taskFilter : state.view;
+      if (taskFilter === "done") return task.status === "done";
       if (task.status === "done" && !state.showDone) return false;
-      return taskBucket(task) === state.view;
+      return taskBucket(task) === taskFilter;
     })
     .filter((task) => {
       if (!search) return true;
@@ -1690,6 +1695,7 @@ function renderCounts() {
   const bucketCounts = { today: 0, upcoming: 0, backlog: 0, done: 0 };
   for (const task of state.tasks) bucketCounts[taskBucket(task)] += 1;
 
+  counts.tasks.textContent = state.tasks.length;
   counts.home.textContent = state.tasks.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
   counts.today.textContent = bucketCounts.today;
   counts.upcoming.textContent = bucketCounts.upcoming;
@@ -1840,6 +1846,23 @@ function renderAreas() {
   }
 }
 
+function renderTaskFilterBar() {
+  if (!els.taskFilterBar) return;
+  const show = state.view === "tasks";
+  els.taskFilterBar.classList.toggle("hidden", !show);
+  if (!show) return;
+  els.taskFilterBar.querySelectorAll("[data-task-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.taskFilter === state.taskFilter);
+  });
+}
+
+function setTaskFilter(filter) {
+  const next = ["today", "upcoming", "backlog", "done"].includes(filter) ? filter : "today";
+  state.taskFilter = next;
+  state.view = "tasks";
+  localStorage.setItem("task-filter", next);
+}
+
 function renderParentControls() {
   fillParentSelect(document.querySelector("#parent-id"), "", "");
   fillGoalSelect(els.goal, "");
@@ -1868,6 +1891,10 @@ function renderTasks() {
   }
   if (state.view === "focus-person") {
     renderFocusedPersonView();
+    return;
+  }
+  if (state.view === "tasks") {
+    renderTaskListView();
     return;
   }
   if (state.view === "home") {
@@ -1931,6 +1958,10 @@ function renderTasks() {
     return;
   }
 
+  renderTaskListView();
+}
+
+function renderTaskListView() {
   const visible = visibleTaskIds();
   els.taskList.innerHTML = "";
 
@@ -3672,12 +3703,13 @@ function render() {
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
   const titles = {
     home: "Home",
+    tasks: "Tasks",
+    today: "Tasks",
+    upcoming: "Tasks",
+    backlog: "Tasks",
+    done: "Tasks",
     goals: "Life Goals",
     "goal-assignments": "Tasks to Life Goals",
-    today: "Today",
-    upcoming: "Upcoming",
-    backlog: "Backlog",
-    done: "Done",
     people: "People",
     "people-filter": "People Filter",
     projects: "Projects",
@@ -3735,6 +3767,7 @@ function render() {
   });
 
   renderCounts();
+  renderTaskFilterBar();
   renderTagFilters();
   renderAreas();
   renderParentControls();
@@ -3851,7 +3884,11 @@ els.taskList.addEventListener("click", (event) => {
   if (event.target.closest(".connector-handle")) return;
   const homeViewButton = event.target.closest("[data-home-view]");
   if (homeViewButton) {
-    state.view = homeViewButton.dataset.homeView;
+    if (["today", "upcoming", "backlog", "done"].includes(homeViewButton.dataset.homeView)) {
+      setTaskFilter(homeViewButton.dataset.homeView);
+    } else {
+      state.view = homeViewButton.dataset.homeView;
+    }
     render();
     return;
   }
@@ -4525,8 +4562,16 @@ document.querySelectorAll(".view-button").forEach((button) => {
   button.addEventListener("click", () => {
     state.focusedId = "";
     state.view = button.dataset.view;
+    if (state.view === "tasks") localStorage.setItem("task-filter", state.taskFilter);
     render();
   });
+});
+
+els.taskFilterBar?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-task-filter]");
+  if (!button) return;
+  setTaskFilter(button.dataset.taskFilter);
+  render();
 });
 
 els.search.addEventListener("input", () => {
@@ -4705,7 +4750,8 @@ els.resizeHandle.addEventListener("pointerdown", (event) => {
 els.resizeHandle.addEventListener("pointermove", (event) => {
   if (!resizing) return;
   const grid = document.querySelector(".planner-grid").getBoundingClientRect();
-  state.detailWidth = Math.min(620, Math.max(280, grid.right - event.clientX));
+  const maxWidth = Math.max(280, Math.min(900, grid.width - 180));
+  state.detailWidth = Math.min(maxWidth, Math.max(280, grid.right - event.clientX));
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
 });
 
