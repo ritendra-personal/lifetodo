@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.16";
+const APP_VERSION = "1.10.17";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -65,6 +65,7 @@ const state = {
   tagFilter: "",
   sort: "manual",
   peopleSort: loadPeopleSort(),
+  projectSort: ["name", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "name",
   projectViewMode: localStorage.getItem("project-view-mode") === "minimal" ? "minimal" : "full",
   showDone: localStorage.getItem("show-done") === "true",
   density: densityOptions.includes(localStorage.getItem("planner-density")) ? localStorage.getItem("planner-density") : "comfort",
@@ -2155,6 +2156,17 @@ function setPeopleSort(key) {
   localStorage.setItem("people-sort", JSON.stringify(state.peopleSort));
 }
 
+function sortedProjects(projects) {
+  const undatedValue = "9999-12-31";
+  return projects.slice().sort((a, b) => {
+    if (state.projectSort === "startDate") {
+      const dateCompare = (a.start_date || undatedValue).localeCompare(b.start_date || undatedValue);
+      if (dateCompare) return dateCompare;
+    }
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+  });
+}
+
 function projectTypeName(project) {
   return state.projectTypes.find((type) => type.id === project.project_type_id)?.name || "";
 }
@@ -3301,6 +3313,12 @@ function renderProjectsView() {
         <h4>Projects</h4>
         <div class="section-head-tools">
           <span>${state.projects.length} ${state.projects.length === 1 ? "project" : "projects"}</span>
+          <label class="compact-select-label">Sort
+            <select class="project-sort-select" name="projectSort" aria-label="Sort projects">
+              <option value="name" ${state.projectSort === "name" ? "selected" : ""}>Name</option>
+              <option value="startDate" ${state.projectSort === "startDate" ? "selected" : ""}>Start date</option>
+            </select>
+          </label>
           <div class="view-mode-toggle" aria-label="Project view mode">
             <button class="${isMinimal ? "" : "active"}" type="button" data-project-view-mode="full">Full</button>
             <button class="${isMinimal ? "active" : ""}" type="button" data-project-view-mode="minimal">Minimal</button>
@@ -3324,12 +3342,13 @@ function renderProjectsView() {
     list.append(empty);
     return;
   }
-  for (const project of state.projects) {
+  for (const [index, project] of sortedProjects(state.projects).entries()) {
     const card = document.createElement("article");
     card.className = `planning-card project-card${isMinimal ? " minimal-project-card" : ""}`;
     card.dataset.projectId = project.id;
     applyProjectStatusTone(card, projectStatusName(project));
     card.innerHTML = `
+      <div class="project-sequence" aria-label="Project sequence">${index + 1}</div>
       <div class="project-identity">
         <input name="name" type="text" required aria-label="Project name">
         <div class="project-task-count"></div>
@@ -3463,18 +3482,20 @@ function renderGoalAssignmentsView() {
   els.taskList.innerHTML = `
     <div class="assignment-view assignment-map">
       <svg class="assignment-lines" aria-hidden="true"></svg>
-      <div class="assignment-toolbar">
-        <label class="toggle">
-          <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
-          <span>Selected only</span>
-        </label>
-      </div>
       <section class="assignment-panel">
         <h4>Top-level tasks</h4>
         <div class="assignment-task-list"></div>
       </section>
       <section class="assignment-panel">
-        <h4>Life goals</h4>
+        <div class="assignment-panel-head">
+          <h4>Life goals</h4>
+          <div class="assignment-toolbar">
+            <label class="toggle">
+              <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
+              <span>Selected only</span>
+            </label>
+          </div>
+        </div>
         <div class="assignment-goal-list"></div>
       </section>
     </div>
@@ -3532,18 +3553,20 @@ function renderPeopleProjectsView() {
   els.taskList.innerHTML = `
     <div class="assignment-view assignment-map people-project-map">
       <svg class="assignment-lines" aria-hidden="true"></svg>
-      <div class="assignment-toolbar">
-        <label class="toggle">
-          <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
-          <span>Selected only</span>
-        </label>
-      </div>
       <section class="assignment-panel">
         <h4>People</h4>
         <div class="assignment-person-list"></div>
       </section>
       <section class="assignment-panel">
-        <h4>Projects</h4>
+        <div class="assignment-panel-head">
+          <h4>Projects</h4>
+          <div class="assignment-toolbar">
+            <label class="toggle">
+              <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
+              <span>Selected only</span>
+            </label>
+          </div>
+        </div>
         <div class="assignment-project-list"></div>
       </section>
     </div>
@@ -5086,6 +5109,13 @@ els.taskList.addEventListener("change", (event) => {
     state.assignmentSelectedOnly = selectedOnlyToggle.checked;
     localStorage.setItem("assignment-selected-only", String(state.assignmentSelectedOnly));
     scheduleAssignmentLines();
+    return;
+  }
+  const projectSort = event.target.closest("[name='projectSort']");
+  if (projectSort) {
+    state.projectSort = projectSort.value === "startDate" ? "startDate" : "name";
+    localStorage.setItem("project-sort", state.projectSort);
+    renderTasks();
     return;
   }
   const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter'], [name='roleFilter']");
