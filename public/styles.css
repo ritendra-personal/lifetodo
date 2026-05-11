@@ -428,7 +428,7 @@ textarea:focus {
 }
 
 .entry-panel {
-  margin-bottom: var(--major-gap);
+  margin-bottom: calc(var(--major-gap) * 1.15);
 }
 
 .task-filter-bar {
@@ -522,7 +522,7 @@ textarea:focus {
 .task-form {
   display: grid;
   grid-template-columns: minmax(150px, 1.1fr) repeat(4, minmax(118px, 0.78fr)) minmax(94px, 0.6fr) minmax(128px, 0.72fr) minmax(100px, 0.65fr) 74px;
-  background: var(--panel);
+  background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: var(--ui-gap);
@@ -1095,12 +1095,15 @@ body.resizing .resize-handle::before {
 .directory-panel {
   display: grid;
   gap: var(--task-list-gap);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: var(--task-list-pad);
 }
 
 .creation-panel {
-  padding-bottom: calc(var(--major-gap) * 1.25);
   margin-bottom: calc(var(--major-gap) * 1.15);
-  border-bottom: 1px solid var(--line);
 }
 
 .planning-section-head {
