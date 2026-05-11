@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.8";
+const APP_VERSION = "1.10.9";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -54,6 +54,7 @@ const state = {
   projectStatuses: loadNamedOptions("planner-project-statuses", defaultProjectStatuses),
   roles: loadNamedOptions("planner-roles", defaultRoles),
   selectedAssignmentTaskId: "",
+  selectedAssignmentPersonId: "",
   selectedId: null,
   focusedId: "",
   focusedReturnView: "home",
@@ -144,6 +145,7 @@ const counts = {
   done: document.querySelector("#count-done"),
   goals: document.querySelector("#count-goals"),
   goalAssignments: document.querySelector("#count-goal-assignments"),
+  peopleProjects: document.querySelector("#count-people-projects"),
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
   projects: document.querySelector("#count-projects"),
@@ -219,6 +221,7 @@ function validView(view) {
     "tasks",
     "goals",
     "goal-assignments",
+    "people-projects",
     "people",
     "people-filter",
     "projects",
@@ -1836,6 +1839,7 @@ function renderCounts() {
   counts.done.textContent = bucketCounts.done;
   counts.goals.textContent = state.goals.length;
   counts.goalAssignments.textContent = state.tasks.filter((task) => !task.parent_id && task.status !== "done").length;
+  counts.peopleProjects.textContent = state.projectAssignments.length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
   counts.projects.textContent = state.projects.length;
@@ -2113,6 +2117,10 @@ function renderTasks() {
   }
   if (state.view === "goal-assignments") {
     renderGoalAssignmentsView();
+    return;
+  }
+  if (state.view === "people-projects") {
+    renderPeopleProjectsView();
     return;
   }
   if (state.view === "people") {
@@ -3354,12 +3362,87 @@ function renderGoalAssignmentsView() {
   else lines.innerHTML = "";
 }
 
+function renderPeopleProjectsView() {
+  if (!state.selectedAssignmentPersonId || !state.people.some((person) => person.id === state.selectedAssignmentPersonId)) {
+    state.selectedAssignmentPersonId = state.people[0]?.id || "";
+  }
+  const selectedAssignments = state.projectAssignments.filter((assignment) => assignment.person_id === state.selectedAssignmentPersonId);
+  const selectedProjectIds = new Set(selectedAssignments.map((assignment) => assignment.project_id));
+  els.taskList.innerHTML = `
+    <div class="assignment-view assignment-map people-project-map">
+      <svg class="assignment-lines" aria-hidden="true"></svg>
+      <section class="assignment-panel">
+        <h4>People</h4>
+        <div class="assignment-person-list"></div>
+      </section>
+      <section class="assignment-panel">
+        <h4>Projects</h4>
+        <div class="assignment-project-list"></div>
+      </section>
+    </div>
+  `;
+  const personList = els.taskList.querySelector(".assignment-person-list");
+  const projectList = els.taskList.querySelector(".assignment-project-list");
+  const lines = els.taskList.querySelector(".assignment-lines");
+  if (!state.people.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No people yet.";
+    personList.append(empty);
+  }
+  for (const person of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"])) {
+    const assignmentCount = state.projectAssignments.filter((assignment) => assignment.person_id === person.id).length;
+    const button = document.createElement("button");
+    button.className = `assignment-task assignment-person ${person.id === state.selectedAssignmentPersonId ? "active" : ""} ${assignmentCount ? "linked" : ""}`;
+    button.type = "button";
+    button.dataset.assignmentPersonId = person.id;
+    button.innerHTML = `<span class="assignment-title"></span><small></small><span class="connector-handle person-handle" aria-hidden="true"></span>`;
+    button.querySelector(".assignment-title").textContent = personFullName(person);
+    button.querySelector("small").textContent = `${relationshipNameForId(person.relationship_type_id) || "No relationship"} · ${assignmentCount} project${assignmentCount === 1 ? "" : "s"}`;
+    applyPersonRelationshipTone(button, relationshipNameForId(person.relationship_type_id));
+    personList.append(button);
+  }
+  if (!state.projects.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No projects yet.";
+    projectList.append(empty);
+  }
+  for (const project of state.projects) {
+    const assignment = selectedAssignments.find((item) => item.project_id === project.id);
+    const active = selectedProjectIds.has(project.id);
+    const button = document.createElement("div");
+    button.className = `assignment-goal assignment-project ${active ? "active" : ""}`;
+    button.tabIndex = 0;
+    button.setAttribute("role", "button");
+    button.dataset.assignmentProjectId = project.id;
+    if (assignment) button.dataset.projectAssignmentId = assignment.id;
+    button.title = active ? "Click to remove this assignment" : "Click to assign selected person";
+    applyProjectStatusTone(button, projectStatusName(project));
+    button.innerHTML = `
+      <span class="connector-handle project-handle" aria-hidden="true"></span>
+      <strong></strong>
+      <span></span>
+      <div class="role-picker assignment-role-picker" role="group" aria-label="Project roles"></div>
+    `;
+    button.querySelector("strong").textContent = project.name || "Untitled project";
+    button.querySelector("strong + span").textContent = `${projectTypeName(project) || "No type"} · ${projectStatusName(project) || "No status"}`;
+    if (assignment) fillRolePicker(button.querySelector(".role-picker"), assignment.role_ids);
+    else button.querySelector(".role-picker").remove();
+    projectList.append(button);
+  }
+  watchAssignmentLayout();
+  if (state.people.length && state.projects.length) scheduleAssignmentLines();
+  else lines.innerHTML = "";
+}
+
 function scheduleAssignmentLines() {
-  if (state.view !== "goal-assignments" || assignmentDrag) return;
+  if (!["goal-assignments", "people-projects"].includes(state.view) || assignmentDrag) return;
   if (assignmentDrawFrame) return;
   assignmentDrawFrame = requestAnimationFrame(() => {
     assignmentDrawFrame = 0;
-    drawAssignmentLines();
+    if (state.view === "people-projects") drawPeopleProjectLines();
+    else drawAssignmentLines();
   });
 }
 
@@ -3397,6 +3480,28 @@ function drawAssignmentLines() {
       path.setAttribute("marker-end", `url(#${isActive ? "assignment-arrow-active" : "assignment-arrow"})`);
       svg.append(path);
     }
+  }
+}
+
+function drawPeopleProjectLines() {
+  const svg = els.taskList.querySelector(".assignment-lines");
+  if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+  svg.innerHTML = assignmentMarkerDefs();
+  for (const assignment of state.projectAssignments) {
+    const personHandle = els.taskList.querySelector(`[data-assignment-person-id="${CSS.escape(assignment.person_id)}"] .person-handle`);
+    const projectHandle = els.taskList.querySelector(`[data-assignment-project-id="${CSS.escape(assignment.project_id)}"] .project-handle`);
+    if (!personHandle || !projectHandle) continue;
+    const start = assignmentHandlePoint(personHandle, svg);
+    const end = assignmentGoalArrowPoint(projectHandle, svg);
+    const isActive = assignment.person_id === state.selectedAssignmentPersonId;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", assignmentCurvePath(start, end));
+    path.setAttribute("class", isActive ? "assignment-line active" : "assignment-line");
+    path.setAttribute("marker-end", `url(#${isActive ? "assignment-arrow-active" : "assignment-arrow"})`);
+    svg.append(path);
   }
 }
 
@@ -3490,6 +3595,16 @@ async function toggleAssignmentLink(taskId, goalId) {
   else goals.add(goalId);
   const goalIds = [...goals];
   await patchTask(taskId, { goal_ids: goalIds, goal_id: goalIds[0] || null });
+}
+
+async function togglePeopleProjectAssignment(personId, projectId) {
+  if (!personId || !projectId) return;
+  const existing = state.projectAssignments.find((assignment) => assignment.person_id === personId && assignment.project_id === projectId);
+  if (existing) {
+    await deleteProjectAssignment(existing.id);
+    return;
+  }
+  await persistProjectAssignment({ person_id: personId, project_id: projectId, role_ids: [] });
 }
 
 async function finishAssignmentDrag(event) {
@@ -3971,7 +4086,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "focus-task", "focus-project", "focus-goal", "focus-person"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "focus-task", "focus-project", "focus-goal", "focus-person"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -4006,6 +4121,7 @@ function render() {
     done: "Tasks",
     goals: "Life Goals",
     "goal-assignments": "Tasks to Life Goals",
+    "people-projects": "People to Projects",
     people: "People",
     "people-filter": "People Filter",
     projects: "Projects",
@@ -4025,7 +4141,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -4200,6 +4316,12 @@ els.taskList.addEventListener("click", (event) => {
     renderTasks();
     return;
   }
+  const assignmentPerson = event.target.closest("[data-assignment-person-id]");
+  if (assignmentPerson) {
+    state.selectedAssignmentPersonId = assignmentPerson.dataset.assignmentPersonId;
+    renderTasks();
+    return;
+  }
   const assignmentGoal = event.target.closest("[data-assignment-goal-id]");
   if (assignmentGoal) {
     if (state.selectedAssignmentTaskId) {
@@ -4279,6 +4401,11 @@ els.taskList.addEventListener("click", (event) => {
     removeRoleButton.closest(".role-pill")?.remove();
     if (row) autosaveProjectAssignmentRow(row);
     else if (picker) fillRolePicker(picker, [...picker.querySelectorAll("[name='roleIds']")].map((input) => input.value));
+    return;
+  }
+  const assignmentProject = event.target.closest("[data-assignment-project-id]");
+  if (assignmentProject && !event.target.closest(".role-picker")) {
+    togglePeopleProjectAssignment(state.selectedAssignmentPersonId, assignmentProject.dataset.assignmentProjectId);
     return;
   }
   const removeSkillButton = event.target.closest(".skill-remove-button");
@@ -4784,6 +4911,12 @@ els.taskList.addEventListener("keydown", (event) => {
   if (graphNode && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
     focusObject("task", graphNode.dataset.id, "graph");
+    return;
+  }
+  const assignmentProject = event.target.closest("[data-assignment-project-id]");
+  if (assignmentProject && !event.target.closest(".role-picker") && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    togglePeopleProjectAssignment(state.selectedAssignmentPersonId, assignmentProject.dataset.assignmentProjectId);
     return;
   }
   const item = event.target.closest(".task-item");

@@ -2032,7 +2032,9 @@ body.resizing .resize-handle::before {
 }
 
 .assignment-task-list,
-.assignment-goal-list {
+.assignment-goal-list,
+.assignment-person-list,
+.assignment-project-list {
   display: grid;
   gap: var(--task-list-gap);
 }
@@ -2134,6 +2136,39 @@ body.resizing .resize-handle::before {
   box-shadow: 0 0 0 7px rgba(216, 91, 73, 0.14);
 }
 
+.assignment-person {
+  border-left: 6px solid var(--person-relationship-color, #8a94a6);
+  background: linear-gradient(90deg, var(--person-relationship-tint, rgba(138, 148, 166, 0.13)), #fff 48%);
+}
+
+.assignment-project {
+  border-left: 8px solid var(--project-status-color, #8a94a6);
+  background: linear-gradient(90deg, var(--project-status-tint, rgba(138, 148, 166, 0.15)), #fff 50%);
+}
+
+.assignment-project:hover {
+  border-color: color-mix(in srgb, var(--project-status-color, #8a94a6) 64%, white);
+  background: linear-gradient(90deg, var(--project-status-tint, rgba(138, 148, 166, 0.15)), #fff 58%);
+}
+
+.assignment-project.active {
+  border-color: var(--project-status-color, var(--teal));
+  background: linear-gradient(90deg, var(--project-status-tint, rgba(138, 148, 166, 0.15)), #fff 62%);
+}
+
+.assignment-project .project-handle {
+  border-color: var(--project-status-color, #8a94a6);
+}
+
+.assignment-project.active:hover {
+  border-color: var(--coral);
+  background: linear-gradient(90deg, rgba(216, 91, 73, 0.18), #fff 62%);
+}
+
+.assignment-role-picker {
+  margin-top: 4px;
+}
+
 .assignment-goal.drag-target,
 .assignment-goal.drag-target:hover {
   border-color: var(--teal);
@@ -2185,16 +2220,19 @@ body.resizing .resize-handle::before {
   box-shadow: 0 0 0 7px rgba(14, 124, 116, 0.15);
 }
 
-.task-handle {
+.task-handle,
+.person-handle {
   right: -8px;
   cursor: grab;
 }
 
-.task-handle:active {
+.task-handle:active,
+.person-handle:active {
   cursor: grabbing;
 }
 
-.goal-handle {
+.goal-handle,
+.project-handle {
   left: -8px;
   pointer-events: none;
 }
