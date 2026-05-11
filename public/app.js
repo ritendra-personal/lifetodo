@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.5";
+const APP_VERSION = "1.8.6";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2629,17 +2629,19 @@ function renderGoalAssignmentsView() {
     button.querySelector("small").textContent = `${goalCount} linked goal${goalCount === 1 ? "" : "s"}`;
     taskList.append(button);
   }
-  for (const goal of state.goals) {
+  state.goals.forEach((goal, index) => {
     const button = document.createElement("button");
     button.className = `assignment-goal ${selectedGoalIds.has(goal.id) ? "active" : ""}`;
     button.type = "button";
     button.dataset.assignmentGoalId = goal.id;
+    button.title = selectedGoalIds.has(goal.id) ? "Click to remove this link" : "Click to link selected task";
+    button.style.setProperty("--goal-color", goalAccent(index));
     const count = state.tasks.filter((task) => !task.parent_id && taskHasGoal(task, goal.id)).length;
     button.innerHTML = `<span class="connector-handle goal-handle" aria-hidden="true"></span><strong></strong><span></span>`;
     button.querySelector("strong").textContent = goal.name;
     button.querySelector("strong + span").textContent = `${count} top-level task${count === 1 ? "" : "s"}`;
     goalList.append(button);
-  }
+  });
   if (!state.goals.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";

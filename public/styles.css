@@ -1721,6 +1721,98 @@ body.resizing .resize-handle::before {
   border-left: 6px solid #476c9b;
 }
 
+.assignment-goal {
+  border-left: 8px solid var(--goal-color, var(--teal));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--goal-color, var(--teal)) 13%, white), #fff 50%);
+  padding-left: calc(var(--task-pad-x) + 16px);
+}
+
+.assignment-goal .goal-handle {
+  border-color: var(--goal-color, var(--teal));
+}
+
+.assignment-goal:hover {
+  border-color: color-mix(in srgb, var(--goal-color, var(--teal)) 70%, white);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--goal-color, var(--teal)) 22%, white), #fff 54%);
+}
+
+.assignment-goal.active {
+  border-color: var(--goal-color, var(--teal));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--goal-color, var(--teal)) 28%, white), #fff 58%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--goal-color, var(--teal)) 18%, transparent);
+}
+
+.assignment-goal.active .goal-handle {
+  background: color-mix(in srgb, var(--goal-color, var(--teal)) 24%, white);
+}
+
+.assignment-goal.active:hover {
+  border-color: var(--coral);
+  background: linear-gradient(90deg, rgba(216, 91, 73, 0.18), #fff 58%);
+  box-shadow: 0 0 0 3px rgba(216, 91, 73, 0.12), var(--hover-shadow);
+}
+
+.assignment-goal.active:hover strong {
+  color: var(--coral);
+}
+
+.assignment-goal.active:hover > span:not(.connector-handle) {
+  color: #8f3328;
+}
+
+.assignment-goal.active:hover::after {
+  content: "Click to remove link";
+  justify-self: start;
+  width: fit-content;
+  margin-top: 2px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #8f3328;
+  background: rgba(216, 91, 73, 0.14);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.assignment-goal.active:hover .goal-handle {
+  border-color: var(--coral);
+  background: var(--coral);
+  box-shadow: 0 0 0 7px rgba(216, 91, 73, 0.14);
+}
+
+.assignment-goal.drag-target,
+.assignment-goal.drag-target:hover {
+  border-color: var(--teal);
+  background: #e5f5f3;
+  box-shadow: 0 0 0 4px rgba(14, 124, 116, 0.16), var(--hover-shadow);
+}
+
+.assignment-goal.drag-target::after {
+  content: none;
+}
+
+.assignment-goal.drag-target .goal-handle,
+.assignment-goal.drag-target:hover .goal-handle {
+  border-color: var(--teal);
+  background: var(--teal);
+  box-shadow: 0 0 0 8px rgba(14, 124, 116, 0.16);
+}
+
+.assignment-line-draft {
+  stroke: var(--teal-dark);
+  stroke-width: 2;
+  opacity: 0.95;
+}
+
+.assignment-task span,
+.assignment-goal strong {
+  font-weight: 800;
+}
+
+.assignment-task small,
+.assignment-goal span {
+  color: var(--muted);
+}
+
 .connector-handle {
   position: absolute;
   top: 50%;
@@ -1750,33 +1842,6 @@ body.resizing .resize-handle::before {
 .goal-handle {
   left: -8px;
   pointer-events: none;
-}
-
-.assignment-line-draft {
-  stroke: var(--teal-dark);
-  stroke-width: 2;
-  opacity: 0.95;
-}
-
-.assignment-goal.drag-target {
-  border-color: var(--teal);
-  background: #e5f5f3;
-  box-shadow: 0 0 0 4px rgba(14, 124, 116, 0.16), var(--hover-shadow);
-}
-
-.assignment-goal.drag-target .goal-handle {
-  background: var(--teal);
-  box-shadow: 0 0 0 8px rgba(14, 124, 116, 0.16);
-}
-
-.assignment-task span,
-.assignment-goal strong {
-  font-weight: 800;
-}
-
-.assignment-task small,
-.assignment-goal span {
-  color: var(--muted);
 }
 
 .goal-task-outline {
