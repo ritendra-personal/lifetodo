@@ -1974,16 +1974,16 @@ body.resizing .resize-handle::before {
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 1.1fr);
   gap: 150px;
-  padding: var(--task-list-pad);
+  padding: 0;
 }
 
 .assignment-toolbar {
-  position: relative;
+  position: absolute;
+  top: 0;
+  right: 0;
   z-index: 3;
-  grid-column: 1 / -1;
   display: flex;
   justify-content: flex-end;
-  margin-bottom: calc(var(--task-list-gap) * -0.25);
 }
 
 .assignment-lines {
