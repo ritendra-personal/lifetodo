@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.9";
+const APP_VERSION = "1.10.10";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -3557,10 +3557,10 @@ function setAssignmentDragTarget(goal) {
 
 function updateAssignmentDraft(clientX, clientY) {
   if (!assignmentDrag) return;
-  const goal = document.elementFromPoint(clientX, clientY)?.closest("[data-assignment-goal-id]");
-  const goalHandle = goal?.querySelector(".goal-handle");
-  setAssignmentDragTarget(goal || null);
-  const point = goalHandle ? assignmentGoalArrowPoint(goalHandle, assignmentDrag.svg) : assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
+  const target = document.elementFromPoint(clientX, clientY)?.closest(assignmentDrag.targetSelector);
+  const targetHandle = target?.querySelector(assignmentDrag.targetHandleSelector);
+  setAssignmentDragTarget(target || null);
+  const point = targetHandle ? assignmentGoalArrowPoint(targetHandle, assignmentDrag.svg) : assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
   const end = {
     x: Math.max(0, Math.min(assignmentDrag.bounds.width, point.x)),
     y: Math.max(0, Math.min(assignmentDrag.bounds.height, point.y))
@@ -3570,20 +3570,44 @@ function updateAssignmentDraft(clientX, clientY) {
 
 function beginAssignmentDrag(handle, event) {
   const task = handle.closest("[data-assignment-task-id]");
+  const person = handle.closest("[data-assignment-person-id]");
   const svg = els.taskList.querySelector(".assignment-lines");
   const map = els.taskList.querySelector(".assignment-map");
-  if (!task || !svg) return;
+  if ((!task && !person) || !svg) return;
   const bounds = svg.getBoundingClientRect();
   map?.classList.add("dragging-assignment");
   svg.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
-  state.selectedAssignmentTaskId = task.dataset.assignmentTaskId;
+  if (task) state.selectedAssignmentTaskId = task.dataset.assignmentTaskId;
+  if (person) state.selectedAssignmentPersonId = person.dataset.assignmentPersonId;
   const start = assignmentHandlePoint(handle, svg);
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("class", "assignment-line assignment-line-draft");
   path.setAttribute("d", assignmentCurvePath(start, start));
   path.setAttribute("marker-end", "url(#assignment-arrow-active)");
   svg.append(path);
-  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line: path, start, svg, bounds, map };
+  assignmentDrag = task
+    ? {
+        sourceType: "task",
+        sourceId: task.dataset.assignmentTaskId,
+        targetSelector: "[data-assignment-goal-id]",
+        targetHandleSelector: ".goal-handle",
+        line: path,
+        start,
+        svg,
+        bounds,
+        map
+      }
+    : {
+        sourceType: "person",
+        sourceId: person.dataset.assignmentPersonId,
+        targetSelector: "[data-assignment-project-id]",
+        targetHandleSelector: ".project-handle",
+        line: path,
+        start,
+        svg,
+        bounds,
+        map
+      };
   updateAssignmentDraft(event.clientX, event.clientY);
 }
 
@@ -3614,10 +3638,14 @@ async function finishAssignmentDrag(event) {
   drag.map?.classList.remove("dragging-assignment");
   clearAssignmentDragTarget();
   drag.line.remove();
-  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-assignment-goal-id]");
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(drag.targetSelector);
   if (target) {
     suppressAssignmentClick = true;
-    await toggleAssignmentLink(drag.taskId, target.dataset.assignmentGoalId);
+    if (drag.sourceType === "task") {
+      await toggleAssignmentLink(drag.sourceId, target.dataset.assignmentGoalId);
+    } else {
+      await togglePeopleProjectAssignment(drag.sourceId, target.dataset.assignmentProjectId);
+    }
     setTimeout(() => {
       suppressAssignmentClick = false;
     }, 0);
@@ -4607,10 +4635,12 @@ els.taskList.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("pointerdown", (event) => {
-  if (state.view !== "goal-assignments") return;
-  const taskButton = event.target.closest("[data-assignment-task-id]");
-  if (!taskButton) return;
-  const handle = taskButton.querySelector(".task-handle") || taskButton;
+  if (!["goal-assignments", "people-projects"].includes(state.view)) return;
+  const sourceButton = state.view === "goal-assignments"
+    ? event.target.closest("[data-assignment-task-id]")
+    : event.target.closest("[data-assignment-person-id]");
+  if (!sourceButton) return;
+  const handle = sourceButton.querySelector(state.view === "goal-assignments" ? ".task-handle" : ".person-handle") || sourceButton;
   event.preventDefault();
   event.stopPropagation();
   beginAssignmentDrag(handle, event);
