@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.7";
+const APP_VERSION = "1.9.8";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2531,16 +2531,27 @@ function renderHomeView() {
 
 function renderGoalsView() {
   els.taskList.innerHTML = `
-    <form id="goal-form" class="planning-form">
-      <label class="field-label">Name
-        <input name="name" type="text" placeholder="Life goal" required>
-      </label>
-      <label class="field-label">Description
-        <input name="description" type="text" placeholder="Description">
-      </label>
-      <button class="primary-button form-submit" type="submit">Add goal</button>
-    </form>
-    <div class="planning-list goal-grid"></div>
+    <section class="creation-panel">
+      <div class="planning-section-head">
+        <h4>Add new Life Goal</h4>
+      </div>
+      <form id="goal-form" class="planning-form">
+        <label class="field-label">Name
+          <input name="name" type="text" placeholder="Life goal" required>
+        </label>
+        <label class="field-label">Description
+          <input name="description" type="text" placeholder="Description">
+        </label>
+        <button class="primary-button form-submit" type="submit">Add goal</button>
+      </form>
+    </section>
+    <section class="directory-panel">
+      <div class="planning-section-head">
+        <h4>Life Goals</h4>
+        <span>${state.goals.length} ${state.goals.length === 1 ? "goal" : "goals"}</span>
+      </div>
+      <div class="planning-list goal-grid"></div>
+    </section>
   `;
   const list = els.taskList.querySelector(".planning-list");
   if (!state.goals.length) {
@@ -2575,16 +2586,27 @@ function renderGoalsView() {
 
 function renderIdeasView() {
   els.taskList.innerHTML = `
-    <form id="idea-form" class="planning-form idea-form">
-      <label class="field-label">Idea
-        <input name="text" type="text" placeholder="Capture an idea" required>
-      </label>
-      <label class="field-label">Area
-        <select name="area" aria-label="Idea area"></select>
-      </label>
-      <button class="primary-button form-submit" type="submit">Add idea</button>
-    </form>
-    <div class="planning-list"></div>
+    <section class="creation-panel">
+      <div class="planning-section-head">
+        <h4>Add new Idea</h4>
+      </div>
+      <form id="idea-form" class="planning-form idea-form">
+        <label class="field-label">Idea
+          <input name="text" type="text" placeholder="Capture an idea" required>
+        </label>
+        <label class="field-label">Area
+          <select name="area" aria-label="Idea area"></select>
+        </label>
+        <button class="primary-button form-submit" type="submit">Add idea</button>
+      </form>
+    </section>
+    <section class="directory-panel">
+      <div class="planning-section-head">
+        <h4>Ideas Inbox</h4>
+        <span>${state.ideas.length} ${state.ideas.length === 1 ? "idea" : "ideas"}</span>
+      </div>
+      <div class="planning-list"></div>
+    </section>
   `;
   const areaSelect = els.taskList.querySelector("select[name='area']");
   for (const area of state.areas) {
@@ -2896,28 +2918,39 @@ function personProjectPills(person) {
 
 function renderProjectsView() {
   els.taskList.innerHTML = `
-    <form id="project-form" class="planning-form project-form">
-      <label class="field-label">Name
-        <input name="name" type="text" placeholder="Project name" required>
-      </label>
-      <label class="field-label">Type
-        <select name="projectTypeId" aria-label="Project type"></select>
-      </label>
-      <label class="field-label">Status
-        <select name="projectStatusId" aria-label="Project status"></select>
-      </label>
-      <label class="field-label">Description
-        <input name="description" type="text" placeholder="Description">
-      </label>
-      <label class="field-label">Start
-        <input name="startDate" type="date" aria-label="Project start date">
-      </label>
-      <label class="field-label">End
-        <input name="endDate" type="date" aria-label="Project end date">
-      </label>
-      <button class="primary-button form-submit" type="submit">Add project</button>
-    </form>
-    <div class="planning-list project-list"></div>
+    <section class="creation-panel">
+      <div class="planning-section-head">
+        <h4>Add new Project</h4>
+      </div>
+      <form id="project-form" class="planning-form project-form">
+        <label class="field-label">Name
+          <input name="name" type="text" placeholder="Project name" required>
+        </label>
+        <label class="field-label">Type
+          <select name="projectTypeId" aria-label="Project type"></select>
+        </label>
+        <label class="field-label">Status
+          <select name="projectStatusId" aria-label="Project status"></select>
+        </label>
+        <label class="field-label">Description
+          <input name="description" type="text" placeholder="Description">
+        </label>
+        <label class="field-label">Start
+          <input name="startDate" type="date" aria-label="Project start date">
+        </label>
+        <label class="field-label">End
+          <input name="endDate" type="date" aria-label="Project end date">
+        </label>
+        <button class="primary-button form-submit" type="submit">Add project</button>
+      </form>
+    </section>
+    <section class="directory-panel">
+      <div class="planning-section-head">
+        <h4>Projects</h4>
+        <span>${state.projects.length} ${state.projects.length === 1 ? "project" : "projects"}</span>
+      </div>
+      <div class="planning-list project-list"></div>
+    </section>
   `;
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
   fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");

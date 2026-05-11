@@ -672,7 +672,7 @@ button:disabled:hover {
   display: none;
 }
 
-.planner-grid.planning-mode .board-tools {
+.planner-grid.planning-mode .board-head {
   display: none;
 }
 
@@ -1223,6 +1223,7 @@ body.resizing .resize-handle::before {
 .row-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -1326,7 +1327,7 @@ body.resizing .resize-handle::before {
 
 .people-table-head,
 .person-card {
-  grid-template-columns: minmax(82px, 0.42fr) minmax(82px, 0.42fr) minmax(140px, 0.76fr) minmax(300px, 1.4fr) 68px;
+  grid-template-columns: minmax(70px, 0.34fr) minmax(70px, 0.34fr) minmax(120px, 0.58fr) minmax(190px, 1fr) minmax(136px, auto);
   display: grid;
   align-items: center;
 }
@@ -2449,6 +2450,7 @@ body.resizing .resize-handle::before {
 .person-card .row-actions .ghost-button,
 .person-card .row-actions .danger-button {
   width: auto;
+  min-width: 58px;
   min-height: 32px;
   padding: 0 8px;
 }
