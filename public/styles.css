@@ -1780,7 +1780,15 @@ body.resizing .resize-handle::before {
 }
 
 .minimal-project-card {
-  grid-template-columns: 34px minmax(170px, 0.78fr) minmax(118px, 0.42fr) minmax(128px, 0.48fr) minmax(320px, 1.4fr) minmax(210px, 0.72fr) auto;
+  grid-template-columns: 34px minmax(170px, 1fr) minmax(112px, 0.42fr) minmax(122px, 0.48fr) minmax(260px, 0.9fr) max-content;
+}
+
+.minimal-project-card .project-description-input {
+  display: none;
+}
+
+.minimal-project-card .row-actions {
+  min-width: 128px;
 }
 
 .project-sequence {
@@ -1827,15 +1835,22 @@ body.resizing .resize-handle::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--ui-gap);
+  min-width: 0;
 }
 
 .project-date-pair label {
   display: grid;
   gap: 4px;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.project-date-pair input {
+  min-width: 0;
+  width: 100%;
 }
 
 .project-people {
