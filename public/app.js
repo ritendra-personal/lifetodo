@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.20";
+const APP_VERSION = "1.10.21";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -27,6 +27,7 @@ const defaultRelationshipTypes = ["Strong", "OK", "Bad"].map((name, index) => ({
 const defaultProjectTypes = ["Play", "Short Film", "Performance"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultProjectStatuses = ["Not started", "In progress", "Completed", "Deprioritized"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultRoles = ["Director", "Producer", "Writer", "Actor"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+const defaultVenues = [];
 
 function loadPeopleSort() {
   try {
@@ -53,6 +54,7 @@ const state = {
   projectTypes: loadNamedOptions("planner-project-types", defaultProjectTypes),
   projectStatuses: loadNamedOptions("planner-project-statuses", defaultProjectStatuses),
   roles: loadNamedOptions("planner-roles", defaultRoles),
+  venues: loadNamedOptions("planner-venues", defaultVenues),
   selectedAssignmentTaskId: "",
   selectedAssignmentPersonId: "",
   assignmentSelectedOnly: localStorage.getItem("assignment-selected-only") === "true",
@@ -161,6 +163,7 @@ const counts = {
   projectTypes: document.querySelector("#count-project-types"),
   projectStatuses: document.querySelector("#count-project-statuses"),
   roles: document.querySelector("#count-roles"),
+  venues: document.querySelector("#count-venues"),
   home: document.querySelector("#count-home"),
   open: document.querySelector("#stat-open"),
   focus: document.querySelector("#stat-focus")
@@ -197,6 +200,7 @@ function saveNamedOptions() {
   localStorage.setItem("planner-project-types", JSON.stringify(state.projectTypes));
   localStorage.setItem("planner-project-statuses", JSON.stringify(state.projectStatuses));
   localStorage.setItem("planner-roles", JSON.stringify(state.roles));
+  localStorage.setItem("planner-venues", JSON.stringify(state.venues));
 }
 
 function creationDraftKey(form) {
@@ -339,6 +343,7 @@ function validView(view) {
     "project-types",
     "project-statuses",
     "roles",
+    "venues",
     "focus-task",
     "focus-project",
     "focus-goal",
@@ -715,6 +720,7 @@ function normalizeProject(project) {
     description: project.description || "",
     project_type_id: project.project_type_id || project.projectTypeId || "",
     project_status_id: project.project_status_id || project.projectStatusId || project.status_id || projectStatusIdForName(project.status),
+    venue_id: project.venue_id || project.venueId || "",
     status: project.status || "",
     start_date: project.start_date || project.startDate || "",
     end_date: project.end_date || project.endDate || legacyDate,
@@ -994,7 +1000,7 @@ function selectableParents(excludeId = "") {
   const blocked = excludeId ? new Set([excludeId, ...descendantIds(excludeId)]) : new Set();
   return state.tasks
     .filter((task) => !blocked.has(task.id))
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => sortByLabel(a.title, b.title));
 }
 
 function fillParentSelect(select, selected = "", excludeId = "") {
@@ -1012,7 +1018,7 @@ function fillParentSelect(select, selected = "", excludeId = "") {
 function fillDependencySelect(select, selected = [], excludeId = "") {
   const values = new Set(parseIds(selected).filter((id) => id !== excludeId));
   select.innerHTML = "";
-  for (const task of state.tasks.filter((item) => item.id !== excludeId).sort((a, b) => a.title.localeCompare(b.title))) {
+  for (const task of sortedByTitle(state.tasks.filter((item) => item.id !== excludeId))) {
     const option = document.createElement("option");
     option.value = task.id;
     option.textContent = task.title;
@@ -1023,7 +1029,7 @@ function fillDependencySelect(select, selected = [], excludeId = "") {
 
 function fillAreaSelect(select, selected = "") {
   select.innerHTML = "";
-  for (const area of state.areas) {
+  for (const area of sortedByName(state.areas)) {
     const option = document.createElement("option");
     option.value = area.id;
     option.textContent = area.name;
@@ -1328,6 +1334,7 @@ async function loadProjectsData() {
       { data: projects, error: projectsError },
       { data: projectTypes, error: projectTypesError },
       { data: projectStatuses, error: projectStatusesError },
+      { data: venues, error: venuesError },
       { data: roles, error: rolesError },
       { data: assignments, error: assignmentsError }
     ] = await Promise.all([
@@ -1347,6 +1354,11 @@ async function loadProjectsData() {
         .eq("user_id", state.user.id)
         .order("sort_order", { ascending: true }),
       state.supabase
+        .from("planner_venues")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("sort_order", { ascending: true }),
+      state.supabase
         .from("planner_roles")
         .select("*")
         .eq("user_id", state.user.id)
@@ -1357,12 +1369,13 @@ async function loadProjectsData() {
         .eq("user_id", state.user.id)
         .order("created_at", { ascending: true })
     ]);
-    if (projectsError || projectTypesError || projectStatusesError || rolesError || assignmentsError) {
-      throw projectsError || projectTypesError || projectStatusesError || rolesError || assignmentsError;
+    if (projectsError || projectTypesError || projectStatusesError || venuesError || rolesError || assignmentsError) {
+      throw projectsError || projectTypesError || projectStatusesError || venuesError || rolesError || assignmentsError;
     }
     state.projectsCloudReady = true;
     const normalizedProjectTypes = projectTypes.map(normalizeNamedOption);
     const normalizedProjectStatuses = projectStatuses.map(normalizeNamedOption);
+    const normalizedVenues = venues.map(normalizeNamedOption);
     const normalizedRoles = roles.map(normalizeNamedOption);
     if (!normalizedProjectTypes.length) {
       await Promise.all(state.projectTypes.map((type) => persistNamedOption("project-types", type, { render: false })));
@@ -1375,6 +1388,7 @@ async function loadProjectsData() {
     }
     state.projectTypes = normalizedProjectTypes.length ? normalizedProjectTypes : state.projectTypes;
     state.projectStatuses = normalizedProjectStatuses.length ? normalizedProjectStatuses : state.projectStatuses;
+    state.venues = normalizedVenues.length ? normalizedVenues : state.venues;
     state.roles = normalizedRoles.length ? normalizedRoles : state.roles;
     state.projectAssignments = assignments.map(normalizeProjectAssignment);
     saveNamedOptions();
@@ -1420,6 +1434,7 @@ async function persistProject(project, options = {}) {
         description: normalized.description,
         project_type_id: normalized.project_type_id || null,
         project_status_id: normalized.project_status_id || null,
+        venue_id: normalized.venue_id || null,
         status: projectStatusName(normalized),
         start_date: normalized.start_date || null,
         end_date: normalized.end_date || null,
@@ -1670,6 +1685,9 @@ function optionConfig(type) {
   }
   if (type === "roles") {
     return { table: "planner_roles", stateKey: "roles", label: "role", cloudFlag: "projectsCloudReady" };
+  }
+  if (type === "venues") {
+    return { table: "planner_venues", stateKey: "venues", label: "venue", cloudFlag: "projectsCloudReady" };
   }
   return { table: "planner_relationship_types", stateKey: "relationshipTypes", label: "relationship", cloudFlag: "peopleCloudReady" };
 }
@@ -2017,13 +2035,14 @@ function renderCounts() {
   counts.projectTypes.textContent = state.projectTypes.length;
   counts.projectStatuses.textContent = state.projectStatuses.length;
   counts.roles.textContent = state.roles.length;
+  counts.venues.textContent = state.venues.length;
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
   counts.focus.textContent = state.tasks.filter((task) => task.status !== "done" && task.priority === "High").length;
 }
 
 function fillGoalSelect(select, selected = "") {
   select.innerHTML = '<option value="">No goal</option>';
-  for (const goal of state.goals) {
+  for (const goal of sortedByName(state.goals)) {
     const option = document.createElement("option");
     option.value = goal.id;
     option.textContent = goal.name;
@@ -2034,7 +2053,7 @@ function fillGoalSelect(select, selected = "") {
 
 function fillProjectSelect(select, selected = "") {
   select.innerHTML = '<option value="">No project</option>';
-  for (const project of state.projects) {
+  for (const project of sortedByName(state.projects)) {
     const option = document.createElement("option");
     option.value = project.id;
     option.textContent = project.name;
@@ -2045,7 +2064,7 @@ function fillProjectSelect(select, selected = "") {
 
 function fillProjectTypeSelect(select, selected = "") {
   select.innerHTML = '<option value="">No type</option>';
-  for (const type of state.projectTypes) {
+  for (const type of sortedByName(state.projectTypes)) {
     const option = document.createElement("option");
     option.value = type.id;
     option.textContent = type.name;
@@ -2056,10 +2075,21 @@ function fillProjectTypeSelect(select, selected = "") {
 
 function fillProjectStatusSelect(select, selected = "") {
   select.innerHTML = '<option value="">No status</option>';
-  for (const status of state.projectStatuses) {
+  for (const status of sortedByName(state.projectStatuses)) {
     const option = document.createElement("option");
     option.value = status.id;
     option.textContent = status.name;
+    select.append(option);
+  }
+  select.value = selected || "";
+}
+
+function fillVenueSelect(select, selected = "") {
+  select.innerHTML = '<option value="">No venue</option>';
+  for (const venue of sortedByName(state.venues)) {
+    const option = document.createElement("option");
+    option.value = venue.id;
+    option.textContent = venue.name;
     select.append(option);
   }
   select.value = selected || "";
@@ -2172,6 +2202,22 @@ function setPeopleSort(key) {
   localStorage.setItem("people-sort", JSON.stringify(state.peopleSort));
 }
 
+function sortByLabel(a, b) {
+  return String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base", numeric: true });
+}
+
+function sortedByName(items) {
+  return items.slice().sort((a, b) => sortByLabel(a.name, b.name));
+}
+
+function sortedByTitle(items) {
+  return items.slice().sort((a, b) => sortByLabel(a.title, b.title));
+}
+
+function sortedPeopleByName(people) {
+  return people.slice().sort((a, b) => sortByLabel(personFullName(a), personFullName(b)));
+}
+
 function sortedProjects(projects) {
   const undatedValue = "9999-12-31";
   return projects.slice().sort((a, b) => {
@@ -2185,6 +2231,10 @@ function sortedProjects(projects) {
 
 function projectTypeName(project) {
   return state.projectTypes.find((type) => type.id === project.project_type_id)?.name || "";
+}
+
+function venueName(project) {
+  return state.venues.find((venue) => venue.id === project.venue_id)?.name || "";
 }
 
 function renderTagFilters() {
@@ -2205,7 +2255,7 @@ function renderAreas() {
   const selectedDetailArea = areaIdForValue(detail.area.value) || areaIdForName("Life");
   for (const select of [els.area, detail.area]) {
     select.innerHTML = "";
-    for (const area of state.areas) {
+    for (const area of sortedByName(state.areas)) {
       const option = document.createElement("option");
       option.value = area.id;
       option.textContent = area.name;
@@ -2216,7 +2266,7 @@ function renderAreas() {
   detail.area.value = state.areas.some((area) => area.id === selectedDetailArea) ? selectedDetailArea : state.areas[0]?.id || "";
 
   els.areaList.innerHTML = "";
-  for (const area of state.areas) {
+  for (const area of sortedByName(state.areas)) {
     const row = document.createElement("div");
     row.className = "area-row";
     row.innerHTML = `
@@ -2341,6 +2391,10 @@ function renderTasks() {
   }
   if (state.view === "roles") {
     renderNamedSettingsView("roles");
+    return;
+  }
+  if (state.view === "venues") {
+    renderNamedSettingsView("venues");
     return;
   }
   if (state.view === "graph") {
@@ -2688,6 +2742,7 @@ function renderFocusedProjectView() {
         </div>
         <select name="projectTypeId" aria-label="Project type"></select>
         <select name="projectStatusId" aria-label="Project status"></select>
+        <select name="venueId" aria-label="Project venue"></select>
         <input class="project-description-input" name="description" type="text" aria-label="Project description">
         <div class="project-date-pair">
           <label>
@@ -2718,6 +2773,7 @@ function renderFocusedProjectView() {
   card.querySelector("[name='name']").value = project.name;
   fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
   fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
+  fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
   applyProjectCardStatusTone(card);
   card.querySelector("[name='description']").value = project.description;
   card.querySelector("[name='startDate']").value = project.start_date || "";
@@ -2974,7 +3030,7 @@ function renderIdeasView() {
     </section>
   `;
   const areaSelect = els.taskList.querySelector("select[name='area']");
-  for (const area of state.areas) {
+  for (const area of sortedByName(state.areas)) {
     const option = document.createElement("option");
     option.value = area.id;
     option.textContent = area.name;
@@ -3002,7 +3058,7 @@ function renderIdeasView() {
     `;
     card.querySelector("[name='text']").value = idea.text;
     const select = card.querySelector("select");
-    for (const area of state.areas) {
+    for (const area of sortedByName(state.areas)) {
       const option = document.createElement("option");
       option.value = area.id;
       option.textContent = area.name;
@@ -3052,7 +3108,7 @@ function renderAreasView() {
 
 function renderNamedSettingsView(type) {
   const config = optionConfig(type);
-  const titles = { skills: "Skills", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles" };
+  const titles = { skills: "Skills", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles", venues: "Venues" };
   const title = titles[type] || "Settings";
   const items = state[config.stateKey];
   const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
@@ -3090,10 +3146,12 @@ function renderNamedSettingsView(type) {
         ? state.projects.filter((project) => project.project_type_id === item.id).length
         : type === "project-statuses"
           ? state.projects.filter((project) => project.project_status_id === item.id).length
+          : type === "venues"
+            ? state.projects.filter((project) => project.venue_id === item.id).length
           : type === "roles"
             ? state.projectAssignments.filter((assignment) => assignment.role_ids.includes(item.id)).length
             : state.people.filter((person) => person.relationship_type_id === item.id).length;
-    row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses"].includes(type) ? "project" : type === "roles" ? "assignment" : "person"}${usage === 1 ? "" : "s"}`;
+    row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses", "venues"].includes(type) ? "project" : type === "roles" ? "assignment" : "person"}${usage === 1 ? "" : "s"}`;
     list.append(row);
   }
 }
@@ -3204,28 +3262,28 @@ function renderPeopleFilterView() {
   const projectSelect = els.taskList.querySelector("[name='projectFilter']");
   const roleSelect = els.taskList.querySelector("[name='roleFilter']");
   skillSelect.innerHTML = '<option value="">All skills</option>';
-  for (const skill of state.skills) {
+  for (const skill of sortedByName(state.skills)) {
     const option = document.createElement("option");
     option.value = skill.id;
     option.textContent = skill.name;
     skillSelect.append(option);
   }
   relationshipSelect.innerHTML = '<option value="">All relationships</option>';
-  for (const relationship of state.relationshipTypes) {
+  for (const relationship of sortedByName(state.relationshipTypes)) {
     const option = document.createElement("option");
     option.value = relationship.id;
     option.textContent = relationship.name;
     relationshipSelect.append(option);
   }
   projectSelect.innerHTML = '<option value="">All projects</option>';
-  for (const project of state.projects.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const project of sortedByName(state.projects)) {
     const option = document.createElement("option");
     option.value = project.id;
     option.textContent = project.name || "Untitled project";
     projectSelect.append(option);
   }
   roleSelect.innerHTML = '<option value="">All roles</option>';
-  for (const role of state.roles.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const role of sortedByName(state.roles)) {
     const option = document.createElement("option");
     option.value = role.id;
     option.textContent = role.name;
@@ -3295,6 +3353,7 @@ function renderProjectFilterView() {
         <span>Name</span>
         <span>Type</span>
         <span>Status</span>
+        <span>Venue</span>
         <span>Dates</span>
         <span>People</span>
         <span></span>
@@ -3306,21 +3365,21 @@ function renderProjectFilterView() {
   const statusSelect = els.taskList.querySelector("[name='projectStatusFilter']");
   const personSelect = els.taskList.querySelector("[name='projectPersonFilter']");
   typeSelect.innerHTML = '<option value="">All types</option>';
-  for (const type of state.projectTypes) {
+  for (const type of sortedByName(state.projectTypes)) {
     const option = document.createElement("option");
     option.value = type.id;
     option.textContent = type.name;
     typeSelect.append(option);
   }
   statusSelect.innerHTML = '<option value="">All statuses</option>';
-  for (const status of state.projectStatuses) {
+  for (const status of sortedByName(state.projectStatuses)) {
     const option = document.createElement("option");
     option.value = status.id;
     option.textContent = status.name;
     statusSelect.append(option);
   }
   personSelect.innerHTML = '<option value="">All people</option>';
-  for (const person of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"])) {
+  for (const person of sortedPeopleByName(state.people)) {
     const option = document.createElement("option");
     option.value = person.id;
     option.textContent = personFullName(person);
@@ -3353,13 +3412,15 @@ function renderProjectFilterView() {
       <span></span>
       <span></span>
       <span></span>
+      <span></span>
       <button class="ghost-button project-focus-button" type="button">Open</button>
     `;
     row.querySelector("strong").textContent = project.name;
     row.querySelectorAll("span")[0].textContent = projectTypeName(project) || "No type";
     row.querySelectorAll("span")[1].textContent = projectStatusName(project) || "No status";
-    row.querySelectorAll("span")[2].textContent = [project.start_date || "No start", project.end_date || "No end"].join(" - ");
-    row.querySelectorAll("span")[3].textContent = projectPeopleNames(project).join(", ") || "No people";
+    row.querySelectorAll("span")[2].textContent = venueName(project) || "No venue";
+    row.querySelectorAll("span")[3].textContent = [project.start_date || "No start", project.end_date || "No end"].join(" - ");
+    row.querySelectorAll("span")[4].textContent = projectPeopleNames(project).join(", ") || "No people";
     list.append(row);
   }
 }
@@ -3421,6 +3482,9 @@ function renderProjectsView() {
         <label class="field-label">Status
           <select name="projectStatusId" aria-label="Project status"></select>
         </label>
+        <label class="field-label">Venue
+          <select name="venueId" aria-label="Project venue"></select>
+        </label>
         <label class="field-label">Description
           <input name="description" type="text" placeholder="Description">
         </label>
@@ -3455,6 +3519,7 @@ function renderProjectsView() {
   `;
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
   fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");
+  fillVenueSelect(els.taskList.querySelector("select[name='venueId']"), "");
   applyProjectStatusTone(els.taskList.querySelector("select[name='projectStatusId']"), projectStatusNameForId(state.projectStatuses[0]?.id || ""));
   restoreCreationDraft(els.taskList.querySelector("#project-form"));
   applyProjectStatusTone(els.taskList.querySelector("select[name='projectStatusId']"), projectStatusNameForId(els.taskList.querySelector("select[name='projectStatusId']")?.value || ""));
@@ -3480,6 +3545,7 @@ function renderProjectsView() {
       </div>
       <select name="projectTypeId" aria-label="Project type"></select>
       <select name="projectStatusId" aria-label="Project status"></select>
+      <select name="venueId" aria-label="Project venue"></select>
       <input class="project-description-input" name="description" type="text" aria-label="Project description">
       <div class="project-date-pair">
         <label>
@@ -3509,6 +3575,7 @@ function renderProjectsView() {
     card.querySelector("[name='name']").value = project.name;
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
     fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
+    fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
     applyProjectCardStatusTone(card);
     card.querySelector("[name='description']").value = project.description;
     card.querySelector("[name='startDate']").value = project.start_date || "";
@@ -3527,7 +3594,7 @@ function renderProjectsView() {
 function fillProjectPersonSelect(select, projectId) {
   const assigned = new Set(state.projectAssignments.filter((assignment) => assignment.project_id === projectId).map((assignment) => assignment.person_id));
   select.innerHTML = '<option value="">Add person...</option>';
-  for (const person of state.people.filter((item) => !assigned.has(item.id)).sort((a, b) => personFullName(a).localeCompare(personFullName(b)))) {
+  for (const person of sortedPeopleByName(state.people.filter((item) => !assigned.has(item.id)))) {
     const option = document.createElement("option");
     option.value = person.id;
     option.textContent = personFullName(person);
@@ -3543,7 +3610,7 @@ function fillRolePicker(container, selected = []) {
   select.name = "roleAdd";
   select.setAttribute("aria-label", "Add role");
   select.innerHTML = '<option value="">Add role...</option>';
-  for (const role of state.roles.filter((item) => !values.has(item.id))) {
+  for (const role of sortedByName(state.roles.filter((item) => !values.has(item.id)))) {
     const option = document.createElement("option");
     option.value = role.id;
     option.textContent = role.name;
@@ -3553,7 +3620,7 @@ function fillRolePicker(container, selected = []) {
   const pills = document.createElement("div");
   pills.className = "role-pills";
   container.append(pills);
-  for (const role of state.roles) {
+  for (const role of sortedByName(state.roles)) {
     if (!values.has(role.id)) continue;
     const pill = document.createElement("span");
     pill.className = "role-pill";
@@ -3988,7 +4055,7 @@ function fillSkillPicker(container, selected = []) {
   select.name = "skillAdd";
   select.setAttribute("aria-label", "Add skill");
   select.innerHTML = '<option value="">Add skill...</option>';
-  for (const skill of state.skills.filter((item) => !values.has(item.id))) {
+  for (const skill of sortedByName(state.skills.filter((item) => !values.has(item.id)))) {
     const option = document.createElement("option");
     option.value = skill.id;
     option.textContent = skill.name;
@@ -3998,7 +4065,7 @@ function fillSkillPicker(container, selected = []) {
   const pills = document.createElement("div");
   pills.className = "skill-pills";
   container.append(pills);
-  for (const skill of state.skills) {
+  for (const skill of sortedByName(state.skills)) {
     if (!values.has(skill.id)) continue;
     const pill = document.createElement("span");
     pill.className = "skill-pill";
@@ -4016,7 +4083,7 @@ function fillSkillPicker(container, selected = []) {
 
 function fillRelationshipSelect(select, selected = "") {
   select.innerHTML = '<option value="">No relationship</option>';
-  for (const relationship of state.relationshipTypes) {
+  for (const relationship of sortedByName(state.relationshipTypes)) {
     const option = document.createElement("option");
     option.value = relationship.id;
     option.textContent = relationship.name;
@@ -4431,7 +4498,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "focus-task", "focus-project", "focus-goal", "focus-person"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -4483,11 +4550,12 @@ function render() {
     relationships: "Relationships",
     "project-types": "Project Types",
     "project-statuses": "Project Status",
-    roles: "Roles"
+    roles: "Roles",
+    venues: "Venues"
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -4993,6 +5061,7 @@ els.taskList.addEventListener("submit", async (event) => {
         description: projectFormData.get("description").trim(),
         project_type_id: projectFormData.get("projectTypeId") || "",
         project_status_id: projectFormData.get("projectStatusId") || "",
+        venue_id: projectFormData.get("venueId") || "",
         start_date: projectFormData.get("startDate") || "",
         end_date: projectFormData.get("endDate") || ""
       }, { requireCloud: true, render: false });
@@ -5140,6 +5209,7 @@ function autosaveProjectCard(card) {
         description: card.querySelector("[name='description']").value.trim(),
         project_type_id: card.querySelector("[name='projectTypeId']").value || "",
         project_status_id: card.querySelector("[name='projectStatusId']").value || "",
+        venue_id: card.querySelector("[name='venueId']").value || "",
         start_date: card.querySelector("[name='startDate']").value || "",
         end_date: card.querySelector("[name='endDate']").value || "",
         created_at: project.created_at

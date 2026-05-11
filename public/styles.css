@@ -1283,7 +1283,7 @@ body.resizing .resize-handle::before {
 }
 
 .focused-project-card {
-  grid-template-columns: minmax(220px, 0.8fr) minmax(150px, 0.5fr) minmax(150px, 0.5fr) minmax(320px, 1.25fr);
+  grid-template-columns: minmax(220px, 0.8fr) minmax(140px, 0.45fr) minmax(140px, 0.45fr) minmax(160px, 0.52fr) minmax(280px, 1fr);
 }
 
 .focused-project-card .project-date-pair,
@@ -1572,7 +1572,7 @@ body.resizing .resize-handle::before {
 .project-filter-head,
 .project-filter-row {
   display: grid;
-  grid-template-columns: 34px minmax(180px, 1fr) minmax(120px, 0.52fr) minmax(130px, 0.55fr) minmax(190px, 0.78fr) minmax(260px, 1.1fr) 68px;
+  grid-template-columns: 34px minmax(170px, 1fr) minmax(105px, 0.42fr) minmax(118px, 0.48fr) minmax(128px, 0.5fr) minmax(175px, 0.68fr) minmax(240px, 1fr) 68px;
   align-items: center;
   gap: var(--ui-gap);
 }
@@ -1816,7 +1816,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(145px, 0.75fr) minmax(120px, 0.58fr) minmax(130px, 0.62fr) minmax(320px, 1.35fr) 128px 128px auto;
+  grid-template-columns: minmax(145px, 0.72fr) minmax(118px, 0.52fr) minmax(128px, 0.56fr) minmax(132px, 0.58fr) minmax(280px, 1.2fr) 126px 126px auto;
 }
 
 .project-list {
@@ -1827,7 +1827,7 @@ body.resizing .resize-handle::before {
 .project-card {
   border-left-width: 1px;
   border-top: 6px solid var(--project-status-color, #8a94a6);
-  grid-template-columns: 34px minmax(170px, 0.72fr) minmax(120px, 0.48fr) minmax(130px, 0.52fr) minmax(360px, 1.45fr) minmax(220px, 0.78fr) auto;
+  grid-template-columns: 34px minmax(150px, 0.65fr) minmax(112px, 0.42fr) minmax(122px, 0.46fr) minmax(132px, 0.48fr) minmax(300px, 1.24fr) minmax(220px, 0.78fr) auto;
   align-items: center;
   background: linear-gradient(180deg, var(--project-status-tint, rgba(138, 148, 166, 0.15)), #fff 48%);
 }
@@ -1841,7 +1841,7 @@ body.resizing .resize-handle::before {
 }
 
 .minimal-project-card {
-  grid-template-columns: 34px minmax(170px, 1fr) minmax(112px, 0.42fr) minmax(122px, 0.48fr) minmax(260px, 0.9fr) max-content;
+  grid-template-columns: 34px minmax(150px, 1fr) minmax(104px, 0.38fr) minmax(116px, 0.42fr) minmax(126px, 0.45fr) minmax(240px, 0.82fr) max-content;
 }
 
 .minimal-project-card .project-description-input {

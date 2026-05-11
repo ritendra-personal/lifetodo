@@ -153,6 +153,16 @@ create table if not exists planner_roles (
   unique (user_id, name)
 );
 
+create table if not exists planner_venues (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
 create table if not exists planner_projects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -160,6 +170,7 @@ create table if not exists planner_projects (
   description text default '',
   project_type_id uuid,
   project_status_id uuid,
+  venue_id uuid,
   status text default '',
   start_date date,
   end_date date,
@@ -172,6 +183,7 @@ alter table planner_projects add column if not exists start_date date;
 alter table planner_projects add column if not exists end_date date;
 alter table planner_projects add column if not exists project_type_id uuid;
 alter table planner_projects add column if not exists project_status_id uuid;
+alter table planner_projects add column if not exists venue_id uuid;
 alter table planner_projects add column if not exists status text default '';
 
 create table if not exists planner_ideas (
@@ -200,6 +212,11 @@ alter table planner_projects
   drop constraint if exists planner_projects_project_status_id_fkey,
   add constraint planner_projects_project_status_id_fkey
   foreign key (project_status_id) references planner_project_statuses(id) on delete set null;
+
+alter table planner_projects
+  drop constraint if exists planner_projects_venue_id_fkey,
+  add constraint planner_projects_venue_id_fkey
+  foreign key (venue_id) references planner_venues(id) on delete set null;
 
 create table if not exists planner_areas (
   id uuid primary key default gen_random_uuid(),
@@ -269,6 +286,7 @@ alter table planner_task_goal_links enable row level security;
 alter table planner_project_types enable row level security;
 alter table planner_project_statuses enable row level security;
 alter table planner_roles enable row level security;
+alter table planner_venues enable row level security;
 alter table planner_projects enable row level security;
 alter table planner_project_people enable row level security;
 alter table planner_ideas enable row level security;
@@ -288,11 +306,14 @@ create index if not exists planner_project_statuses_user_id_idx on planner_proje
 create index if not exists planner_project_statuses_sort_order_idx on planner_project_statuses(sort_order);
 create index if not exists planner_roles_user_id_idx on planner_roles(user_id);
 create index if not exists planner_roles_sort_order_idx on planner_roles(sort_order);
+create index if not exists planner_venues_user_id_idx on planner_venues(user_id);
+create index if not exists planner_venues_sort_order_idx on planner_venues(sort_order);
 create index if not exists planner_projects_user_id_idx on planner_projects(user_id);
 create unique index if not exists planner_projects_user_name_natural_key_idx
 on planner_projects (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
 create index if not exists planner_projects_project_type_id_idx on planner_projects(project_type_id);
 create index if not exists planner_projects_project_status_id_idx on planner_projects(project_status_id);
+create index if not exists planner_projects_venue_id_idx on planner_projects(venue_id);
 create index if not exists planner_projects_start_date_idx on planner_projects(start_date);
 create index if not exists planner_projects_end_date_idx on planner_projects(end_date);
 create index if not exists planner_projects_target_date_idx on planner_projects(target_date);
@@ -331,6 +352,7 @@ drop policy if exists "planner_task_goal_links_all_for_authenticated_user" on pl
 drop policy if exists "planner_project_types_all_for_authenticated_user" on planner_project_types;
 drop policy if exists "planner_project_statuses_all_for_authenticated_user" on planner_project_statuses;
 drop policy if exists "planner_roles_all_for_authenticated_user" on planner_roles;
+drop policy if exists "planner_venues_all_for_authenticated_user" on planner_venues;
 drop policy if exists "planner_projects_all_for_authenticated_user" on planner_projects;
 drop policy if exists "planner_project_people_all_for_authenticated_user" on planner_project_people;
 drop policy if exists "planner_ideas_all_for_authenticated_user" on planner_ideas;
@@ -365,6 +387,12 @@ with check ((select auth.uid()) = user_id);
 
 create policy "planner_roles_all_for_authenticated_user"
 on planner_roles for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_venues_all_for_authenticated_user"
+on planner_venues for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
