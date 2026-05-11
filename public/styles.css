@@ -586,6 +586,14 @@ button:disabled:hover {
   display: none;
 }
 
+.planner-grid.focus-mode .task-board {
+  max-width: 980px;
+}
+
+.planner-grid.focus-mode .board-head {
+  display: none;
+}
+
 .resize-handle {
   min-height: 420px;
   border-radius: 999px;
@@ -735,6 +743,17 @@ body.resizing .resize-handle::before {
   display: flex;
   align-items: start;
   gap: var(--task-list-gap);
+}
+
+.task-line > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.task-focus-button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
 }
 
 .check {
@@ -991,6 +1010,86 @@ body.resizing .resize-handle::before {
   gap: 6px;
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.focus-editor {
+  display: grid;
+  gap: var(--task-list-gap);
+}
+
+.focus-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-gap);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.task-focus-editor {
+  max-width: 860px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: var(--detail-pad);
+}
+
+.focus-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: var(--detail-gap);
+}
+
+.focused-goal-card,
+.focused-project-card,
+.focused-person-card {
+  max-width: 920px;
+}
+
+.focused-goal-card {
+  min-height: 0;
+}
+
+.focused-project-card {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(150px, 0.5fr) minmax(150px, 0.5fr) minmax(320px, 1.25fr);
+}
+
+.focused-project-card .project-date-pair,
+.focused-project-card .project-people,
+.focused-project-card > .danger-button {
+  grid-column: 1 / -1;
+}
+
+.focused-person-card {
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.focused-person-card > .field-label,
+.focused-person-card .person-focus-projects {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.person-focus-projects {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-actions .ghost-button,
+.row-actions .danger-button {
+  min-height: 32px;
+  padding: 0 8px;
 }
 
 .goal-card {
@@ -2178,6 +2277,40 @@ body.resizing .resize-handle::before {
   color: var(--muted);
   font-weight: 800;
   font-size: 0.82rem;
+}
+
+.project-card.focused-project-card {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(150px, 0.5fr) minmax(150px, 0.5fr) minmax(320px, 1.25fr);
+}
+
+.project-card.focused-project-card .project-date-pair,
+.project-card.focused-project-card .project-people,
+.project-card.focused-project-card > .danger-button {
+  grid-column: 1 / -1;
+}
+
+.person-card.focused-person-card {
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  align-items: start;
+  padding: var(--detail-pad);
+}
+
+.person-card.focused-person-card > * {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.person-card.focused-person-card .skill-picker,
+.person-card.focused-person-card .person-focus-projects,
+.person-card.focused-person-card > .danger-button {
+  grid-column: 1 / -1;
+}
+
+.person-card .row-actions .ghost-button,
+.person-card .row-actions .danger-button {
+  width: auto;
+  min-height: 32px;
+  padding: 0 8px;
 }
 
 .graph-links {

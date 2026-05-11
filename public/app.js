@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.9.2";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -41,6 +41,8 @@ const state = {
   roles: loadNamedOptions("planner-roles", defaultRoles),
   selectedAssignmentTaskId: "",
   selectedId: null,
+  focusedId: "",
+  focusedReturnView: "home",
   view: "home",
   search: "",
   tagFilter: "",
@@ -803,6 +805,17 @@ function fillDependencySelect(select, selected = [], excludeId = "") {
     option.selected = values.has(task.id);
     select.append(option);
   }
+}
+
+function fillAreaSelect(select, selected = "") {
+  select.innerHTML = "";
+  for (const area of state.areas) {
+    const option = document.createElement("option");
+    option.value = area.id;
+    option.textContent = area.name;
+    select.append(option);
+  }
+  select.value = selected || state.areas[0]?.id || "";
 }
 
 function seedTasks() {
@@ -1841,6 +1854,22 @@ function renderParentControls() {
 }
 
 function renderTasks() {
+  if (state.view === "focus-task") {
+    renderFocusedTaskView();
+    return;
+  }
+  if (state.view === "focus-project") {
+    renderFocusedProjectView();
+    return;
+  }
+  if (state.view === "focus-goal") {
+    renderFocusedGoalView();
+    return;
+  }
+  if (state.view === "focus-person") {
+    renderFocusedPersonView();
+    return;
+  }
   if (state.view === "home") {
     renderHomeView();
     return;
@@ -1942,6 +1971,7 @@ function renderTask(task, depth, childCount) {
           <div class="task-title"><span class="task-title-text"></span></div>
           ${task.notes ? '<p class="task-notes"></p>' : ""}
         </div>
+        <button class="ghost-button task-focus-button" type="button">Open</button>
       </div>
       <div class="meta">
         <span class="pill area"></span>
@@ -2033,6 +2063,241 @@ function makeGoalTaskOutline(goalId, status) {
 function goalAccent(index) {
   const colors = ["#39ff14", "#5cc8ff", "#f0b35a", "#d85b49", "#7b5ea7", "#0e7c74"];
   return colors[index % colors.length];
+}
+
+function focusObject(type, id, returnView = state.view) {
+  const view = `focus-${type}`;
+  state.focusedId = id;
+  state.focusedReturnView = returnView && !returnView.startsWith("focus-") ? returnView : "home";
+  state.view = view;
+  if (type === "task") state.selectedId = id;
+  render();
+}
+
+function leaveFocusView() {
+  const returnView = state.focusedReturnView || "home";
+  state.focusedId = "";
+  state.view = returnView;
+  render();
+}
+
+function renderFocusedEmpty(label) {
+  els.taskList.innerHTML = `
+    <section class="focus-editor">
+      <button class="ghost-button focus-back-button" type="button">Back</button>
+      <div class="empty-state">${label} could not be found.</div>
+    </section>
+  `;
+}
+
+function renderFocusedTaskView() {
+  const task = state.tasks.find((item) => item.id === state.focusedId || item.id === state.selectedId);
+  if (!task) {
+    renderFocusedEmpty("Task");
+    return;
+  }
+  state.selectedId = task.id;
+  els.taskList.innerHTML = `
+    <form class="focus-editor task-focus-editor" data-task-focus-id="${task.id}">
+      <div class="focus-editor-head">
+        <button class="ghost-button focus-back-button" type="button">Back</button>
+        <span>Task</span>
+      </div>
+      <label class="field-label">Title
+        <input name="title" type="text" required>
+      </label>
+      <label class="field-label">Notes
+        <textarea name="notes" rows="5"></textarea>
+      </label>
+      <div class="focus-two-col">
+        <label class="field-label">Parent task
+          <select name="parentId"></select>
+        </label>
+        <label class="field-label">Life goal
+          <select name="goalId"></select>
+        </label>
+        <label class="field-label">Project
+          <select name="projectId"></select>
+        </label>
+        <label class="field-label">Area
+          <select name="area"></select>
+        </label>
+        <label class="field-label">Priority
+          <select name="priority">
+            <option>High</option>
+            <option>Medium</option>
+            <option>Low</option>
+          </select>
+        </label>
+        <label class="field-label">Due
+          <input name="dueDate" type="date">
+        </label>
+        <label class="field-label">Energy
+          <select name="energy">
+            <option>Low</option>
+            <option>Medium</option>
+            <option>High</option>
+          </select>
+        </label>
+        <label class="field-label">Tags
+          <input name="tags" type="text" placeholder="comma separated tags">
+        </label>
+      </div>
+      <label class="field-label">Depends on
+        <select name="dependencies" multiple size="5"></select>
+      </label>
+      <div class="detail-actions">
+        <button class="ghost-button focus-subtask-button" type="button">Add subtask</button>
+        <button class="ghost-button focus-toggle-task-button" type="button">${task.status === "done" ? "Reopen" : "Done"}</button>
+        <button class="danger-button focus-delete-task-button" type="button">Delete</button>
+      </div>
+    </form>
+  `;
+  const form = els.taskList.querySelector("[data-task-focus-id]");
+  form.querySelector("[name='title']").value = task.title;
+  form.querySelector("[name='notes']").value = task.notes;
+  fillParentSelect(form.querySelector("[name='parentId']"), task.parent_id || "", task.id);
+  fillGoalSelect(form.querySelector("[name='goalId']"), task.goal_id || "");
+  fillProjectSelect(form.querySelector("[name='projectId']"), task.project_id || "");
+  fillAreaSelect(form.querySelector("[name='area']"), task.area_id || areaIdForName(task.area));
+  form.querySelector("[name='priority']").value = task.priority;
+  form.querySelector("[name='dueDate']").value = task.due_date || "";
+  form.querySelector("[name='energy']").value = task.energy;
+  form.querySelector("[name='tags']").value = task.tags.join(", ");
+  fillDependencySelect(form.querySelector("[name='dependencies']"), task.dependency_ids, task.id);
+}
+
+function renderFocusedGoalView() {
+  const goal = state.goals.find((item) => item.id === state.focusedId);
+  if (!goal) {
+    renderFocusedEmpty("Life goal");
+    return;
+  }
+  const index = state.goals.findIndex((item) => item.id === goal.id);
+  els.taskList.innerHTML = `
+    <section class="focus-editor">
+      <div class="focus-editor-head">
+        <button class="ghost-button focus-back-button" type="button">Back</button>
+        <span>Life Goal</span>
+      </div>
+      <article class="planning-card goal-card focused-goal-card" data-goal-id="${goal.id}">
+        <input class="goal-title-input" name="name" type="text" required aria-label="Life goal name">
+        <input class="goal-description-input" name="description" type="text" aria-label="Life goal description">
+        <div class="goal-task-outline"></div>
+        <div class="detail-actions">
+          <button class="danger-button delete-goal-button" type="button">Delete</button>
+        </div>
+      </article>
+    </section>
+  `;
+  const card = els.taskList.querySelector("[data-goal-id]");
+  card.style.setProperty("--goal-color", goalAccent(index));
+  card.querySelector("[name='name']").value = goal.name;
+  card.querySelector("[name='description']").value = goal.description;
+  const outline = card.querySelector(".goal-task-outline");
+  outline.append(makeGoalTaskOutline(goal.id, "active"));
+  outline.append(makeGoalTaskOutline(goal.id, "done"));
+}
+
+function renderFocusedPersonView() {
+  const person = state.people.find((item) => item.id === state.focusedId);
+  if (!person) {
+    renderFocusedEmpty("Person");
+    return;
+  }
+  els.taskList.innerHTML = `
+    <section class="focus-editor">
+      <div class="focus-editor-head">
+        <button class="ghost-button focus-back-button" type="button">Back</button>
+        <span>Person</span>
+      </div>
+      <article class="person-card focused-person-card" data-person-id="${person.id}">
+        <label class="field-label">First name
+          <input name="firstName" type="text" required aria-label="First name">
+        </label>
+        <label class="field-label">Last name
+          <input name="lastName" type="text" aria-label="Last name">
+        </label>
+        <label class="field-label">Relationship
+          <select name="relationshipTypeId" aria-label="Relationship"></select>
+        </label>
+        <div class="field-label">Skills
+          <div class="skill-picker" role="group" aria-label="Skills"></div>
+        </div>
+        <div class="person-focus-projects">
+          <strong>Projects</strong>
+          <div class="person-projects"></div>
+        </div>
+        <button class="danger-button delete-person-button" type="button">Delete</button>
+      </article>
+    </section>
+  `;
+  const card = els.taskList.querySelector("[data-person-id]");
+  card.querySelector("[name='firstName']").value = person.first_name;
+  card.querySelector("[name='lastName']").value = person.last_name;
+  fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
+  fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
+  card.querySelector(".person-projects").append(...personProjectPills(person));
+}
+
+function renderFocusedProjectView() {
+  const project = state.projects.find((item) => item.id === state.focusedId);
+  if (!project) {
+    renderFocusedEmpty("Project");
+    return;
+  }
+  els.taskList.innerHTML = `
+    <section class="focus-editor">
+      <div class="focus-editor-head">
+        <button class="ghost-button focus-back-button" type="button">Back</button>
+        <span>Project</span>
+      </div>
+      <article class="planning-card project-card focused-project-card" data-project-id="${project.id}">
+        <div class="project-identity">
+          <input name="name" type="text" required aria-label="Project name">
+          <div class="project-task-count"></div>
+        </div>
+        <select name="projectTypeId" aria-label="Project type"></select>
+        <select name="projectStatusId" aria-label="Project status"></select>
+        <input class="project-description-input" name="description" type="text" aria-label="Project description">
+        <div class="project-date-pair">
+          <label>
+            Start
+            <input name="startDate" type="date" aria-label="Project start date">
+          </label>
+          <label>
+            End
+            <input name="endDate" type="date" aria-label="Project end date">
+          </label>
+        </div>
+        <div class="project-people">
+          <div class="project-people-head">
+            <strong>People</strong>
+            <div class="project-person-add">
+              <select name="projectPersonId" aria-label="Add project person"></select>
+              <button class="ghost-button add-project-person-button" type="button">Add</button>
+            </div>
+          </div>
+          <div class="project-person-list"></div>
+        </div>
+        <button class="danger-button delete-project-button" type="button">Delete</button>
+      </article>
+    </section>
+  `;
+  const card = els.taskList.querySelector("[data-project-id]");
+  applyProjectStatusTone(card, projectStatusName(project));
+  card.querySelector("[name='name']").value = project.name;
+  fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
+  fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
+  applyProjectCardStatusTone(card);
+  card.querySelector("[name='description']").value = project.description;
+  card.querySelector("[name='startDate']").value = project.start_date || "";
+  card.querySelector("[name='endDate']").value = project.end_date || "";
+  normalizeDateRangeInputs(card);
+  const count = state.tasks.filter((task) => task.project_id === project.id).length;
+  card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
+  fillProjectPersonSelect(card.querySelector("[name='projectPersonId']"), project.id);
+  renderProjectPersonList(card, project.id);
 }
 
 function renderHomeView() {
@@ -2230,6 +2495,7 @@ function renderGoalsView() {
       <input class="goal-description-input" name="description" type="text" aria-label="Life goal description">
       <div class="goal-task-outline"></div>
       <div class="detail-actions">
+        <button class="ghost-button goal-focus-button" type="button">Open</button>
         <button class="danger-button delete-goal-button" type="button">Delete</button>
       </div>
     `;
@@ -2428,7 +2694,10 @@ function renderPeopleView() {
       <input name="lastName" type="text" aria-label="Last name">
       <select name="relationshipTypeId" aria-label="Relationship"></select>
       <div class="skill-picker" role="group" aria-label="Skills"></div>
-      <button class="danger-button delete-person-button" type="button">Delete</button>
+      <div class="row-actions">
+        <button class="ghost-button person-focus-button" type="button">Open</button>
+        <button class="danger-button delete-person-button" type="button">Delete</button>
+      </div>
     `;
     card.querySelector("[name='firstName']").value = person.first_name;
     card.querySelector("[name='lastName']").value = person.last_name;
@@ -2619,7 +2888,10 @@ function renderProjectsView() {
         </div>
         <div class="project-person-list"></div>
       </div>
-      <button class="danger-button delete-project-button" type="button">Delete</button>
+      <div class="row-actions">
+        <button class="ghost-button project-focus-button" type="button">Open</button>
+        <button class="danger-button delete-project-button" type="button">Delete</button>
+      </div>
     `;
     card.querySelector("[name='name']").value = project.name;
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
@@ -3361,25 +3633,19 @@ function makeTimelineProject(project, x, y, width) {
 function openTaskFromTimeline(taskId) {
   const task = state.tasks.find((item) => item.id === taskId);
   if (!task) return;
-  state.selectedId = task.id;
-  state.view = taskBucket(task);
-  render();
+  focusObject("task", task.id, "timeline");
 }
 
 function openProjectFromTimeline(projectId) {
-  state.view = "projects";
-  render();
-  requestAnimationFrame(() => {
-    const card = els.taskList.querySelector(`[data-project-id="${CSS.escape(projectId)}"]`);
-    card?.scrollIntoView({ block: "center", behavior: "smooth" });
-    card?.querySelector("[name='name']")?.focus();
-  });
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return;
+  focusObject("project", project.id, "timeline");
 }
 
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "focus-task", "focus-project", "focus-goal", "focus-person"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -3418,6 +3684,10 @@ function render() {
     ideas: "Ideas",
     graph: "Task Graph",
     timeline: "Timeline",
+    "focus-task": "Task",
+    "focus-project": "Project",
+    "focus-goal": "Life Goal",
+    "focus-person": "Person",
     areas: "Areas",
     skills: "Skills",
     relationships: "Relationships",
@@ -3425,17 +3695,20 @@ function render() {
     "project-statuses": "Project Status",
     roles: "Roles"
   };
-  const isPlanningView = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"].includes(state.view);
+  const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
+  const isFocusView = focusViews.includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
   els.plannerGrid.classList.toggle("graph-mode", state.view === "graph");
   els.plannerGrid.classList.toggle("timeline-mode", state.view === "timeline");
   els.plannerGrid.classList.toggle("planning-mode", isPlanningView);
+  els.plannerGrid.classList.toggle("focus-mode", isFocusView);
   els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline" || isPlanningView);
   els.todayLabel.textContent = label;
-  els.viewTitle.textContent = titles[state.view];
-  els.boardTitle.textContent = state.view === "graph" ? "Task Graph" : state.view === "timeline" ? "Task timeline" : titles[state.view];
+  els.viewTitle.textContent = titles[state.view] || "Planner";
+  els.boardTitle.textContent = state.view === "graph" ? "Task Graph" : state.view === "timeline" ? "Task timeline" : titles[state.view] || "Planner";
   els.storageStatus.textContent = isSupabaseReady() ? state.user.email : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.keyButton.textContent = state.user ? "Sign out" : "Google";
@@ -3584,10 +3857,7 @@ els.taskList.addEventListener("click", (event) => {
   }
   const homeTaskButton = event.target.closest("[data-home-task-id]");
   if (homeTaskButton) {
-    const task = state.tasks.find((item) => item.id === homeTaskButton.dataset.homeTaskId);
-    state.selectedId = homeTaskButton.dataset.homeTaskId;
-    state.view = task ? taskBucket(task) : "today";
-    render();
+    focusObject("task", homeTaskButton.dataset.homeTaskId, state.view);
     return;
   }
   const assignmentTask = event.target.closest("[data-assignment-task-id]");
@@ -3606,13 +3876,18 @@ els.taskList.addEventListener("click", (event) => {
   const deletePersonButton = event.target.closest(".delete-person-button");
   if (deletePersonButton) {
     const card = deletePersonButton.closest("[data-person-id]");
-    if (card) deletePerson(card.dataset.personId);
+    if (card) {
+      const wasFocus = state.view === "focus-person";
+      deletePerson(card.dataset.personId).then(() => {
+        if (wasFocus && !state.people.some((person) => person.id === card.dataset.personId)) leaveFocusView();
+      });
+    }
     return;
   }
-  const personEditButton = event.target.closest("[data-person-edit-id]");
-  if (personEditButton) {
-    state.view = "people";
-    render();
+  const personFocusButton = event.target.closest(".person-focus-button, [data-person-edit-id]");
+  if (personFocusButton) {
+    const personId = personFocusButton.dataset.personEditId || personFocusButton.closest("[data-person-id]")?.dataset.personId;
+    if (personId) focusObject("person", personId, state.view);
     return;
   }
   const clearPeopleFiltersButton = event.target.closest(".clear-people-filters");
@@ -3626,7 +3901,18 @@ els.taskList.addEventListener("click", (event) => {
   const deleteProjectButton = event.target.closest(".delete-project-button");
   if (deleteProjectButton) {
     const card = deleteProjectButton.closest("[data-project-id]");
-    if (card) deleteProject(card.dataset.projectId);
+    if (card) {
+      const wasFocus = state.view === "focus-project";
+      deleteProject(card.dataset.projectId).then(() => {
+        if (wasFocus && !state.projects.some((project) => project.id === card.dataset.projectId)) leaveFocusView();
+      });
+    }
+    return;
+  }
+  const projectFocusButton = event.target.closest(".project-focus-button");
+  if (projectFocusButton) {
+    const card = projectFocusButton.closest("[data-project-id]");
+    if (card) focusObject("project", card.dataset.projectId, state.view);
     return;
   }
   const addProjectPersonButton = event.target.closest(".add-project-person-button");
@@ -3664,15 +3950,24 @@ els.taskList.addEventListener("click", (event) => {
   }
   const goalTaskLink = event.target.closest(".goal-task-link");
   if (goalTaskLink) {
-    state.selectedId = goalTaskLink.dataset.taskId;
-    state.view = "today";
-    render();
+    focusObject("task", goalTaskLink.dataset.taskId, state.view);
     return;
   }
   const deleteGoalButton = event.target.closest(".delete-goal-button");
   if (deleteGoalButton) {
     const card = deleteGoalButton.closest("[data-goal-id]");
-    if (card) deleteGoal(card.dataset.goalId);
+    if (card) {
+      const wasFocus = state.view === "focus-goal";
+      deleteGoal(card.dataset.goalId).then(() => {
+        if (wasFocus && !state.goals.some((goal) => goal.id === card.dataset.goalId)) leaveFocusView();
+      });
+    }
+    return;
+  }
+  const goalFocusButton = event.target.closest(".goal-focus-button");
+  if (goalFocusButton) {
+    const card = goalFocusButton.closest("[data-goal-id]");
+    if (card) focusObject("goal", card.dataset.goalId, state.view);
     return;
   }
   const deleteIdeaButton = event.target.closest(".delete-idea-button");
@@ -3708,14 +4003,68 @@ els.taskList.addEventListener("click", (event) => {
   }
   const graphNode = event.target.closest(".graph-node");
   if (graphNode) {
-    state.selectedId = graphNode.dataset.id;
-    render();
+    focusObject("task", graphNode.dataset.id, "graph");
     return;
   }
   const mini = event.target.closest(".mini-task");
   if (mini) {
-    state.selectedId = mini.dataset.id;
-    render();
+    focusObject("task", mini.dataset.id, state.view);
+    return;
+  }
+  const focusBackButton = event.target.closest(".focus-back-button");
+  if (focusBackButton) {
+    leaveFocusView();
+    return;
+  }
+  const taskFocusButton = event.target.closest(".task-focus-button");
+  if (taskFocusButton) {
+    const item = taskFocusButton.closest(".task-item");
+    if (item) focusObject("task", item.dataset.id, state.view);
+    return;
+  }
+  const focusToggleTaskButton = event.target.closest(".focus-toggle-task-button");
+  if (focusToggleTaskButton) {
+    const form = focusToggleTaskButton.closest("[data-task-focus-id]");
+    if (form) toggleTaskStatus(form.dataset.taskFocusId);
+    return;
+  }
+  const focusSubtaskButton = event.target.closest(".focus-subtask-button");
+  if (focusSubtaskButton) {
+    const form = focusSubtaskButton.closest("[data-task-focus-id]");
+    const parent = state.tasks.find((item) => item.id === form?.dataset.taskFocusId);
+    if (parent) {
+      const task = normalizeTask({
+        title: `Subtask of ${parent.title}`,
+        parent_id: parent.id,
+        goal_id: parent.goal_id,
+        goal_ids: goalIdsForTask(parent),
+        project_id: parent.project_id,
+        area_id: parent.area_id || areaIdForName(parent.area),
+        area: areaNameFor(parent),
+        priority: parent.priority,
+        due_date: parent.due_date,
+        tags: parent.tags,
+        energy: parent.energy,
+        sort_order: nextSortOrder(parent.id)
+      });
+      state.focusedId = task.id;
+      state.selectedId = task.id;
+      persistTask(task);
+    }
+    return;
+  }
+  const focusDeleteTaskButton = event.target.closest(".focus-delete-task-button");
+  if (focusDeleteTaskButton) {
+    const form = focusDeleteTaskButton.closest("[data-task-focus-id]");
+    const task = state.tasks.find((item) => item.id === form?.dataset.taskFocusId);
+    if (!task) return;
+    const childCount = descendantIds(task.id).length;
+    const message = childCount
+      ? `Delete "${task.title}" and ${childCount} subtask${childCount === 1 ? "" : "s"}? This cannot be undone.`
+      : `Delete "${task.title}"? This cannot be undone.`;
+    if (window.confirm(message)) {
+      deleteTask(task.id).then(() => leaveFocusView());
+    }
     return;
   }
   const check = event.target.closest(".check");
@@ -3740,10 +4089,13 @@ els.taskList.addEventListener("submit", async (event) => {
   const personForm = event.target.closest("#person-form");
   const projectForm = event.target.closest("#project-form");
   const namedSettingsForm = event.target.closest("#named-settings-form");
-  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm) return;
+  const taskFocusForm = event.target.closest("[data-task-focus-id]");
+  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taskFocusForm) return;
   event.preventDefault();
   const form = new FormData(event.target);
-  if (goalForm) {
+  if (taskFocusForm) {
+    await patchTask(taskFocusForm.dataset.taskFocusId, focusedTaskPayload(taskFocusForm));
+  } else if (goalForm) {
     await persistGoal({ name: form.get("name").trim(), description: form.get("description").trim() });
   } else if (ideaForm) {
     await persistIdea({
@@ -3950,6 +4302,11 @@ function updateNamedOptionRow(row, shouldRender = false) {
 }
 
 els.taskList.addEventListener("input", (event) => {
+  const taskFocusForm = event.target.closest("[data-task-focus-id]");
+  if (taskFocusForm) {
+    queueFocusedTaskAutosave(taskFocusForm);
+    return;
+  }
   const goalCard = event.target.closest("[data-goal-id]");
   if (goalCard) {
     autosaveGoalCard(goalCard);
@@ -3984,6 +4341,11 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  const taskFocusForm = event.target.closest("[data-task-focus-id]");
+  if (taskFocusForm) {
+    queueFocusedTaskAutosave(taskFocusForm);
+    return;
+  }
   if (event.target.name === "projectStatusId") {
     applyProjectStatusTone(event.target, projectStatusNameForId(event.target.value));
   }
@@ -4068,8 +4430,7 @@ els.taskList.addEventListener("keydown", (event) => {
   const graphNode = event.target.closest(".graph-node");
   if (graphNode && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
-    state.selectedId = graphNode.dataset.id;
-    render();
+    focusObject("task", graphNode.dataset.id, "graph");
     return;
   }
   const item = event.target.closest(".task-item");
@@ -4162,6 +4523,7 @@ els.taskList.addEventListener("pointercancel", (event) => {
 
 document.querySelectorAll(".view-button").forEach((button) => {
   button.addEventListener("click", () => {
+    state.focusedId = "";
     state.view = button.dataset.view;
     render();
   });
@@ -4206,6 +4568,29 @@ function detailPayload() {
     due_date: detail.due.value || null,
     energy: detail.energy.value
   };
+}
+
+function focusedTaskPayload(form) {
+  return {
+    title: form.querySelector("[name='title']").value.trim(),
+    notes: form.querySelector("[name='notes']").value.trim(),
+    parent_id: form.querySelector("[name='parentId']").value || null,
+    goal_id: form.querySelector("[name='goalId']").value || null,
+    goal_ids: parseIds(form.querySelector("[name='goalId']").value || ""),
+    project_id: form.querySelector("[name='projectId']").value || null,
+    dependency_ids: [...form.querySelector("[name='dependencies']").selectedOptions].map((option) => option.value),
+    tags: parseTags(form.querySelector("[name='tags']").value),
+    area_id: form.querySelector("[name='area']").value || null,
+    area: areaById(form.querySelector("[name='area']").value)?.name || "Life",
+    priority: form.querySelector("[name='priority']").value,
+    due_date: form.querySelector("[name='dueDate']").value || null,
+    energy: form.querySelector("[name='energy']").value
+  };
+}
+
+function queueFocusedTaskAutosave(form) {
+  if (!form?.dataset.taskFocusId || !form.querySelector("[name='title']").value.trim()) return;
+  queueAutosave(`task:${form.dataset.taskFocusId}`, () => patchTask(form.dataset.taskFocusId, focusedTaskPayload(form), { render: false }));
 }
 
 function queueDetailAutosave() {
