@@ -1398,6 +1398,33 @@ body.resizing .resize-handle::before {
   text-transform: uppercase;
 }
 
+.people-sort-button {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-weight: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.people-sort-button:hover,
+.people-sort-button.active {
+  color: var(--teal);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.people-sort-button span {
+  font-size: 0.78rem;
+}
+
 .person-card {
   gap: var(--ui-gap);
   padding: 7px var(--task-pad-x);

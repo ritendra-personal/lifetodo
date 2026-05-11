@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.5";
+const APP_VERSION = "1.10.6";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -28,6 +28,18 @@ const defaultProjectTypes = ["Play", "Short Film", "Performance"].map((name, ind
 const defaultProjectStatuses = ["Not started", "In progress", "Completed", "Deprioritized"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultRoles = ["Director", "Producer", "Writer", "Actor"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 
+function loadPeopleSort() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("people-sort") || "{}");
+    return {
+      key: parsed.key || "firstName",
+      direction: parsed.direction === "desc" ? "desc" : "asc"
+    };
+  } catch {
+    return { key: "firstName", direction: "asc" };
+  }
+}
+
 const state = {
   tasks: [],
   goals: [],
@@ -50,6 +62,7 @@ const state = {
   search: "",
   tagFilter: "",
   sort: "manual",
+  peopleSort: loadPeopleSort(),
   showDone: localStorage.getItem("show-done") === "true",
   density: densityOptions.includes(localStorage.getItem("planner-density")) ? localStorage.getItem("planner-density") : "comfort",
   draggingId: null,
@@ -1940,6 +1953,55 @@ function applyPersonCardRelationshipTone(card) {
   applyPersonRelationshipTone(card, relationshipNameForId(select?.value || ""));
 }
 
+function peopleSortHeader(key, label) {
+  const active = state.peopleSort.key === key;
+  const direction = active ? state.peopleSort.direction : "asc";
+  const marker = active ? (direction === "asc" ? "↑" : "↓") : "";
+  const ariaSort = active ? (direction === "asc" ? "ascending" : "descending") : "none";
+  return `<button class="people-sort-button${active ? " active" : ""}" type="button" data-people-sort="${key}" aria-sort="${ariaSort}">${label}<span>${marker}</span></button>`;
+}
+
+function personSortValue(person, key) {
+  if (key === "lastName") return person.last_name || "";
+  if (key === "relationship") return relationshipNameForId(person.relationship_type_id);
+  if (key === "skills") {
+    return person.skill_ids
+      .map((id) => state.skills.find((skill) => skill.id === id)?.name || "")
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .join(", ");
+  }
+  if (key === "projects") {
+    return state.projectAssignments
+      .filter((assignment) => assignment.person_id === person.id)
+      .map((assignment) => state.projects.find((project) => project.id === assignment.project_id)?.name || "")
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .join(", ");
+  }
+  return person.first_name || "";
+}
+
+function sortedPeople(people, allowedKeys = ["firstName", "lastName", "relationship", "skills", "projects"]) {
+  const key = allowedKeys.includes(state.peopleSort.key) ? state.peopleSort.key : "firstName";
+  const direction = state.peopleSort.direction === "desc" ? -1 : 1;
+  return people.slice().sort((a, b) => {
+    const primary = personSortValue(a, key).localeCompare(personSortValue(b, key), undefined, { sensitivity: "base", numeric: true });
+    if (primary) return primary * direction;
+    const first = personSortValue(a, "firstName").localeCompare(personSortValue(b, "firstName"), undefined, { sensitivity: "base", numeric: true });
+    if (first) return first;
+    return personSortValue(a, "lastName").localeCompare(personSortValue(b, "lastName"), undefined, { sensitivity: "base", numeric: true });
+  });
+}
+
+function setPeopleSort(key) {
+  state.peopleSort = {
+    key,
+    direction: state.peopleSort.key === key && state.peopleSort.direction === "asc" ? "desc" : "asc"
+  };
+  localStorage.setItem("people-sort", JSON.stringify(state.peopleSort));
+}
+
 function projectTypeName(project) {
   return state.projectTypes.find((type) => type.id === project.project_type_id)?.name || "";
 }
@@ -2876,10 +2938,10 @@ function renderPeopleView() {
       </div>
       <div class="people-table">
         <div class="people-table-head">
-          <span>First Name</span>
-          <span>Last Name</span>
-          <span>Relationship</span>
-          <span>Skills</span>
+          ${peopleSortHeader("firstName", "First Name")}
+          ${peopleSortHeader("lastName", "Last Name")}
+          ${peopleSortHeader("relationship", "Relationship")}
+          ${peopleSortHeader("skills", "Skills")}
           <span></span>
         </div>
         <div class="planning-list people-list"></div>
@@ -2896,7 +2958,7 @@ function renderPeopleView() {
     list.append(empty);
     return;
   }
-  for (const person of state.people) {
+  for (const person of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"])) {
     const card = document.createElement("div");
     card.className = "person-card";
     card.dataset.personId = person.id;
@@ -2930,11 +2992,11 @@ function renderPeopleFilterView() {
     </div>
     <div class="people-table people-filter-table">
       <div class="people-table-head">
-        <span>First Name</span>
-        <span>Last Name</span>
-        <span>Relationship</span>
-        <span>Skills</span>
-        <span>Projects</span>
+        ${peopleSortHeader("firstName", "First Name")}
+        ${peopleSortHeader("lastName", "Last Name")}
+        ${peopleSortHeader("relationship", "Relationship")}
+        ${peopleSortHeader("skills", "Skills")}
+        ${peopleSortHeader("projects", "Projects")}
         <span></span>
       </div>
       <div class="planning-list people-list"></div>
@@ -2980,7 +3042,7 @@ function renderPeopleFilterView() {
   relationshipSelect.value = relationshipFilter;
   projectSelect.value = projectFilter;
   roleSelect.value = roleFilter;
-  const people = filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter);
+  const people = sortedPeople(filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter));
   const list = els.taskList.querySelector(".people-list");
   if (!people.length) {
     const empty = document.createElement("div");
@@ -4673,6 +4735,13 @@ els.taskList.addEventListener("change", (event) => {
   if (areaRow) {
     updateAreaRow(areaRow, true);
   }
+});
+
+els.taskList.addEventListener("click", (event) => {
+  const sortButton = event.target.closest("[data-people-sort]");
+  if (!sortButton) return;
+  setPeopleSort(sortButton.dataset.peopleSort);
+  renderTasks();
 });
 
 els.taskList.addEventListener("focusin", (event) => {
