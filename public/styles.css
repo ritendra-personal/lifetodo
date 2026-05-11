@@ -514,10 +514,50 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.sync-error {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border: 3px solid #d92d20;
+  background: #fff1f0;
+  color: #7a271a;
+  box-shadow: 0 16px 36px rgba(122, 39, 26, 0.24);
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.35;
+  padding: 16px 18px;
+}
+
+.sync-error::before {
+  content: "!";
+  display: inline-grid;
+  place-items: center;
+  width: 1.45em;
+  height: 1.45em;
+  margin-right: 10px;
+  border-radius: 999px;
+  background: #d92d20;
+  color: #fff;
+  font-weight: 900;
+}
+
 .sync-status {
   border-color: #abd8cf;
   background: #eef7f6;
   color: #075f59;
+}
+
+body.has-sync-error #sync-button {
+  border-color: #d92d20;
+  background: #d92d20;
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(217, 45, 32, 0.16);
+}
+
+body.has-sync-error #storage-status {
+  color: #ffb4a8;
+  font-weight: 900;
 }
 
 .task-form {

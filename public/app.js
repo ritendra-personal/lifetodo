@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.29";
+const APP_VERSION = "1.10.30";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -418,6 +418,7 @@ function applyRouteFromLocation(options = {}) {
 }
 
 function renderSyncStatus() {
+  document.body.classList.toggle("has-sync-error", Boolean(state.syncError));
   if (state.syncMessage && !state.syncError) {
     els.syncStatus.textContent = state.syncMessage;
     els.syncStatus.classList.remove("hidden");
@@ -426,7 +427,7 @@ function renderSyncStatus() {
     els.syncStatus.classList.add("hidden");
   }
   if (state.syncError) {
-    els.syncError.textContent = `Save issue: ${state.syncError}. Your changes are kept in this browser; press Sync to retry.`;
+    els.syncError.textContent = `DATABASE SAVE FAILED: ${state.syncError}. Changes are only kept in this browser until Sync succeeds.`;
     els.syncError.classList.remove("hidden");
   } else {
     els.syncError.textContent = "";
@@ -4882,6 +4883,7 @@ function render() {
   els.showDone.checked = state.showDone;
   els.storageStatus.title = state.syncError || "";
   els.storageStatus.textContent = state.syncError ? "Sync issue" : els.storageStatus.textContent;
+  document.body.classList.toggle("has-sync-error", Boolean(state.syncError));
   if (state.syncMessage && !state.syncError) {
     els.syncStatus.textContent = state.syncMessage;
     els.syncStatus.classList.remove("hidden");
@@ -4890,7 +4892,7 @@ function render() {
     els.syncStatus.classList.add("hidden");
   }
   if (state.syncError) {
-    els.syncError.textContent = `Save issue: ${state.syncError}. Your changes are kept in this browser; press Sync to retry.`;
+    els.syncError.textContent = `DATABASE SAVE FAILED: ${state.syncError}. Changes are only kept in this browser until Sync succeeds.`;
     els.syncError.classList.remove("hidden");
   } else {
     els.syncError.textContent = "";
