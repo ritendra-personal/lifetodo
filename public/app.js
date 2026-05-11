@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.27";
+const APP_VERSION = "1.10.28";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2918,8 +2918,14 @@ function renderFocusedPersonView() {
           <div class="skill-picker" role="group" aria-label="Skills"></div>
         </div>
         <div class="person-focus-projects">
-          <strong>Projects</strong>
-          <div class="person-projects"></div>
+          <div class="project-people-head">
+            <strong>Projects</strong>
+            <div class="person-project-add">
+              <select name="personProjectId" aria-label="Add person project"></select>
+              <button class="ghost-button add-person-project-button" type="button">Add</button>
+            </div>
+          </div>
+          <div class="person-project-list"></div>
         </div>
         <button class="danger-button delete-person-button" type="button">Delete</button>
       </article>
@@ -2930,7 +2936,8 @@ function renderFocusedPersonView() {
   card.querySelector("[name='lastName']").value = person.last_name;
   fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
   fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
-  card.querySelector(".person-projects").append(...personProjectPills(person));
+  fillPersonProjectSelect(card.querySelector("[name='personProjectId']"), person.id);
+  renderPersonProjectList(card, person.id);
   applyPersonRelationshipTone(card, relationshipNameForId(person.relationship_type_id));
 }
 
@@ -3834,6 +3841,17 @@ function fillProjectPersonSelect(select, projectId) {
   }
 }
 
+function fillPersonProjectSelect(select, personId) {
+  const assigned = new Set(state.projectAssignments.filter((assignment) => assignment.person_id === personId).map((assignment) => assignment.project_id));
+  select.innerHTML = '<option value="">Add project...</option>';
+  for (const project of sortedProjects(state.projects.filter((item) => !assigned.has(item.id)))) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name;
+    select.append(option);
+  }
+}
+
 function fillRolePicker(container, selected = []) {
   const values = new Set(parseIds(selected));
   container.innerHTML = "";
@@ -3889,6 +3907,39 @@ function renderProjectPersonList(card, projectId) {
       <button class="ghost-button remove-project-person-button" type="button">Remove</button>
     `;
     row.querySelector(".project-person-name").textContent = person ? personFullName(person) : "Unknown person";
+    fillRolePicker(row.querySelector(".role-picker"), assignment.role_ids);
+    list.append(row);
+  }
+}
+
+function renderPersonProjectList(card, personId) {
+  const list = card.querySelector(".person-project-list");
+  list.innerHTML = "";
+  const assignments = state.projectAssignments
+    .filter((assignment) => assignment.person_id === personId)
+    .sort((a, b) => {
+      const aProject = state.projects.find((item) => item.id === a.project_id);
+      const bProject = state.projects.find((item) => item.id === b.project_id);
+      return sortByLabel(aProject?.name || "", bProject?.name || "");
+    });
+  if (!assignments.length) {
+    const empty = document.createElement("div");
+    empty.className = "project-person-empty";
+    empty.textContent = "No projects assigned.";
+    list.append(empty);
+    return;
+  }
+  for (const assignment of assignments) {
+    const project = state.projects.find((item) => item.id === assignment.project_id);
+    const row = document.createElement("div");
+    row.className = "project-person-row person-project-row";
+    row.dataset.projectAssignmentId = assignment.id;
+    row.innerHTML = `
+      <span class="project-person-name"></span>
+      <div class="role-picker" role="group" aria-label="Project roles"></div>
+      <button class="ghost-button remove-project-person-button" type="button">Remove</button>
+    `;
+    row.querySelector(".project-person-name").textContent = project?.name || "Unknown project";
     fillRolePicker(row.querySelector(".role-picker"), assignment.role_ids);
     list.append(row);
   }
@@ -3969,8 +4020,15 @@ function renderGoalAssignmentsView() {
 }
 
 function renderPeopleProjectsView() {
-  if (!state.selectedAssignmentPersonId || !state.people.some((person) => person.id === state.selectedAssignmentPersonId)) {
-    state.selectedAssignmentPersonId = state.people[0]?.id || "";
+  const storedPersonFilter = sessionStorage.getItem("people-project-person-filter") || "";
+  const validPersonFilter = state.people.some((person) => person.id === storedPersonFilter) ? storedPersonFilter : "";
+  const peopleForAssignment = validPersonFilter
+    ? state.people.filter((person) => person.id === validPersonFilter)
+    : sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"]);
+  if (validPersonFilter) {
+    state.selectedAssignmentPersonId = validPersonFilter;
+  } else if (!state.selectedAssignmentPersonId || !peopleForAssignment.some((person) => person.id === state.selectedAssignmentPersonId)) {
+    state.selectedAssignmentPersonId = peopleForAssignment[0]?.id || "";
   }
   const selectedAssignments = state.projectAssignments.filter((assignment) => assignment.person_id === state.selectedAssignmentPersonId);
   const selectedProjectIds = new Set(selectedAssignments.map((assignment) => assignment.project_id));
@@ -3978,7 +4036,10 @@ function renderPeopleProjectsView() {
     <div class="assignment-view assignment-map people-project-map">
       <svg class="assignment-lines" aria-hidden="true"></svg>
       <section class="assignment-panel">
-        <h4>People</h4>
+        <div class="assignment-panel-head">
+          <h4>People</h4>
+          <select name="assignmentPersonFilter" aria-label="Filter people to projects by person"></select>
+        </div>
         <div class="assignment-person-list"></div>
       </section>
       <section class="assignment-panel">
@@ -3998,13 +4059,22 @@ function renderPeopleProjectsView() {
   const personList = els.taskList.querySelector(".assignment-person-list");
   const projectList = els.taskList.querySelector(".assignment-project-list");
   const lines = els.taskList.querySelector(".assignment-lines");
+  const personFilterSelect = els.taskList.querySelector("[name='assignmentPersonFilter']");
+  personFilterSelect.innerHTML = '<option value="">All people</option>';
+  for (const person of sortedPeopleByName(state.people)) {
+    const option = document.createElement("option");
+    option.value = person.id;
+    option.textContent = personFullName(person);
+    personFilterSelect.append(option);
+  }
+  personFilterSelect.value = validPersonFilter;
   if (!state.people.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
     empty.textContent = "No people yet.";
     personList.append(empty);
   }
-  for (const person of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"])) {
+  for (const person of peopleForAssignment) {
     const assignmentCount = state.projectAssignments.filter((assignment) => assignment.person_id === person.id).length;
     const button = document.createElement("button");
     button.className = `assignment-task assignment-person ${person.id === state.selectedAssignmentPersonId ? "active" : ""} ${assignmentCount ? "linked" : ""}`;
@@ -4015,6 +4085,12 @@ function renderPeopleProjectsView() {
     button.querySelector("small").textContent = `${relationshipNameForId(person.relationship_type_id) || "No relationship"} · ${assignmentCount} project${assignmentCount === 1 ? "" : "s"}`;
     applyPersonRelationshipTone(button, relationshipNameForId(person.relationship_type_id));
     personList.append(button);
+  }
+  if (state.people.length && !peopleForAssignment.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No people match this filter.";
+    personList.append(empty);
   }
   if (!state.projects.length) {
     const empty = document.createElement("div");
@@ -5063,6 +5139,15 @@ els.taskList.addEventListener("click", (event) => {
     }
     return;
   }
+  const addPersonProjectButton = event.target.closest(".add-person-project-button");
+  if (addPersonProjectButton) {
+    const card = addPersonProjectButton.closest("[data-person-id]");
+    const projectId = card?.querySelector("[name='personProjectId']")?.value || "";
+    if (card && projectId) {
+      persistProjectAssignment({ project_id: projectId, person_id: card.dataset.personId, role_ids: [] });
+    }
+    return;
+  }
   const removeProjectPersonButton = event.target.closest(".remove-project-person-button");
   if (removeProjectPersonButton) {
     const row = removeProjectPersonButton.closest("[data-project-assignment-id]");
@@ -5648,6 +5733,13 @@ els.taskList.addEventListener("change", (event) => {
     state.assignmentSelectedOnly = selectedOnlyToggle.checked;
     localStorage.setItem("assignment-selected-only", String(state.assignmentSelectedOnly));
     scheduleAssignmentLines();
+    return;
+  }
+  const assignmentPersonFilter = event.target.closest("[name='assignmentPersonFilter']");
+  if (assignmentPersonFilter) {
+    sessionStorage.setItem("people-project-person-filter", assignmentPersonFilter.value || "");
+    if (assignmentPersonFilter.value) state.selectedAssignmentPersonId = assignmentPersonFilter.value;
+    renderTasks();
     return;
   }
   const projectSort = event.target.closest("[name='projectSort']");
