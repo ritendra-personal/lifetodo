@@ -969,6 +969,11 @@ body.resizing .resize-handle::before {
   align-items: center;
 }
 
+.people-filter-table .people-table-head,
+.people-filter-table .person-read-row {
+  grid-template-columns: minmax(115px, 0.65fr) minmax(115px, 0.65fr) minmax(130px, 0.6fr) minmax(210px, 0.95fr) minmax(260px, 1.3fr) 68px;
+}
+
 .people-table-head > *,
 .person-card > * {
   min-height: 0;
@@ -1054,9 +1059,29 @@ body.resizing .resize-handle::before {
 
 .people-filter-bar {
   display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(160px, 220px);
+  grid-template-columns: repeat(3, minmax(160px, 220px));
   gap: var(--ui-gap);
   margin-bottom: calc(var(--major-gap) * 1.15);
+}
+
+.person-projects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.person-project-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #2f4c74;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .project-form {
@@ -1532,6 +1557,58 @@ body.resizing .resize-handle::before {
   font-weight: 800;
 }
 
+.timeline-section-label {
+  position: absolute;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.timeline-divider {
+  position: absolute;
+  height: 2px;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.timeline-empty-band {
+  position: absolute;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.timeline-project {
+  position: absolute;
+  min-width: 140px;
+  max-width: 520px;
+  min-height: 44px;
+  border: 1px solid #9fb7d7;
+  border-left: 8px solid #476c9b;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(71, 108, 155, 0.18), #fff 58%);
+  box-shadow: 0 8px 18px rgba(31, 36, 48, 0.08);
+  padding: 7px 12px 7px 14px;
+  display: grid;
+  gap: 2px;
+}
+
+.timeline-project-title {
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-project-meta {
+  color: var(--muted);
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .timeline-task {
   position: absolute;
   width: 216px;
@@ -1798,6 +1875,8 @@ dialog::backdrop {
   .people-form,
   .people-table-head,
   .person-card,
+  .people-filter-table .people-table-head,
+  .people-filter-table .person-read-row,
   .skill-picker,
   .assignment-view,
   .people-filter-bar,

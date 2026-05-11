@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.8.1";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1660,6 +1660,10 @@ function projectStatusIdForName(name) {
   return state.projectStatuses.find((status) => status.name === name)?.id || "";
 }
 
+function projectTypeName(project) {
+  return state.projectTypes.find((type) => type.id === project.project_type_id)?.name || "";
+}
+
 function renderTagFilters() {
   const tags = [...new Set(state.tasks.flatMap((task) => task.tags))].sort((a, b) => a.localeCompare(b));
   els.tagFilters.innerHTML = "";
@@ -2153,13 +2157,15 @@ function renderPeopleFilterView() {
     <div class="people-filter-bar">
       <select name="skillFilter" aria-label="Filter by skill"></select>
       <select name="relationshipFilter" aria-label="Filter by relationship"></select>
+      <select name="projectFilter" aria-label="Filter by project"></select>
     </div>
-    <div class="people-table">
+    <div class="people-table people-filter-table">
       <div class="people-table-head">
         <span>First Name</span>
         <span>Last Name</span>
         <span>Relationship</span>
         <span>Skills</span>
+        <span>Projects</span>
         <span></span>
       </div>
       <div class="planning-list people-list"></div>
@@ -2167,6 +2173,7 @@ function renderPeopleFilterView() {
   `;
   const skillSelect = els.taskList.querySelector("[name='skillFilter']");
   const relationshipSelect = els.taskList.querySelector("[name='relationshipFilter']");
+  const projectSelect = els.taskList.querySelector("[name='projectFilter']");
   skillSelect.innerHTML = '<option value="">All skills</option>';
   for (const skill of state.skills) {
     const option = document.createElement("option");
@@ -2181,11 +2188,20 @@ function renderPeopleFilterView() {
     option.textContent = relationship.name;
     relationshipSelect.append(option);
   }
+  projectSelect.innerHTML = '<option value="">All projects</option>';
+  for (const project of state.projects.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name || "Untitled project";
+    projectSelect.append(option);
+  }
   const skillFilter = sessionStorage.getItem("people-skill-filter") || "";
   const relationshipFilter = sessionStorage.getItem("people-relationship-filter") || "";
+  const projectFilter = sessionStorage.getItem("people-project-filter") || "";
   skillSelect.value = skillFilter;
   relationshipSelect.value = relationshipFilter;
-  const people = filteredPeople(skillFilter, relationshipFilter);
+  projectSelect.value = projectFilter;
+  const people = filteredPeople(skillFilter, relationshipFilter, projectFilter);
   const list = els.taskList.querySelector(".people-list");
   if (!people.length) {
     const empty = document.createElement("div");
@@ -2199,10 +2215,11 @@ function renderPeopleFilterView() {
   }
 }
 
-function filteredPeople(skillId, relationshipId) {
+function filteredPeople(skillId, relationshipId, projectId = "") {
   return state.people.filter((person) => {
     if (skillId && !person.skill_ids.includes(skillId)) return false;
     if (relationshipId && person.relationship_type_id !== relationshipId) return false;
+    if (projectId && !state.projectAssignments.some((assignment) => assignment.person_id === person.id && assignment.project_id === projectId)) return false;
     return true;
   });
 }
@@ -2215,6 +2232,7 @@ function makePeopleReadRow(person) {
     <span></span>
     <span></span>
     <span></span>
+    <span class="person-projects"></span>
     <button class="ghost-button person-edit-button" type="button">Edit</button>
   `;
   row.querySelectorAll("span")[0].textContent = person.first_name;
@@ -2224,8 +2242,24 @@ function makePeopleReadRow(person) {
     .map((id) => state.skills.find((skill) => skill.id === id)?.name)
     .filter(Boolean)
     .join(", ");
+  row.querySelector(".person-projects").append(...personProjectPills(person));
   row.querySelector("button").dataset.personEditId = person.id;
   return row;
+}
+
+function personProjectPills(person) {
+  const assignments = state.projectAssignments.filter((assignment) => assignment.person_id === person.id);
+  if (!assignments.length) return [document.createTextNode("No projects")];
+  return assignments.map((assignment) => {
+    const project = state.projects.find((item) => item.id === assignment.project_id);
+    const roles = assignment.role_ids
+      .map((id) => state.roles.find((role) => role.id === id)?.name)
+      .filter(Boolean);
+    const pill = document.createElement("span");
+    pill.className = "person-project-pill";
+    pill.textContent = `${project?.name || "Unknown project"}${roles.length ? ` (${roles.join(", ")})` : ""}`;
+    return pill;
+  });
 }
 
 function renderProjectsView() {
@@ -2777,8 +2811,11 @@ function renderTimelineView() {
   const tasks = state.tasks
     .filter(taskMatchesGlobalFilters)
     .sort((a, b) => (a.due_date || "9999-12-31").localeCompare(b.due_date || "9999-12-31") || a.sort_order - b.sort_order);
+  const timelineProjects = state.projects
+    .filter((project) => projectTimelineStart(project))
+    .sort((a, b) => projectTimelineStart(a).localeCompare(projectTimelineStart(b)) || a.name.localeCompare(b.name));
 
-  if (!tasks.length) {
+  if (!tasks.length && !timelineProjects.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
     empty.textContent = "Nothing here right now.";
@@ -2789,16 +2826,27 @@ function renderTimelineView() {
   const datedTasks = tasks.filter((task) => task.due_date);
   const noDateTasks = tasks.filter((task) => !task.due_date);
   const today = todayIso();
-  const minDate = datedTasks.length ? datedTasks[0].due_date : today;
-  const maxDate = datedTasks.length ? datedTasks[datedTasks.length - 1].due_date : today;
+  const timelineDates = [
+    today,
+    ...datedTasks.map((task) => task.due_date),
+    ...timelineProjects.flatMap(projectTimelineDates)
+  ];
+  const minDate = timelineDates.reduce((min, date) => (date < min ? date : min), timelineDates[0]);
+  const maxDate = timelineDates.reduce((max, date) => (date > max ? date : max), timelineDates[0]);
   const startDate = addDaysToIso(minDate < today ? minDate : today, -5);
   const endDate = addDaysToIso(maxDate > today ? maxDate : today, 10);
   const dayCount = Math.max(1, daysBetween(startDate, endDate));
   const pixelsPerDay = Math.min(120, Math.max(18, state.timelineZoom));
   const margin = 120;
+  const projectRowHeight = 62;
   const rowHeight = 86;
   const axisTop = 78;
-  const laneTop = 128;
+  const projectLabelTop = 118;
+  const projectLaneTop = 150;
+  const projectBandHeight = Math.max(1, timelineProjects.length) * projectRowHeight;
+  const dividerTop = projectLaneTop + projectBandHeight + 28;
+  const taskLabelTop = dividerTop + 24;
+  const laneTop = taskLabelTop + 34;
   const noDateTop = laneTop + Math.max(1, datedTasks.length) * rowHeight + 44;
   const width = margin * 2 + dayCount * pixelsPerDay;
   const height = noDateTop + Math.max(1, noDateTasks.length) * 74 + 60;
@@ -2848,6 +2896,33 @@ function renderTimelineView() {
     }
   }
 
+  canvas.append(makeTimelineSectionLabel("Projects", margin, projectLabelTop));
+  if (timelineProjects.length) {
+    timelineProjects.forEach((project, index) => {
+      const projectStart = projectTimelineStart(project);
+      const projectEnd = projectTimelineEnd(project);
+      const startX = margin + daysBetween(startDate, projectStart) * pixelsPerDay;
+      const endX = margin + daysBetween(startDate, projectEnd) * pixelsPerDay;
+      const y = projectLaneTop + index * projectRowHeight;
+      canvas.append(makeTimelineProject(project, startX, y, Math.max(140, endX - startX + pixelsPerDay)));
+    });
+  } else {
+    const emptyProjects = document.createElement("div");
+    emptyProjects.className = "timeline-empty-band";
+    emptyProjects.style.left = `${margin}px`;
+    emptyProjects.style.top = `${projectLaneTop}px`;
+    emptyProjects.textContent = "No dated projects";
+    canvas.append(emptyProjects);
+  }
+
+  const divider = document.createElement("div");
+  divider.className = "timeline-divider";
+  divider.style.left = `${margin}px`;
+  divider.style.top = `${dividerTop}px`;
+  divider.style.width = `${dayCount * pixelsPerDay}px`;
+  canvas.append(divider);
+  canvas.append(makeTimelineSectionLabel("Tasks", margin, taskLabelTop));
+
   datedTasks.forEach((task, index) => {
     const x = margin + daysBetween(startDate, task.due_date) * pixelsPerDay;
     const y = laneTop + index * rowHeight;
@@ -2891,6 +2966,50 @@ function makeTimelineTask(task, x, y) {
   node.querySelector(".timeline-dot").style.background = areaColorFor(task);
   node.querySelector(".timeline-task-title").textContent = task.title;
   node.querySelector(".timeline-task-meta").textContent = `${areaNameFor(task)} · ${task.priority} · ${formatDate(task.due_date)}`;
+  return node;
+}
+
+function projectTimelineStart(project) {
+  return project.start_date || project.end_date || project.target_date || "";
+}
+
+function projectTimelineEnd(project) {
+  const start = projectTimelineStart(project);
+  const end = project.end_date || project.start_date || project.target_date || start;
+  return end < start ? start : end;
+}
+
+function projectTimelineDates(project) {
+  const start = projectTimelineStart(project);
+  const end = projectTimelineEnd(project);
+  return [start, end].filter(Boolean);
+}
+
+function makeTimelineSectionLabel(text, x, y) {
+  const label = document.createElement("div");
+  label.className = "timeline-section-label";
+  label.style.left = `${x}px`;
+  label.style.top = `${y}px`;
+  label.textContent = text;
+  return label;
+}
+
+function makeTimelineProject(project, x, y, width) {
+  const node = document.createElement("div");
+  const status = projectStatusName(project);
+  const type = projectTypeName(project);
+  node.className = "timeline-project";
+  node.style.left = `${x}px`;
+  node.style.top = `${y}px`;
+  node.style.width = `${width}px`;
+  node.innerHTML = `
+    <span class="timeline-project-title"></span>
+    <span class="timeline-project-meta"></span>
+  `;
+  node.querySelector(".timeline-project-title").textContent = project.name || "Untitled project";
+  node.querySelector(".timeline-project-meta").textContent = [type, status, `${formatDate(projectTimelineStart(project))} - ${formatDate(projectTimelineEnd(project))}`]
+    .filter(Boolean)
+    .join(" · ");
   return node;
 }
 
@@ -3469,12 +3588,14 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
-  const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter']");
+  const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter']");
   if (peopleFilter) {
     const skillFilter = els.taskList.querySelector("[name='skillFilter']")?.value || "";
     const relationshipFilter = els.taskList.querySelector("[name='relationshipFilter']")?.value || "";
+    const projectFilter = els.taskList.querySelector("[name='projectFilter']")?.value || "";
     sessionStorage.setItem("people-skill-filter", skillFilter);
     sessionStorage.setItem("people-relationship-filter", relationshipFilter);
+    sessionStorage.setItem("people-project-filter", projectFilter);
     renderTasks();
     return;
   }
