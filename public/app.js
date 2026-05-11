@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1748,8 +1748,34 @@ function projectStatusName(project) {
   return state.projectStatuses.find((status) => status.id === project.project_status_id)?.name || project.status || "";
 }
 
+function projectStatusNameForId(id) {
+  return state.projectStatuses.find((status) => status.id === id)?.name || "";
+}
+
 function projectStatusIdForName(name) {
   return state.projectStatuses.find((status) => status.name === name)?.id || "";
+}
+
+function projectStatusTone(statusName) {
+  const normalized = String(statusName || "").trim().toLowerCase();
+  if (normalized === "not started") return { color: "#d85b49", tint: "rgba(216, 91, 73, 0.14)" };
+  if (normalized === "in progress") return { color: "#d6a21e", tint: "rgba(214, 162, 30, 0.18)" };
+  if (normalized === "completed") return { color: "#2f855a", tint: "rgba(47, 133, 90, 0.16)" };
+  return { color: "#8a94a6", tint: "rgba(138, 148, 166, 0.15)" };
+}
+
+function applyProjectStatusTone(element, statusName) {
+  if (!element) return;
+  const tone = projectStatusTone(statusName);
+  element.style.setProperty("--project-status-color", tone.color);
+  element.style.setProperty("--project-status-tint", tone.tint);
+}
+
+function applyProjectCardStatusTone(card) {
+  const statusSelect = card.querySelector("[name='projectStatusId']");
+  const statusName = projectStatusNameForId(statusSelect?.value || "") || "Other";
+  applyProjectStatusTone(card, statusName);
+  if (statusSelect) applyProjectStatusTone(statusSelect, statusName);
 }
 
 function projectTypeName(project) {
@@ -2550,6 +2576,7 @@ function renderProjectsView() {
   `;
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
   fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");
+  applyProjectStatusTone(els.taskList.querySelector("select[name='projectStatusId']"), projectStatusNameForId(state.projectStatuses[0]?.id || ""));
   normalizeDateRangeInputs(els.taskList.querySelector("#project-form"));
   const list = els.taskList.querySelector(".project-list");
   if (!state.projects.length) {
@@ -2563,6 +2590,7 @@ function renderProjectsView() {
     const card = document.createElement("article");
     card.className = "planning-card project-card";
     card.dataset.projectId = project.id;
+    applyProjectStatusTone(card, projectStatusName(project));
     card.innerHTML = `
       <div class="project-identity">
         <input name="name" type="text" required aria-label="Project name">
@@ -2596,6 +2624,7 @@ function renderProjectsView() {
     card.querySelector("[name='name']").value = project.name;
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
     fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
+    applyProjectCardStatusTone(card);
     card.querySelector("[name='description']").value = project.description;
     card.querySelector("[name='startDate']").value = project.start_date || "";
     card.querySelector("[name='endDate']").value = project.end_date || "";
@@ -3308,13 +3337,16 @@ function makeTimelineSectionLabel(text, x, y) {
 }
 
 function makeTimelineProject(project, x, y, width) {
-  const node = document.createElement("div");
+  const node = document.createElement("button");
   const status = projectStatusName(project);
   const type = projectTypeName(project);
   node.className = "timeline-project";
+  node.type = "button";
+  node.dataset.projectId = project.id;
   node.style.left = `${x}px`;
   node.style.top = `${y}px`;
   node.style.width = `${width}px`;
+  applyProjectStatusTone(node, status);
   node.innerHTML = `
     <span class="timeline-project-title"></span>
     <span class="timeline-project-meta"></span>
@@ -3324,6 +3356,24 @@ function makeTimelineProject(project, x, y, width) {
     .filter(Boolean)
     .join(" · ");
   return node;
+}
+
+function openTaskFromTimeline(taskId) {
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task) return;
+  state.selectedId = task.id;
+  state.view = taskBucket(task);
+  render();
+}
+
+function openProjectFromTimeline(projectId) {
+  state.view = "projects";
+  render();
+  requestAnimationFrame(() => {
+    const card = els.taskList.querySelector(`[data-project-id="${CSS.escape(projectId)}"]`);
+    card?.scrollIntoView({ block: "center", behavior: "smooth" });
+    card?.querySelector("[name='name']")?.focus();
+  });
 }
 
 function renderDetail() {
@@ -3648,8 +3698,12 @@ els.taskList.addEventListener("click", (event) => {
   }
   const timelineTask = event.target.closest(".timeline-task");
   if (timelineTask) {
-    state.selectedId = timelineTask.dataset.id;
-    renderTasks();
+    openTaskFromTimeline(timelineTask.dataset.id);
+    return;
+  }
+  const timelineProject = event.target.closest(".timeline-project");
+  if (timelineProject) {
+    openProjectFromTimeline(timelineProject.dataset.projectId);
     return;
   }
   const graphNode = event.target.closest(".graph-node");
@@ -3919,6 +3973,7 @@ els.taskList.addEventListener("input", (event) => {
   const projectCard = event.target.closest("[data-project-id]");
   if (projectCard) {
     normalizeDateRangeInputs(projectCard, { anchorEnd: event.target.name === "startDate" });
+    applyProjectCardStatusTone(projectCard);
     autosaveProjectCard(projectCard);
     return;
   }
@@ -3929,6 +3984,9 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  if (event.target.name === "projectStatusId") {
+    applyProjectStatusTone(event.target, projectStatusNameForId(event.target.value));
+  }
   const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter']");
   if (peopleFilter) {
     const skillFilter = els.taskList.querySelector("[name='skillFilter']")?.value || "";
@@ -3978,6 +4036,7 @@ els.taskList.addEventListener("change", (event) => {
   const projectCard = event.target.closest("[data-project-id]");
   if (projectCard) {
     normalizeDateRangeInputs(projectCard, { anchorEnd: event.target.name === "startDate" });
+    applyProjectCardStatusTone(projectCard);
     autosaveProjectCard(projectCard);
     return;
   }
@@ -3997,8 +4056,13 @@ els.taskList.addEventListener("keydown", (event) => {
   const timelineTask = event.target.closest(".timeline-task");
   if (timelineTask && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
-    state.selectedId = timelineTask.dataset.id;
-    renderTasks();
+    openTaskFromTimeline(timelineTask.dataset.id);
+    return;
+  }
+  const timelineProject = event.target.closest(".timeline-project");
+  if (timelineProject && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    openProjectFromTimeline(timelineProject.dataset.projectId);
     return;
   }
   const graphNode = event.target.closest(".graph-node");
