@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.4";
+const APP_VERSION = "1.9.5";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1010,9 +1010,25 @@ async function patchTask(id, changes, options = {}) {
   const current = state.tasks.find((task) => task.id === id);
   if (!current) return;
   const updated = normalizeTask({ ...current, ...changes, updated_at: nowIso() });
+  const optimistic = options.optimistic === true;
+
+  if (optimistic) {
+    state.tasks = state.tasks.map((task) => (task.id === id ? updated : task));
+    ensureSortOrders(state.tasks);
+    saveLocal();
+    state.syncError = "";
+    state.syncMessage = "Saving...";
+    if ("goal_ids" in changes || "goal_id" in changes) {
+      state.goalLinks = [
+        ...state.goalLinks.filter((link) => link.task_id !== id),
+        ...goalIdsForTask(updated).map((goalId) => ({ task_id: id, goal_id: goalId, user_id: state.user?.id || null }))
+      ];
+    }
+    if (options.render !== false) render();
+  }
 
   if (!isSupabaseReady()) {
-    state.tasks = state.tasks.map((task) => (task.id === id ? updated : task));
+    if (!optimistic) state.tasks = state.tasks.map((task) => (task.id === id ? updated : task));
     if ("goal_ids" in changes || "goal_id" in changes) {
       await syncTaskGoalLinks(id, goalIdsForTask(updated));
     }
@@ -1044,6 +1060,21 @@ async function patchTask(id, changes, options = {}) {
     state.syncMessage = "";
     if (options.render !== false) render();
     console.error("Supabase update failed", error);
+  }
+}
+
+async function patchTaskWithFeedback(id, changes, options = {}) {
+  clearTimeout(autosaveTimers.get(`task:${id}`));
+  autosaveTimers.delete(`task:${id}`);
+  showSyncMessage("Saving...");
+  try {
+    await withAutosaveTimeout(() => patchTask(id, changes, { ...options, optimistic: true }), 10000);
+    if (!state.syncError) showSyncMessage(`Saved at ${savedAtLabel()}.`);
+    else renderSyncStatus();
+  } catch (error) {
+    state.syncError = error.message;
+    state.syncMessage = "";
+    renderSyncStatus();
   }
 }
 
@@ -3797,7 +3828,7 @@ function toggleTaskStatus(id) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
   const done = task.status !== "done";
-  return patchTask(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
+  return patchTaskWithFeedback(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
 }
 
 async function persistReorder(changedTasks) {
@@ -4689,7 +4720,7 @@ els.completeButton.addEventListener("click", async () => {
   const task = state.tasks.find((item) => item.id === state.selectedId);
   if (!task) return;
   const done = task.status !== "done";
-  await patchTask(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
+  await patchTaskWithFeedback(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
 });
 
 els.subtaskButton.addEventListener("click", async () => {
