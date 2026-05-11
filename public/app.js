@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.8.2";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2158,6 +2158,7 @@ function renderPeopleFilterView() {
       <select name="skillFilter" aria-label="Filter by skill"></select>
       <select name="relationshipFilter" aria-label="Filter by relationship"></select>
       <select name="projectFilter" aria-label="Filter by project"></select>
+      <button class="ghost-button clear-people-filters" type="button">Clear filters</button>
     </div>
     <div class="people-table people-filter-table">
       <div class="people-table-head">
@@ -3235,6 +3236,14 @@ els.taskList.addEventListener("click", (event) => {
   if (personEditButton) {
     state.view = "people";
     render();
+    return;
+  }
+  const clearPeopleFiltersButton = event.target.closest(".clear-people-filters");
+  if (clearPeopleFiltersButton) {
+    sessionStorage.removeItem("people-skill-filter");
+    sessionStorage.removeItem("people-relationship-filter");
+    sessionStorage.removeItem("people-project-filter");
+    renderTasks();
     return;
   }
   const deleteProjectButton = event.target.closest(".delete-project-button");

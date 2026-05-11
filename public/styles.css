@@ -964,14 +964,14 @@ body.resizing .resize-handle::before {
 
 .people-table-head,
 .person-card {
-  grid-template-columns: minmax(120px, 0.75fr) minmax(120px, 0.75fr) minmax(140px, 0.72fr) minmax(260px, 1.15fr) 68px;
+  grid-template-columns: minmax(82px, 0.42fr) minmax(82px, 0.42fr) minmax(140px, 0.76fr) minmax(300px, 1.4fr) 68px;
   display: grid;
   align-items: center;
 }
 
 .people-filter-table .people-table-head,
 .people-filter-table .person-read-row {
-  grid-template-columns: minmax(115px, 0.65fr) minmax(115px, 0.65fr) minmax(130px, 0.6fr) minmax(210px, 0.95fr) minmax(260px, 1.3fr) 68px;
+  grid-template-columns: minmax(76px, 0.34fr) minmax(76px, 0.34fr) minmax(128px, 0.58fr) minmax(230px, 1fr) minmax(300px, 1.45fr) 68px;
 }
 
 .people-table-head > *,
@@ -1059,7 +1059,7 @@ body.resizing .resize-handle::before {
 
 .people-filter-bar {
   display: grid;
-  grid-template-columns: repeat(3, minmax(160px, 220px));
+  grid-template-columns: repeat(3, minmax(160px, 220px)) auto;
   gap: var(--ui-gap);
   margin-bottom: calc(var(--major-gap) * 1.15);
 }
