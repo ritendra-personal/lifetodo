@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.8";
+const APP_VERSION = "1.9.9";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -99,6 +99,7 @@ const els = {
   resizeHandle: document.querySelector("#resize-handle"),
   detailForm: document.querySelector("#detail-form"),
   emptyDetail: document.querySelector("#empty-detail"),
+  expandTaskButton: document.querySelector("#expand-task-button"),
   completeButton: document.querySelector("#complete-button"),
   subtaskButton: document.querySelector("#subtask-button"),
   deleteButton: document.querySelector("#delete-button")
@@ -4769,6 +4770,11 @@ els.completeButton.addEventListener("click", async () => {
   if (!task) return;
   const done = task.status !== "done";
   await patchTaskWithFeedback(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
+});
+
+els.expandTaskButton?.addEventListener("click", () => {
+  if (!state.selectedId) return;
+  focusObject("task", state.selectedId, state.view);
 });
 
 els.subtaskButton.addEventListener("click", async () => {
