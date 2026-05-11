@@ -1396,7 +1396,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(145px, 0.75fr) minmax(120px, 0.58fr) minmax(130px, 0.62fr) minmax(300px, 1.2fr) 128px 128px minmax(260px, 0.9fr) auto;
+  grid-template-columns: minmax(145px, 0.75fr) minmax(120px, 0.58fr) minmax(130px, 0.62fr) minmax(320px, 1.35fr) 128px 128px auto;
 }
 
 .project-list {
@@ -1443,31 +1443,6 @@ body.resizing .resize-handle::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--ui-gap);
-}
-
-.date-range-presets {
-  display: flex;
-  flex-wrap: wrap;
-  align-self: end;
-  gap: 5px;
-}
-
-.range-preset-button {
-  min-height: 28px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0 9px;
-  color: var(--muted);
-  background: #fff;
-  font-size: 0.76rem;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.range-preset-button:hover {
-  border-color: var(--hover-line);
-  color: var(--teal-dark);
-  background: var(--hover-surface);
 }
 
 .project-date-pair label {
