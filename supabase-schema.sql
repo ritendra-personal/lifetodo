@@ -278,6 +278,8 @@ alter table planner_relationship_types enable row level security;
 alter table planner_people enable row level security;
 
 create index if not exists planner_goals_user_id_idx on planner_goals(user_id);
+create unique index if not exists planner_goals_user_name_natural_key_idx
+on planner_goals (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
 create index if not exists planner_task_goal_links_user_id_idx on planner_task_goal_links(user_id);
 create index if not exists planner_task_goal_links_goal_id_idx on planner_task_goal_links(goal_id);
 create index if not exists planner_project_types_user_id_idx on planner_project_types(user_id);
@@ -287,6 +289,8 @@ create index if not exists planner_project_statuses_sort_order_idx on planner_pr
 create index if not exists planner_roles_user_id_idx on planner_roles(user_id);
 create index if not exists planner_roles_sort_order_idx on planner_roles(sort_order);
 create index if not exists planner_projects_user_id_idx on planner_projects(user_id);
+create unique index if not exists planner_projects_user_name_natural_key_idx
+on planner_projects (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
 create index if not exists planner_projects_project_type_id_idx on planner_projects(project_type_id);
 create index if not exists planner_projects_project_status_id_idx on planner_projects(project_status_id);
 create index if not exists planner_projects_start_date_idx on planner_projects(start_date);
@@ -301,6 +305,20 @@ create index if not exists planner_skills_sort_order_idx on planner_skills(sort_
 create index if not exists planner_relationship_types_user_id_idx on planner_relationship_types(user_id);
 create index if not exists planner_relationship_types_sort_order_idx on planner_relationship_types(sort_order);
 create index if not exists planner_people_user_id_idx on planner_people(user_id);
+create unique index if not exists planner_people_user_full_name_natural_key_idx
+on planner_people (
+  user_id,
+  lower(regexp_replace(
+    btrim(first_name) ||
+      case
+        when btrim(coalesce(last_name, '')) = '' then ''
+        else ' ' || btrim(coalesce(last_name, ''))
+      end,
+    '\s+',
+    ' ',
+    'g'
+  ))
+);
 create index if not exists planner_people_skill_ids_idx on planner_people using gin(skill_ids);
 create index if not exists planner_people_relationship_type_id_idx on planner_people(relationship_type_id);
 create index if not exists planner_project_people_user_id_idx on planner_project_people(user_id);

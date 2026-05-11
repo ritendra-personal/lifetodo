@@ -23,6 +23,7 @@ The browser app lives in `public/` so Vercel serves it as static files. The only
 
 1. Create a Supabase project.
 2. Open the SQL editor and run `supabase-schema.sql`.
+   - For an existing project, run new files in `migrations/` in numeric order instead.
 3. Add these environment variables in Vercel:
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
