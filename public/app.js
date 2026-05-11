@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.4";
+const APP_VERSION = "1.8.5";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2736,9 +2736,23 @@ function assignmentGoalArrowPoint(handle, svg) {
   return assignmentSvgPoint(svg, rect.left - 5, rect.top + rect.height / 2);
 }
 
+function clearAssignmentDragTarget() {
+  els.taskList.querySelectorAll(".assignment-goal.drag-target").forEach((goal) => {
+    goal.classList.remove("drag-target");
+  });
+}
+
+function setAssignmentDragTarget(goal) {
+  clearAssignmentDragTarget();
+  if (goal) goal.classList.add("drag-target");
+}
+
 function updateAssignmentDraft(clientX, clientY) {
   if (!assignmentDrag) return;
-  const point = assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
+  const goal = document.elementFromPoint(clientX, clientY)?.closest("[data-assignment-goal-id]");
+  const goalHandle = goal?.querySelector(".goal-handle");
+  setAssignmentDragTarget(goal || null);
+  const point = goalHandle ? assignmentGoalArrowPoint(goalHandle, assignmentDrag.svg) : assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
   const end = {
     x: Math.max(0, Math.min(assignmentDrag.bounds.width, point.x)),
     y: Math.max(0, Math.min(assignmentDrag.bounds.height, point.y))
@@ -2749,8 +2763,10 @@ function updateAssignmentDraft(clientX, clientY) {
 function beginAssignmentDrag(handle, event) {
   const task = handle.closest("[data-assignment-task-id]");
   const svg = els.taskList.querySelector(".assignment-lines");
+  const map = els.taskList.querySelector(".assignment-map");
   if (!task || !svg) return;
   const bounds = svg.getBoundingClientRect();
+  map?.classList.add("dragging-assignment");
   svg.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
   state.selectedAssignmentTaskId = task.dataset.assignmentTaskId;
   const start = assignmentHandlePoint(handle, svg);
@@ -2759,7 +2775,7 @@ function beginAssignmentDrag(handle, event) {
   path.setAttribute("d", assignmentCurvePath(start, start));
   path.setAttribute("marker-end", "url(#assignment-arrow-active)");
   svg.append(path);
-  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line: path, start, svg, bounds };
+  assignmentDrag = { taskId: task.dataset.assignmentTaskId, line: path, start, svg, bounds, map };
   updateAssignmentDraft(event.clientX, event.clientY);
 }
 
@@ -2777,6 +2793,8 @@ async function finishAssignmentDrag(event) {
   if (!assignmentDrag) return;
   const drag = assignmentDrag;
   assignmentDrag = null;
+  drag.map?.classList.remove("dragging-assignment");
+  clearAssignmentDragTarget();
   drag.line.remove();
   const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-assignment-goal-id]");
   if (target) {
@@ -2788,6 +2806,15 @@ async function finishAssignmentDrag(event) {
   } else {
     renderTasks();
   }
+}
+
+function cancelAssignmentDrag() {
+  if (!assignmentDrag) return;
+  const drag = assignmentDrag;
+  assignmentDrag = null;
+  drag.map?.classList.remove("dragging-assignment");
+  clearAssignmentDragTarget();
+  drag.line.remove();
 }
 
 function fillSkillPicker(container, selected = []) {
@@ -3608,6 +3635,8 @@ document.addEventListener("pointerup", (event) => {
   event.preventDefault();
   finishAssignmentDrag(event);
 });
+
+document.addEventListener("pointercancel", cancelAssignmentDrag);
 
 window.addEventListener("resize", scheduleAssignmentLines);
 

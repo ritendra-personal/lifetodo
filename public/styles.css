@@ -1631,6 +1631,10 @@ body.resizing .resize-handle::before {
   z-index: 0;
 }
 
+.assignment-map.dragging-assignment .assignment-lines {
+  z-index: 4;
+}
+
 .assignment-line {
   stroke: #8aa5bf;
   stroke-width: 1.25;
@@ -1750,8 +1754,19 @@ body.resizing .resize-handle::before {
 
 .assignment-line-draft {
   stroke: var(--teal-dark);
-  stroke-width: 1.6;
-  opacity: 0.82;
+  stroke-width: 2;
+  opacity: 0.95;
+}
+
+.assignment-goal.drag-target {
+  border-color: var(--teal);
+  background: #e5f5f3;
+  box-shadow: 0 0 0 4px rgba(14, 124, 116, 0.16), var(--hover-shadow);
+}
+
+.assignment-goal.drag-target .goal-handle {
+  background: var(--teal);
+  box-shadow: 0 0 0 8px rgba(14, 124, 116, 0.16);
 }
 
 .assignment-task span,
