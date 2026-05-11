@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.4";
+const APP_VERSION = "1.10.5";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1916,6 +1916,30 @@ function applyProjectCardStatusTone(card) {
   if (statusSelect) applyProjectStatusTone(statusSelect, statusName);
 }
 
+function relationshipNameForId(id) {
+  return state.relationshipTypes.find((relationship) => relationship.id === id)?.name || "";
+}
+
+function relationshipTone(relationshipName) {
+  const normalized = String(relationshipName || "").trim().toLowerCase();
+  if (normalized === "bad") return { color: "#d85b49", tint: "rgba(216, 91, 73, 0.13)" };
+  if (normalized === "ok") return { color: "#d6a21e", tint: "rgba(214, 162, 30, 0.16)" };
+  if (normalized === "strong") return { color: "#2f855a", tint: "rgba(47, 133, 90, 0.14)" };
+  return { color: "#8a94a6", tint: "rgba(138, 148, 166, 0.13)" };
+}
+
+function applyPersonRelationshipTone(card, relationshipName) {
+  if (!card) return;
+  const tone = relationshipTone(relationshipName);
+  card.style.setProperty("--person-relationship-color", tone.color);
+  card.style.setProperty("--person-relationship-tint", tone.tint);
+}
+
+function applyPersonCardRelationshipTone(card) {
+  const select = card.querySelector("[name='relationshipTypeId']");
+  applyPersonRelationshipTone(card, relationshipNameForId(select?.value || ""));
+}
+
 function projectTypeName(project) {
   return state.projectTypes.find((type) => type.id === project.project_type_id)?.name || "";
 }
@@ -2391,6 +2415,7 @@ function renderFocusedPersonView() {
   fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
   fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
   card.querySelector(".person-projects").append(...personProjectPills(person));
+  applyPersonRelationshipTone(card, relationshipNameForId(person.relationship_type_id));
 }
 
 function renderFocusedProjectView() {
@@ -2889,6 +2914,7 @@ function renderPeopleView() {
     card.querySelector("[name='lastName']").value = person.last_name;
     fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
     fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
+    applyPersonRelationshipTone(card, relationshipNameForId(person.relationship_type_id));
     list.append(card);
   }
 }
@@ -2998,6 +3024,7 @@ function makePeopleReadRow(person) {
     .join(", ");
   row.querySelector(".person-projects").append(...personProjectPills(person));
   row.querySelector("button").dataset.personEditId = person.id;
+  applyPersonRelationshipTone(row, relationshipNameForId(person.relationship_type_id));
   return row;
 }
 
@@ -4560,6 +4587,7 @@ els.taskList.addEventListener("input", (event) => {
   }
   const personCard = event.target.closest("[data-person-id]");
   if (personCard) {
+    applyPersonCardRelationshipTone(personCard);
     autosavePersonCard(personCard);
     return;
   }
@@ -4630,6 +4658,7 @@ els.taskList.addEventListener("change", (event) => {
   }
   const personCard = event.target.closest("[data-person-id]");
   if (personCard) {
+    applyPersonCardRelationshipTone(personCard);
     autosavePersonCard(personCard);
     return;
   }

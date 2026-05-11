@@ -1402,6 +1402,8 @@ body.resizing .resize-handle::before {
   gap: var(--ui-gap);
   padding: 7px var(--task-pad-x);
   border-bottom: 1px solid var(--line);
+  border-left: 6px solid var(--person-relationship-color, #8a94a6);
+  background: linear-gradient(90deg, var(--person-relationship-tint, rgba(138, 148, 166, 0.13)), #fff 38%);
 }
 
 .person-card input,
