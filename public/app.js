@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.9.5";
+const APP_VERSION = "1.9.6";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2210,7 +2210,10 @@ function renderFocusedTaskView() {
       </label>
       <div class="detail-actions">
         <button class="ghost-button focus-subtask-button" type="button">Add subtask</button>
-        <button class="ghost-button focus-toggle-task-button" type="button">${task.status === "done" ? "Reopen" : "Done"}</button>
+        <button class="complete-action-button focus-toggle-task-button ${task.status === "done" ? "reopen" : ""}" type="button">
+          <span aria-hidden="true">${task.status === "done" ? "↺" : "✓"}</span>
+          ${task.status === "done" ? "Reopen task" : "Mark done"}
+        </button>
         <button class="danger-button focus-delete-task-button" type="button">Delete</button>
       </div>
     </form>
@@ -3745,7 +3748,8 @@ function renderDetail() {
   detail.priority.value = task.priority;
   detail.due.value = task.due_date || "";
   detail.energy.value = task.energy;
-  els.completeButton.textContent = task.status === "done" ? "Reopen" : "Done";
+  els.completeButton.classList.toggle("reopen", task.status === "done");
+  els.completeButton.innerHTML = `<span aria-hidden="true">${task.status === "done" ? "↺" : "✓"}</span>${task.status === "done" ? "Reopen task" : "Mark done"}`;
 }
 
 function render() {
