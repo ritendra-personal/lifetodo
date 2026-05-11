@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.10";
+const APP_VERSION = "1.10.12";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -55,6 +55,7 @@ const state = {
   roles: loadNamedOptions("planner-roles", defaultRoles),
   selectedAssignmentTaskId: "",
   selectedAssignmentPersonId: "",
+  assignmentSelectedOnly: localStorage.getItem("assignment-selected-only") === "true",
   selectedId: null,
   focusedId: "",
   focusedReturnView: "home",
@@ -3308,6 +3309,12 @@ function renderGoalAssignmentsView() {
   els.taskList.innerHTML = `
     <div class="assignment-view assignment-map">
       <svg class="assignment-lines" aria-hidden="true"></svg>
+      <div class="assignment-toolbar">
+        <label class="toggle">
+          <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
+          <span>Selected only</span>
+        </label>
+      </div>
       <section class="assignment-panel">
         <h4>Top-level tasks</h4>
         <div class="assignment-task-list"></div>
@@ -3371,6 +3378,12 @@ function renderPeopleProjectsView() {
   els.taskList.innerHTML = `
     <div class="assignment-view assignment-map people-project-map">
       <svg class="assignment-lines" aria-hidden="true"></svg>
+      <div class="assignment-toolbar">
+        <label class="toggle">
+          <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
+          <span>Selected only</span>
+        </label>
+      </div>
       <section class="assignment-panel">
         <h4>People</h4>
         <div class="assignment-person-list"></div>
@@ -3466,6 +3479,7 @@ function drawAssignmentLines() {
   svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
   svg.innerHTML = assignmentMarkerDefs();
   for (const task of state.tasks.filter((item) => !item.parent_id && item.status !== "done")) {
+    if (state.assignmentSelectedOnly && task.id !== state.selectedAssignmentTaskId) continue;
     const taskHandle = els.taskList.querySelector(`[data-assignment-task-id="${CSS.escape(task.id)}"] .task-handle`);
     if (!taskHandle) continue;
     const start = assignmentHandlePoint(taskHandle, svg);
@@ -3491,6 +3505,7 @@ function drawPeopleProjectLines() {
   svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
   svg.innerHTML = assignmentMarkerDefs();
   for (const assignment of state.projectAssignments) {
+    if (state.assignmentSelectedOnly && assignment.person_id !== state.selectedAssignmentPersonId) continue;
     const personHandle = els.taskList.querySelector(`[data-assignment-person-id="${CSS.escape(assignment.person_id)}"] .person-handle`);
     const projectHandle = els.taskList.querySelector(`[data-assignment-project-id="${CSS.escape(assignment.project_id)}"] .project-handle`);
     if (!personHandle || !projectHandle) continue;
@@ -4848,6 +4863,13 @@ els.taskList.addEventListener("change", (event) => {
   }
   if (event.target.name === "projectStatusId") {
     applyProjectStatusTone(event.target, projectStatusNameForId(event.target.value));
+  }
+  const selectedOnlyToggle = event.target.closest(".assignment-selected-only");
+  if (selectedOnlyToggle) {
+    state.assignmentSelectedOnly = selectedOnlyToggle.checked;
+    localStorage.setItem("assignment-selected-only", String(state.assignmentSelectedOnly));
+    scheduleAssignmentLines();
+    return;
   }
   const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter'], [name='roleFilter']");
   if (peopleFilter) {

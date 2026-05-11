@@ -19,6 +19,17 @@ function send(res, status, body, headers = {}) {
   res.end(body);
 }
 
+function staticHeaders(filePath) {
+  const ext = extname(filePath);
+  const cacheControl = [".html", ".js", ".css"].includes(ext)
+    ? "no-cache, no-store, must-revalidate"
+    : "public, max-age=3600";
+  return {
+    "content-type": types[ext] || "application/octet-stream",
+    "cache-control": cacheControl
+  };
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
 
@@ -30,7 +41,7 @@ const server = createServer(async (req, res) => {
         supabaseUrl: process.env.SUPABASE_URL || "",
         supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ""
       }),
-      { "content-type": "application/json; charset=utf-8" }
+      { "content-type": "application/json; charset=utf-8", "cache-control": "no-cache, no-store, must-revalidate" }
     );
     return;
   }
@@ -45,7 +56,7 @@ const server = createServer(async (req, res) => {
 
   try {
     const body = await readFile(filePath);
-    send(res, 200, body, { "content-type": types[extname(filePath)] || "application/octet-stream" });
+    send(res, 200, body, staticHeaders(filePath));
   } catch {
     send(res, 404, "Not found");
   }

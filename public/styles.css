@@ -1977,6 +1977,15 @@ body.resizing .resize-handle::before {
   padding: var(--task-list-pad);
 }
 
+.assignment-toolbar {
+  position: relative;
+  z-index: 3;
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: calc(var(--task-list-gap) * -0.25);
+}
+
 .assignment-lines {
   position: absolute;
   inset: 0;
@@ -2006,8 +2015,8 @@ body.resizing .resize-handle::before {
 
 .assignment-line.active {
   stroke: var(--teal);
-  stroke-width: 1.6;
-  opacity: 0.78;
+  stroke-width: 2.8;
+  opacity: 0.92;
 }
 
 #assignment-arrow-active path {
