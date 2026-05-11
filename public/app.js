@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.2";
+const APP_VERSION = "1.8.3";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -40,7 +40,7 @@ const state = {
   roles: loadNamedOptions("planner-roles", defaultRoles),
   selectedAssignmentTaskId: "",
   selectedId: null,
-  view: "today",
+  view: "home",
   search: "",
   tagFilter: "",
   sort: "manual",
@@ -133,6 +133,7 @@ const counts = {
   projectTypes: document.querySelector("#count-project-types"),
   projectStatuses: document.querySelector("#count-project-statuses"),
   roles: document.querySelector("#count-roles"),
+  home: document.querySelector("#count-home"),
   open: document.querySelector("#stat-open"),
   focus: document.querySelector("#stat-focus")
 };
@@ -1586,6 +1587,7 @@ function renderCounts() {
   const bucketCounts = { today: 0, upcoming: 0, backlog: 0, done: 0 };
   for (const task of state.tasks) bucketCounts[taskBucket(task)] += 1;
 
+  counts.home.textContent = state.tasks.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
   counts.today.textContent = bucketCounts.today;
   counts.upcoming.textContent = bucketCounts.upcoming;
   counts.backlog.textContent = bucketCounts.backlog;
@@ -1723,6 +1725,10 @@ function renderParentControls() {
 }
 
 function renderTasks() {
+  if (state.view === "home") {
+    renderHomeView();
+    return;
+  }
   if (state.view === "goals") {
     renderGoalsView();
     return;
@@ -1911,6 +1917,170 @@ function makeGoalTaskOutline(goalId, status) {
 function goalAccent(index) {
   const colors = ["#39ff14", "#5cc8ff", "#f0b35a", "#d85b49", "#7b5ea7", "#0e7c74"];
   return colors[index % colors.length];
+}
+
+function renderHomeView() {
+  const openTasks = state.tasks.filter((task) => task.status !== "done");
+  const doneTasks = state.tasks.filter((task) => task.status === "done");
+  const todayTasks = state.tasks.filter((task) => taskBucket(task) === "today");
+  const upcomingTasks = state.tasks.filter((task) => taskBucket(task) === "upcoming");
+  const activeProjects = state.projects.filter((project) => projectStatusName(project) !== "Completed" && projectStatusName(project) !== "Deprioritized");
+  const assignedPeople = new Set(state.projectAssignments.map((assignment) => assignment.person_id));
+  const linkedTopTasks = state.tasks.filter((task) => !task.parent_id && task.goal_ids.length);
+  const datedProjects = state.projects.filter((project) => projectTimelineStart(project));
+  const upcomingFocus = openTasks
+    .filter((task) => task.due_date)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date) || a.sort_order - b.sort_order)
+    .slice(0, 5);
+  const areaStats = state.areas
+    .map((area) => ({
+      area,
+      count: openTasks.filter((task) => task.area_id === area.id || task.area === area.name).length
+    }))
+    .filter((item) => item.count)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  els.taskList.innerHTML = `
+    <section class="home-view">
+      <div class="home-overview">
+        <button class="home-stat-card primary" data-home-view="today" type="button">
+          <span>Today</span>
+          <strong>${todayTasks.length}</strong>
+          <small>${openTasks.length} open tasks</small>
+        </button>
+        <button class="home-stat-card" data-home-view="goals" type="button">
+          <span>Life Goals</span>
+          <strong>${state.goals.length}</strong>
+          <small>${linkedTopTasks.length} linked top-level tasks</small>
+        </button>
+        <button class="home-stat-card" data-home-view="projects" type="button">
+          <span>Projects</span>
+          <strong>${state.projects.length}</strong>
+          <small>${activeProjects.length} active or uncategorized</small>
+        </button>
+        <button class="home-stat-card" data-home-view="people" type="button">
+          <span>People</span>
+          <strong>${state.people.length}</strong>
+          <small>${assignedPeople.size} assigned to projects</small>
+        </button>
+      </div>
+
+      <div class="home-layout">
+        <section class="home-panel home-focus-panel">
+          <div class="home-panel-head">
+            <div>
+              <span class="home-kicker">Focus</span>
+              <h3>Next dated tasks</h3>
+            </div>
+            <button class="ghost-button home-link" data-home-view="upcoming" type="button">Upcoming</button>
+          </div>
+          <div class="home-focus-list"></div>
+        </section>
+
+        <section class="home-panel">
+          <div class="home-panel-head">
+            <div>
+              <span class="home-kicker">Structure</span>
+              <h3>Planning map</h3>
+            </div>
+          </div>
+          <div class="home-map-grid">
+            <button class="home-map-item" data-home-view="goal-assignments" type="button">
+              <strong>${state.goalLinks.length}</strong>
+              <span>goal-task links</span>
+            </button>
+            <button class="home-map-item" data-home-view="graph" type="button">
+              <strong>${state.tasks.filter((task) => task.parent_id || task.dependency_ids.length).length}</strong>
+              <span>task relationships</span>
+            </button>
+            <button class="home-map-item" data-home-view="timeline" type="button">
+              <strong>${datedProjects.length + state.tasks.filter((task) => task.due_date).length}</strong>
+              <span>dated items</span>
+            </button>
+            <button class="home-map-item" data-home-view="ideas" type="button">
+              <strong>${state.ideas.length}</strong>
+              <span>ideas waiting</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="home-panel">
+          <div class="home-panel-head">
+            <div>
+              <span class="home-kicker">Areas</span>
+              <h3>Open task mix</h3>
+            </div>
+            <button class="ghost-button home-link" data-home-view="areas" type="button">Areas</button>
+          </div>
+          <div class="home-area-list"></div>
+        </section>
+
+        <section class="home-panel">
+          <div class="home-panel-head">
+            <div>
+              <span class="home-kicker">Progress</span>
+              <h3>Task flow</h3>
+            </div>
+            <button class="ghost-button home-link" data-home-view="done" type="button">Done</button>
+          </div>
+          <div class="home-flow">
+            <div><strong>${todayTasks.length}</strong><span>today</span></div>
+            <div><strong>${upcomingTasks.length}</strong><span>upcoming</span></div>
+            <div><strong>${openTasks.filter((task) => taskBucket(task) === "backlog").length}</strong><span>backlog</span></div>
+            <div><strong>${doneTasks.length}</strong><span>done</span></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  `;
+
+  const focusList = els.taskList.querySelector(".home-focus-list");
+  if (upcomingFocus.length) {
+    for (const task of upcomingFocus) {
+      const button = document.createElement("button");
+      button.className = "home-focus-item";
+      button.type = "button";
+      button.dataset.homeTaskId = task.id;
+      button.style.borderLeftColor = areaColorFor(task);
+      button.innerHTML = `
+        <span></span>
+        <small></small>
+      `;
+      button.querySelector("span").textContent = task.title;
+      button.querySelector("small").textContent = `${formatDate(task.due_date)} · ${areaNameFor(task)} · ${task.priority}`;
+      focusList.append(button);
+    }
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "home-empty";
+    empty.textContent = "No dated open tasks yet.";
+    focusList.append(empty);
+  }
+
+  const areaList = els.taskList.querySelector(".home-area-list");
+  if (areaStats.length) {
+    const max = Math.max(...areaStats.map((item) => item.count));
+    for (const item of areaStats) {
+      const row = document.createElement("div");
+      row.className = "home-area-row";
+      row.innerHTML = `
+        <span class="home-area-name"></span>
+        <span class="home-area-bar"><span></span></span>
+        <strong></strong>
+      `;
+      row.querySelector(".home-area-name").textContent = item.area.name;
+      row.querySelector(".home-area-bar span").style.width = `${Math.max(10, (item.count / max) * 100)}%`;
+      row.querySelector(".home-area-bar span").style.background = item.area.color;
+      row.querySelector("strong").textContent = item.count;
+      areaList.append(row);
+    }
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "home-empty";
+    empty.textContent = "No open tasks by area.";
+    areaList.append(empty);
+  }
 }
 
 function renderGoalsView() {
@@ -3017,7 +3187,7 @@ function makeTimelineProject(project, x, y, width) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -3043,6 +3213,7 @@ function renderDetail() {
 function render() {
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
   const titles = {
+    home: "Home",
     goals: "Life Goals",
     "goal-assignments": "Assign Tasks",
     today: "Today",
@@ -3062,7 +3233,7 @@ function render() {
     "project-statuses": "Project Statuses",
     roles: "Roles"
   };
-  const isPlanningView = ["goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles"].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -3213,6 +3384,20 @@ els.taskList.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest(".connector-handle")) return;
+  const homeViewButton = event.target.closest("[data-home-view]");
+  if (homeViewButton) {
+    state.view = homeViewButton.dataset.homeView;
+    render();
+    return;
+  }
+  const homeTaskButton = event.target.closest("[data-home-task-id]");
+  if (homeTaskButton) {
+    const task = state.tasks.find((item) => item.id === homeTaskButton.dataset.homeTaskId);
+    state.selectedId = homeTaskButton.dataset.homeTaskId;
+    state.view = task ? taskBucket(task) : "today";
+    render();
+    return;
+  }
   const assignmentTask = event.target.closest("[data-assignment-task-id]");
   if (assignmentTask) {
     state.selectedAssignmentTaskId = assignmentTask.dataset.assignmentTaskId;

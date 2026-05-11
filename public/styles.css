@@ -1064,6 +1064,180 @@ body.resizing .resize-handle::before {
   margin-bottom: calc(var(--major-gap) * 1.15);
 }
 
+.home-view {
+  display: grid;
+  gap: calc(var(--major-gap) * 1.15);
+}
+
+.home-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--task-list-gap);
+}
+
+.home-stat-card,
+.home-panel,
+.home-map-item,
+.home-focus-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.home-stat-card,
+.home-map-item,
+.home-focus-item {
+  cursor: pointer;
+  text-align: left;
+}
+
+.home-stat-card {
+  min-height: 132px;
+  padding: 16px;
+  display: grid;
+  align-content: space-between;
+  box-shadow: 0 12px 28px rgba(31, 36, 48, 0.07);
+}
+
+.home-stat-card.primary {
+  border-color: rgba(14, 124, 116, 0.4);
+  background: linear-gradient(135deg, rgba(14, 124, 116, 0.14), #fff 62%);
+}
+
+.home-stat-card span,
+.home-kicker,
+.home-map-item span,
+.home-flow span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.home-stat-card strong {
+  font-size: 2.4rem;
+  line-height: 1;
+}
+
+.home-stat-card small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.home-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.2fr) minmax(280px, 0.8fr);
+  gap: var(--task-list-gap);
+}
+
+.home-panel {
+  padding: var(--task-pad-x);
+  display: grid;
+  gap: var(--task-list-gap);
+  align-content: start;
+}
+
+.home-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-gap);
+}
+
+.home-panel h3 {
+  margin: 2px 0 0;
+  font-size: 1.08rem;
+}
+
+.home-link {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.home-focus-list,
+.home-area-list {
+  display: grid;
+  gap: 8px;
+}
+
+.home-focus-item {
+  border-left: 6px solid var(--teal);
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+}
+
+.home-focus-item span {
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-focus-item small,
+.home-empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.home-map-grid,
+.home-flow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.home-map-item {
+  min-height: 90px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  background: #f8fafc;
+}
+
+.home-map-item strong,
+.home-flow strong {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.home-area-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.42fr) minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-area-name {
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-area-bar {
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #eef1f4;
+}
+
+.home-area-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.home-flow div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  background: #f8fafc;
+}
+
 .person-projects {
   display: flex;
   flex-wrap: wrap;
@@ -1870,6 +2044,10 @@ dialog::backdrop {
   }
 
   .idea-card,
+  .home-overview,
+  .home-layout,
+  .home-map-grid,
+  .home-flow,
   .area-settings-form,
   .area-settings-row,
   .people-form,

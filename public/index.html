@@ -20,11 +20,12 @@
         </div>
 
         <nav class="views" aria-label="Planner views">
+          <button class="view-button active" data-view="home" type="button">Home <span id="count-home">0</span></button>
           <div class="nav-group-label">Life Goals</div>
           <button class="view-button nested" data-view="goals" type="button">Goals <span id="count-goals">0</span></button>
           <button class="view-button nested" data-view="goal-assignments" type="button">Assign <span id="count-goal-assignments">0</span></button>
           <div class="nav-group-label">Tasks</div>
-          <button class="view-button active nested" data-view="today" type="button">Today <span id="count-today">0</span></button>
+          <button class="view-button nested" data-view="today" type="button">Today <span id="count-today">0</span></button>
           <button class="view-button nested" data-view="upcoming" type="button">Upcoming <span id="count-upcoming">0</span></button>
           <button class="view-button nested" data-view="backlog" type="button">Backlog <span id="count-backlog">0</span></button>
           <button class="view-button nested" data-view="done" type="button">Done <span id="count-done">0</span></button>
@@ -70,7 +71,7 @@
         <header class="topbar">
           <div>
             <p id="today-label"></p>
-            <h2 id="view-title">Today</h2>
+            <h2 id="view-title">Home</h2>
           </div>
           <div class="toolbar">
             <input id="search" type="search" placeholder="Search tasks" aria-label="Search tasks">
