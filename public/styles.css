@@ -355,6 +355,7 @@ input,
 select,
 textarea {
   width: 100%;
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--ink);
@@ -521,12 +522,17 @@ textarea:focus {
 
 .task-form {
   display: grid;
-  grid-template-columns: minmax(150px, 1.1fr) repeat(4, minmax(118px, 0.78fr)) minmax(94px, 0.6fr) minmax(128px, 0.72fr) minmax(100px, 0.65fr) 74px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: var(--ui-gap);
   box-shadow: var(--shadow);
+}
+
+.task-form .form-submit {
+  grid-column: 1 / -1;
+  justify-self: end;
 }
 
 .area-field {
@@ -1210,6 +1216,12 @@ body.resizing .resize-handle::before {
   gap: var(--task-gap);
 }
 
+.planning-card > *,
+.person-card > *,
+.project-card > * {
+  min-width: 0;
+}
+
 .planning-card:hover,
 .person-card:hover,
 .project-card:hover,
@@ -1315,6 +1327,12 @@ body.resizing .resize-handle::before {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  min-width: max-content;
+}
+
+.project-card > .row-actions {
+  grid-column: -2 / -1;
+  grid-row: 1;
 }
 
 .row-actions .ghost-button,
@@ -1576,9 +1594,32 @@ body.resizing .resize-handle::before {
 .project-filter-head,
 .project-filter-row {
   display: grid;
-  grid-template-columns: 34px minmax(170px, 1fr) minmax(105px, 0.42fr) minmax(118px, 0.48fr) minmax(128px, 0.5fr) minmax(175px, 0.68fr) minmax(240px, 1fr) 68px;
+  grid-template-columns: 34px minmax(150px, 1fr) repeat(3, minmax(104px, 0.58fr)) 68px;
   align-items: center;
   gap: var(--ui-gap);
+}
+
+.project-filter-head > *,
+.project-filter-row > * {
+  min-width: 0;
+}
+
+.project-filter-head > :nth-child(6),
+.project-filter-row > :nth-child(6) {
+  grid-column: 2 / 4;
+  grid-row: 2;
+}
+
+.project-filter-head > :nth-child(7),
+.project-filter-row > :nth-child(7) {
+  grid-column: 4 / -1;
+  grid-row: 2;
+}
+
+.project-filter-head > :nth-child(8),
+.project-filter-row > :nth-child(8) {
+  grid-column: 6;
+  grid-row: 1;
 }
 
 .project-filter-head {
@@ -1820,7 +1861,21 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(145px, 0.72fr) minmax(118px, 0.52fr) minmax(128px, 0.56fr) minmax(132px, 0.58fr) minmax(280px, 1.2fr) 126px 126px auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.project-form .field-label:nth-child(5) {
+  grid-column: 1 / 3;
+}
+
+.project-form .field-label:nth-child(6),
+.project-form .field-label:nth-child(7) {
+  grid-column: span 1;
+}
+
+.project-form .form-submit {
+  grid-column: 1 / -1;
+  justify-self: end;
 }
 
 .project-list {
@@ -1831,7 +1886,7 @@ body.resizing .resize-handle::before {
 .project-card {
   border-left-width: 1px;
   border-top: 6px solid var(--project-status-color, #8a94a6);
-  grid-template-columns: 34px minmax(150px, 0.65fr) minmax(112px, 0.42fr) minmax(122px, 0.46fr) minmax(132px, 0.48fr) minmax(300px, 1.24fr) minmax(220px, 0.78fr) auto;
+  grid-template-columns: 34px minmax(150px, 1fr) repeat(3, minmax(108px, 0.58fr)) minmax(118px, auto);
   align-items: center;
   background: linear-gradient(180deg, var(--project-status-tint, rgba(138, 148, 166, 0.15)), #fff 48%);
 }
@@ -1845,7 +1900,7 @@ body.resizing .resize-handle::before {
 }
 
 .minimal-project-card {
-  grid-template-columns: 34px minmax(150px, 1fr) minmax(104px, 0.38fr) minmax(116px, 0.42fr) minmax(126px, 0.45fr) minmax(240px, 0.82fr) max-content;
+  grid-template-columns: 34px minmax(150px, 1fr) repeat(3, minmax(108px, 0.58fr)) minmax(118px, auto);
 }
 
 .minimal-project-card .project-description-input {
@@ -1854,6 +1909,10 @@ body.resizing .resize-handle::before {
 
 .minimal-project-card .row-actions {
   min-width: 128px;
+}
+
+.minimal-project-card .project-date-pair {
+  display: none;
 }
 
 .project-sequence {
@@ -1874,7 +1933,9 @@ body.resizing .resize-handle::before {
 }
 
 .project-description-input {
-  min-width: 280px;
+  min-width: 0;
+  grid-column: 2 / 5;
+  grid-row: 2;
 }
 
 .project-task-count {
@@ -1897,6 +1958,8 @@ body.resizing .resize-handle::before {
 }
 
 .project-date-pair {
+  grid-column: 5 / -1;
+  grid-row: 2;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--ui-gap);
@@ -1920,6 +1983,7 @@ body.resizing .resize-handle::before {
 
 .project-people {
   grid-column: 1 / -1;
+  grid-row: 3;
   display: grid;
   gap: 8px;
   border-top: 1px solid var(--line);
@@ -2978,6 +3042,17 @@ dialog::backdrop {
 
   .project-person-add {
     grid-column: auto;
+  }
+
+  .project-form .field-label:nth-child(5),
+  .project-form .field-label:nth-child(6),
+  .project-form .field-label:nth-child(7),
+  .project-description-input,
+  .project-date-pair,
+  .minimal-project-card .project-date-pair,
+  .project-card > .row-actions {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .idea-card .danger-button,
