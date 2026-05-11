@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.1";
+const APP_VERSION = "1.10.2";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -10,6 +10,8 @@ let assignmentDrag = null;
 let suppressAssignmentClick = false;
 let assignmentDrawFrame = 0;
 let assignmentResizeObserver = null;
+let suppressHistorySync = false;
+let browserHistoryReady = false;
 
 const defaultAreas = [
   { name: "Life", color: "#476c9b" },
@@ -195,6 +197,91 @@ function adjustDensity(direction) {
 
 function savedAtLabel() {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date());
+}
+
+function validView(view) {
+  const views = new Set([
+    "home",
+    "tasks",
+    "goals",
+    "goal-assignments",
+    "people",
+    "people-filter",
+    "projects",
+    "ideas",
+    "graph",
+    "timeline",
+    "areas",
+    "skills",
+    "relationships",
+    "project-types",
+    "project-statuses",
+    "roles",
+    "focus-task",
+    "focus-project",
+    "focus-goal",
+    "focus-person"
+  ]);
+  if (["today", "upcoming", "backlog", "done"].includes(view)) return "tasks";
+  return views.has(view) ? view : "home";
+}
+
+function routeFromState() {
+  return {
+    view: state.view,
+    taskFilter: state.taskFilter,
+    selectedId: state.selectedId || "",
+    focusedId: state.focusedId || "",
+    focusedReturnView: state.focusedReturnView || "home"
+  };
+}
+
+function currentRouteSearch() {
+  const route = routeFromState();
+  const params = new URLSearchParams();
+  if (route.view !== "home") params.set("view", route.view);
+  if (route.view === "tasks") params.set("filter", route.taskFilter);
+  if (route.selectedId && ["tasks", "graph", "timeline"].includes(route.view)) params.set("selected", route.selectedId);
+  if (route.view.startsWith("focus-") && route.focusedId) {
+    params.set("id", route.focusedId);
+    params.set("from", route.focusedReturnView);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function syncBrowserHistory() {
+  if (suppressHistorySync) return;
+  const route = routeFromState();
+  const nextUrl = `${window.location.pathname}${currentRouteSearch()}${window.location.hash || ""}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash || ""}`;
+  if (nextUrl === currentUrl) {
+    if (!browserHistoryReady) {
+      window.history.replaceState(route, "", nextUrl);
+      browserHistoryReady = true;
+    }
+    return;
+  }
+  const method = browserHistoryReady ? "pushState" : "replaceState";
+  window.history[method](route, "", nextUrl);
+  browserHistoryReady = true;
+}
+
+function applyRouteFromLocation(options = {}) {
+  const params = new URLSearchParams(window.location.search);
+  const rawView = params.get("view") || "home";
+  const view = validView(rawView);
+  state.view = view;
+  if (["today", "upcoming", "backlog", "done"].includes(rawView)) state.taskFilter = rawView;
+  if (view === "tasks") setTaskFilter(params.get("filter") || state.taskFilter);
+  state.selectedId = params.get("selected") || null;
+  state.focusedId = view.startsWith("focus-") ? params.get("id") || state.selectedId || "" : "";
+  state.focusedReturnView = params.get("from") || state.focusedReturnView || "home";
+  if (options.render) {
+    suppressHistorySync = true;
+    render();
+    suppressHistorySync = false;
+  }
 }
 
 function renderSyncStatus() {
@@ -3883,6 +3970,7 @@ function render() {
   renderParentControls();
   renderTasks();
   renderDetail();
+  syncBrowserHistory();
 }
 
 function toggleTaskStatus(id) {
@@ -4680,6 +4768,10 @@ document.querySelectorAll(".view-button").forEach((button) => {
   });
 });
 
+window.addEventListener("popstate", () => {
+  applyRouteFromLocation({ render: true });
+});
+
 els.taskFilterBar?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-task-filter]");
   if (!button) return;
@@ -4851,6 +4943,7 @@ els.keyButton.addEventListener("click", async () => {
   await signInWithGoogle();
 });
 
+applyRouteFromLocation();
 await loadConfig();
 await initSupabase();
 await claimLegacyTasks();
