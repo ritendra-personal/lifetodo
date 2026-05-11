@@ -1916,7 +1916,7 @@ function renderGoalsView() {
         <input name="name" type="text" placeholder="Life goal" required>
       </label>
       <label class="field-label">Description
-        <textarea name="description" placeholder="Description"></textarea>
+        <input name="description" type="text" placeholder="Description">
       </label>
       <button class="primary-button form-submit" type="submit">Add goal</button>
     </form>
@@ -1937,7 +1937,7 @@ function renderGoalsView() {
     card.style.setProperty("--goal-color", goalAccent(index));
     card.innerHTML = `
       <input class="goal-title-input" name="name" type="text" required aria-label="Life goal name">
-      <textarea class="goal-description-input" name="description" aria-label="Life goal description"></textarea>
+      <input class="goal-description-input" name="description" type="text" aria-label="Life goal description">
       <div class="goal-task-outline"></div>
       <div class="detail-actions">
         <button class="danger-button delete-goal-button" type="button">Delete</button>
@@ -2241,7 +2241,7 @@ function renderProjectsView() {
         <select name="projectStatusId" aria-label="Project status"></select>
       </label>
       <label class="field-label">Description
-        <textarea name="description" placeholder="Description"></textarea>
+        <input name="description" type="text" placeholder="Description">
       </label>
       <label class="field-label">Start
         <input name="startDate" type="date" aria-label="Project start date">
@@ -2274,7 +2274,7 @@ function renderProjectsView() {
       </div>
       <select name="projectTypeId" aria-label="Project type"></select>
       <select name="projectStatusId" aria-label="Project status"></select>
-      <textarea name="description" aria-label="Project description"></textarea>
+      <input class="project-description-input" name="description" type="text" aria-label="Project description">
       <div class="project-date-pair">
         <label>
           Start
