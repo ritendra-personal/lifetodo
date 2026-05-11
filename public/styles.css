@@ -1609,7 +1609,7 @@ body.resizing .resize-handle::before {
 .project-filter-head,
 .project-filter-row {
   display: grid;
-  grid-template-columns: 34px minmax(150px, 1fr) repeat(3, minmax(104px, 0.58fr)) 68px;
+  grid-template-columns: 34px minmax(120px, 0.72fr) minmax(82px, 0.38fr) repeat(2, minmax(104px, 0.5fr)) 68px;
   align-items: center;
   gap: var(--ui-gap);
 }

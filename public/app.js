@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.28";
+const APP_VERSION = "1.10.29";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
