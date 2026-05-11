@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.25";
+const APP_VERSION = "1.10.27";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -36,12 +36,13 @@ const defaultVenues = [];
 function loadPeopleSort() {
   try {
     const parsed = JSON.parse(localStorage.getItem("people-sort") || "{}");
+    const direction = parsed.direction === "asc" || parsed.direction === "desc" ? parsed.direction : "";
     return {
-      key: parsed.key || "firstName",
-      direction: parsed.direction === "desc" ? "desc" : "asc"
+      key: parsed.key || "created",
+      direction: direction || (parsed.key ? "asc" : "desc")
     };
   } catch {
-    return { key: "firstName", direction: "asc" };
+    return { key: "created", direction: "desc" };
   }
 }
 
@@ -71,7 +72,7 @@ const state = {
   tagFilter: "",
   sort: "manual",
   peopleSort: loadPeopleSort(),
-  projectSort: ["name", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "name",
+  projectSort: ["created", "name", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "created",
   projectViewMode: localStorage.getItem("project-view-mode") === "minimal" ? "minimal" : "full",
   showDone: localStorage.getItem("show-done") === "true",
   density: densityOptions.includes(localStorage.getItem("planner-density")) ? localStorage.getItem("planner-density") : "comfort",
@@ -561,6 +562,13 @@ function formatDate(value) {
   if (!value) return "No date";
   const date = new Date(`${value}T12:00:00`);
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+}
+
+function formatTimestamp(value) {
+  if (!value) return "Unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
 }
 
 function nowIso() {
@@ -2352,6 +2360,7 @@ function peopleSortHeader(key, label) {
 }
 
 function personSortValue(person, key) {
+  if (key === "created") return person.created_at || "";
   if (key === "lastName") return person.last_name || "";
   if (key === "relationship") return relationshipNameForId(person.relationship_type_id);
   if (key === "skills") {
@@ -2372,8 +2381,8 @@ function personSortValue(person, key) {
   return person.first_name || "";
 }
 
-function sortedPeople(people, allowedKeys = ["firstName", "lastName", "relationship", "skills", "projects"]) {
-  const key = allowedKeys.includes(state.peopleSort.key) ? state.peopleSort.key : "firstName";
+function sortedPeople(people, allowedKeys = ["created", "firstName", "lastName", "relationship", "skills", "projects"]) {
+  const key = allowedKeys.includes(state.peopleSort.key) ? state.peopleSort.key : "created";
   const direction = state.peopleSort.direction === "desc" ? -1 : 1;
   return people.slice().sort((a, b) => {
     const primary = personSortValue(a, key).localeCompare(personSortValue(b, key), undefined, { sensitivity: "base", numeric: true });
@@ -2411,11 +2420,23 @@ function sortedPeopleByName(people) {
 function sortedProjects(projects) {
   const undatedValue = "9999-12-31";
   return projects.slice().sort((a, b) => {
+    if (state.projectSort === "created") {
+      const createdCompare = (b.created_at || "").localeCompare(a.created_at || "");
+      if (createdCompare) return createdCompare;
+    }
     if (state.projectSort === "startDate") {
       const dateCompare = (a.start_date || undatedValue).localeCompare(b.start_date || undatedValue);
       if (dateCompare) return dateCompare;
     }
     return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+  });
+}
+
+function sortedIdeas(ideas) {
+  return ideas.slice().sort((a, b) => {
+    const createdCompare = (b.created_at || "").localeCompare(a.created_at || "");
+    if (createdCompare) return createdCompare;
+    return (a.text || "").localeCompare(b.text || "", undefined, { sensitivity: "base", numeric: true });
   });
 }
 
@@ -3235,7 +3256,7 @@ function renderIdeasView() {
     list.append(empty);
     return;
   }
-  for (const idea of state.ideas) {
+  for (const idea of sortedIdeas(state.ideas)) {
     const card = document.createElement("article");
     card.className = "planning-card idea-card";
     card.dataset.ideaId = idea.id;
@@ -3244,9 +3265,11 @@ function renderIdeasView() {
     card.innerHTML = `
       <input name="text" type="text" required aria-label="Idea text">
       <select name="area" aria-label="Idea area"></select>
+      <span class="created-stamp idea-created-stamp"></span>
       <button class="danger-button delete-idea-button" type="button">Delete</button>
     `;
     card.querySelector("[name='text']").value = idea.text;
+    card.querySelector(".idea-created-stamp").textContent = formatTimestamp(idea.created_at);
     const select = card.querySelector("select");
     for (const area of sortedByName(state.areas)) {
       const option = document.createElement("option");
@@ -3381,6 +3404,7 @@ function renderPeopleView() {
       <div class="people-table">
         <div class="people-table-head">
           <span>#</span>
+          ${peopleSortHeader("created", "Created")}
           ${peopleSortHeader("firstName", "First Name")}
           ${peopleSortHeader("lastName", "Last Name")}
           ${peopleSortHeader("relationship", "Relationship")}
@@ -3402,12 +3426,13 @@ function renderPeopleView() {
     list.append(empty);
     return;
   }
-  for (const [index, person] of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"]).entries()) {
+  for (const [index, person] of sortedPeople(state.people, ["created", "firstName", "lastName", "relationship", "skills"]).entries()) {
     const card = document.createElement("div");
     card.className = "person-card";
     card.dataset.personId = person.id;
     card.innerHTML = `
       <div class="person-sequence" aria-label="Person sequence">${index + 1}</div>
+      <span class="created-stamp"></span>
       <input name="firstName" type="text" required aria-label="First name">
       <input name="lastName" type="text" aria-label="Last name">
       <select name="relationshipTypeId" aria-label="Relationship"></select>
@@ -3417,6 +3442,7 @@ function renderPeopleView() {
         <button class="danger-button delete-person-button" type="button">Delete</button>
       </div>
     `;
+    card.querySelector(".created-stamp").textContent = formatTimestamp(person.created_at);
     card.querySelector("[name='firstName']").value = person.first_name;
     card.querySelector("[name='lastName']").value = person.last_name;
     fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
@@ -3707,6 +3733,7 @@ function renderProjectsView() {
           <span>${state.projects.length} ${state.projects.length === 1 ? "project" : "projects"}</span>
           <label class="compact-select-label">Sort
             <select class="project-sort-select" name="projectSort" aria-label="Sort projects">
+              <option value="created" ${state.projectSort === "created" ? "selected" : ""}>Created</option>
               <option value="name" ${state.projectSort === "name" ? "selected" : ""}>Name</option>
               <option value="startDate" ${state.projectSort === "startDate" ? "selected" : ""}>Start date</option>
             </select>
@@ -3749,6 +3776,7 @@ function renderProjectsView() {
       <select name="projectTypeId" aria-label="Project type"></select>
       <select name="projectStatusId" aria-label="Project status"></select>
       <select name="venueId" aria-label="Project venue"></select>
+      <span class="created-stamp project-created-stamp"></span>
       <input class="project-description-input" name="description" type="text" aria-label="Project description">
       <div class="project-date-pair">
         <label>
@@ -3779,6 +3807,7 @@ function renderProjectsView() {
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
     fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
     fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
+    card.querySelector(".project-created-stamp").textContent = formatTimestamp(project.created_at);
     applyProjectCardStatusTone(card);
     card.querySelector("[name='description']").value = project.description;
     card.querySelector("[name='startDate']").value = project.start_date || "";
@@ -5623,7 +5652,7 @@ els.taskList.addEventListener("change", (event) => {
   }
   const projectSort = event.target.closest("[name='projectSort']");
   if (projectSort) {
-    state.projectSort = projectSort.value === "startDate" ? "startDate" : "name";
+    state.projectSort = ["created", "name", "startDate"].includes(projectSort.value) ? projectSort.value : "created";
     localStorage.setItem("project-sort", state.projectSort);
     renderTasks();
     return;
