@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.23";
+const APP_VERSION = "1.10.24";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1482,7 +1482,10 @@ async function persistProject(project, options = {}) {
       created_at: normalized.created_at,
       updated_at: normalized.updated_at
     };
-    if (state.venuesCloudReady) payload.venue_id = normalized.venue_id || null;
+    if (state.venuesCloudReady) {
+      const venueExists = normalized.venue_id && state.venues.some((venue) => venue.id === normalized.venue_id);
+      payload.venue_id = venueExists ? normalized.venue_id : null;
+    }
     const { data, error } = await state.supabase
       .from("planner_projects")
       .upsert(payload)
@@ -3472,11 +3475,12 @@ function filteredPeople(skillId, relationshipId, projectId = "", roleId = "") {
   });
 }
 
-function filteredProjects(projectTypeId = "", projectStatusId = "", personId = "") {
+function filteredProjects(projectTypeId = "", projectStatusId = "", personId = "", venueId = "") {
   return state.projects.filter((project) => {
     if (projectTypeId && project.project_type_id !== projectTypeId) return false;
     if (projectStatusId && project.project_status_id !== projectStatusId) return false;
     if (personId && !state.projectAssignments.some((assignment) => assignment.project_id === project.id && assignment.person_id === personId)) return false;
+    if (venueId && project.venue_id !== venueId) return false;
     return true;
   });
 }
@@ -3495,6 +3499,7 @@ function renderProjectFilterView() {
     <div class="people-filter-bar project-filter-bar">
       <select name="projectTypeFilter" aria-label="Filter by project type"></select>
       <select name="projectStatusFilter" aria-label="Filter by project status"></select>
+      <select name="projectVenueFilter" aria-label="Filter by venue"></select>
       <select name="projectPersonFilter" aria-label="Filter by project person"></select>
       <button class="ghost-button clear-project-filters" type="button">Clear filters</button>
     </div>
@@ -3514,6 +3519,7 @@ function renderProjectFilterView() {
   `;
   const typeSelect = els.taskList.querySelector("[name='projectTypeFilter']");
   const statusSelect = els.taskList.querySelector("[name='projectStatusFilter']");
+  const venueSelect = els.taskList.querySelector("[name='projectVenueFilter']");
   const personSelect = els.taskList.querySelector("[name='projectPersonFilter']");
   typeSelect.innerHTML = '<option value="">All types</option>';
   for (const type of sortedByName(state.projectTypes)) {
@@ -3529,6 +3535,13 @@ function renderProjectFilterView() {
     option.textContent = status.name;
     statusSelect.append(option);
   }
+  venueSelect.innerHTML = '<option value="">All venues</option>';
+  for (const venue of sortedByName(state.venues)) {
+    const option = document.createElement("option");
+    option.value = venue.id;
+    option.textContent = venue.name;
+    venueSelect.append(option);
+  }
   personSelect.innerHTML = '<option value="">All people</option>';
   for (const person of sortedPeopleByName(state.people)) {
     const option = document.createElement("option");
@@ -3538,11 +3551,13 @@ function renderProjectFilterView() {
   }
   const typeFilter = sessionStorage.getItem("project-type-filter") || "";
   const statusFilter = sessionStorage.getItem("project-status-filter") || "";
+  const venueFilter = sessionStorage.getItem("project-venue-filter") || "";
   const personFilter = sessionStorage.getItem("project-person-filter") || "";
   typeSelect.value = typeFilter;
   statusSelect.value = statusFilter;
+  venueSelect.value = venueFilter;
   personSelect.value = personFilter;
-  const projects = sortedProjects(filteredProjects(typeFilter, statusFilter, personFilter));
+  const projects = sortedProjects(filteredProjects(typeFilter, statusFilter, personFilter, venueFilter));
   const list = els.taskList.querySelector(".project-filter-list");
   if (!projects.length) {
     const empty = document.createElement("div");
@@ -4932,6 +4947,7 @@ els.taskList.addEventListener("click", (event) => {
   if (clearProjectFiltersButton) {
     sessionStorage.removeItem("project-type-filter");
     sessionStorage.removeItem("project-status-filter");
+    sessionStorage.removeItem("project-venue-filter");
     sessionStorage.removeItem("project-person-filter");
     renderTasks();
     return;
@@ -5585,10 +5601,11 @@ els.taskList.addEventListener("change", (event) => {
     renderTasks();
     return;
   }
-  const projectFilter = event.target.closest("[name='projectTypeFilter'], [name='projectStatusFilter'], [name='projectPersonFilter']");
+  const projectFilter = event.target.closest("[name='projectTypeFilter'], [name='projectStatusFilter'], [name='projectVenueFilter'], [name='projectPersonFilter']");
   if (projectFilter) {
     sessionStorage.setItem("project-type-filter", els.taskList.querySelector("[name='projectTypeFilter']")?.value || "");
     sessionStorage.setItem("project-status-filter", els.taskList.querySelector("[name='projectStatusFilter']")?.value || "");
+    sessionStorage.setItem("project-venue-filter", els.taskList.querySelector("[name='projectVenueFilter']")?.value || "");
     sessionStorage.setItem("project-person-filter", els.taskList.querySelector("[name='projectPersonFilter']")?.value || "");
     renderTasks();
     return;

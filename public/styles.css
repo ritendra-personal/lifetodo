@@ -1581,7 +1581,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-filter-bar {
-  grid-template-columns: repeat(3, minmax(160px, 220px)) auto;
+  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
 }
 
 .project-filter-table {
