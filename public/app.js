@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.19";
+const APP_VERSION = "1.10.20";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -151,6 +151,7 @@ const counts = {
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
   projects: document.querySelector("#count-projects"),
+  projectFilter: document.querySelector("#count-project-filter"),
   ideas: document.querySelector("#count-ideas"),
   graph: document.querySelector("#count-graph"),
   timeline: document.querySelector("#count-timeline"),
@@ -328,6 +329,7 @@ function validView(view) {
     "people",
     "people-filter",
     "projects",
+    "project-filter",
     "ideas",
     "graph",
     "timeline",
@@ -2005,6 +2007,7 @@ function renderCounts() {
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
   counts.projects.textContent = state.projects.length;
+  counts.projectFilter.textContent = state.projects.length;
   counts.ideas.textContent = state.ideas.length;
   counts.graph.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
@@ -2306,6 +2309,10 @@ function renderTasks() {
   }
   if (state.view === "projects") {
     renderProjectsView();
+    return;
+  }
+  if (state.view === "project-filter") {
+    renderProjectFilterView();
     return;
   }
   if (state.view === "ideas") {
@@ -3124,6 +3131,7 @@ function renderPeopleView() {
       </div>
       <div class="people-table">
         <div class="people-table-head">
+          <span>#</span>
           ${peopleSortHeader("firstName", "First Name")}
           ${peopleSortHeader("lastName", "Last Name")}
           ${peopleSortHeader("relationship", "Relationship")}
@@ -3145,11 +3153,12 @@ function renderPeopleView() {
     list.append(empty);
     return;
   }
-  for (const person of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"])) {
+  for (const [index, person] of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"]).entries()) {
     const card = document.createElement("div");
     card.className = "person-card";
     card.dataset.personId = person.id;
     card.innerHTML = `
+      <div class="person-sequence" aria-label="Person sequence">${index + 1}</div>
       <input name="firstName" type="text" required aria-label="First name">
       <input name="lastName" type="text" aria-label="Last name">
       <select name="relationshipTypeId" aria-label="Relationship"></select>
@@ -3179,6 +3188,7 @@ function renderPeopleFilterView() {
     </div>
     <div class="people-table people-filter-table">
       <div class="people-table-head">
+        <span>#</span>
         ${peopleSortHeader("firstName", "First Name")}
         ${peopleSortHeader("lastName", "Last Name")}
         ${peopleSortHeader("relationship", "Relationship")}
@@ -3238,8 +3248,8 @@ function renderPeopleFilterView() {
     list.append(empty);
     return;
   }
-  for (const person of people) {
-    list.append(makePeopleReadRow(person));
+  for (const [index, person] of people.entries()) {
+    list.append(makePeopleReadRow(person, index));
   }
 }
 
@@ -3253,10 +3263,112 @@ function filteredPeople(skillId, relationshipId, projectId = "", roleId = "") {
   });
 }
 
-function makePeopleReadRow(person) {
+function filteredProjects(projectTypeId = "", projectStatusId = "", personId = "") {
+  return state.projects.filter((project) => {
+    if (projectTypeId && project.project_type_id !== projectTypeId) return false;
+    if (projectStatusId && project.project_status_id !== projectStatusId) return false;
+    if (personId && !state.projectAssignments.some((assignment) => assignment.project_id === project.id && assignment.person_id === personId)) return false;
+    return true;
+  });
+}
+
+function projectPeopleNames(project) {
+  return state.projectAssignments
+    .filter((assignment) => assignment.project_id === project.id)
+    .map((assignment) => state.people.find((person) => person.id === assignment.person_id))
+    .filter(Boolean)
+    .map(personFullName)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function renderProjectFilterView() {
+  els.taskList.innerHTML = `
+    <div class="people-filter-bar project-filter-bar">
+      <select name="projectTypeFilter" aria-label="Filter by project type"></select>
+      <select name="projectStatusFilter" aria-label="Filter by project status"></select>
+      <select name="projectPersonFilter" aria-label="Filter by project person"></select>
+      <button class="ghost-button clear-project-filters" type="button">Clear filters</button>
+    </div>
+    <div class="project-filter-table">
+      <div class="project-filter-head">
+        <span>#</span>
+        <span>Name</span>
+        <span>Type</span>
+        <span>Status</span>
+        <span>Dates</span>
+        <span>People</span>
+        <span></span>
+      </div>
+      <div class="planning-list project-filter-list"></div>
+    </div>
+  `;
+  const typeSelect = els.taskList.querySelector("[name='projectTypeFilter']");
+  const statusSelect = els.taskList.querySelector("[name='projectStatusFilter']");
+  const personSelect = els.taskList.querySelector("[name='projectPersonFilter']");
+  typeSelect.innerHTML = '<option value="">All types</option>';
+  for (const type of state.projectTypes) {
+    const option = document.createElement("option");
+    option.value = type.id;
+    option.textContent = type.name;
+    typeSelect.append(option);
+  }
+  statusSelect.innerHTML = '<option value="">All statuses</option>';
+  for (const status of state.projectStatuses) {
+    const option = document.createElement("option");
+    option.value = status.id;
+    option.textContent = status.name;
+    statusSelect.append(option);
+  }
+  personSelect.innerHTML = '<option value="">All people</option>';
+  for (const person of sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"])) {
+    const option = document.createElement("option");
+    option.value = person.id;
+    option.textContent = personFullName(person);
+    personSelect.append(option);
+  }
+  const typeFilter = sessionStorage.getItem("project-type-filter") || "";
+  const statusFilter = sessionStorage.getItem("project-status-filter") || "";
+  const personFilter = sessionStorage.getItem("project-person-filter") || "";
+  typeSelect.value = typeFilter;
+  statusSelect.value = statusFilter;
+  personSelect.value = personFilter;
+  const projects = sortedProjects(filteredProjects(typeFilter, statusFilter, personFilter));
+  const list = els.taskList.querySelector(".project-filter-list");
+  if (!projects.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state people-empty";
+    empty.textContent = "No projects match these filters.";
+    list.append(empty);
+    return;
+  }
+  for (const [index, project] of projects.entries()) {
+    const row = document.createElement("div");
+    row.className = "project-filter-row";
+    row.dataset.projectId = project.id;
+    applyProjectStatusTone(row, projectStatusName(project));
+    row.innerHTML = `
+      <div class="project-sequence" aria-label="Project sequence">${index + 1}</div>
+      <strong></strong>
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
+      <button class="ghost-button project-focus-button" type="button">Open</button>
+    `;
+    row.querySelector("strong").textContent = project.name;
+    row.querySelectorAll("span")[0].textContent = projectTypeName(project) || "No type";
+    row.querySelectorAll("span")[1].textContent = projectStatusName(project) || "No status";
+    row.querySelectorAll("span")[2].textContent = [project.start_date || "No start", project.end_date || "No end"].join(" - ");
+    row.querySelectorAll("span")[3].textContent = projectPeopleNames(project).join(", ") || "No people";
+    list.append(row);
+  }
+}
+
+function makePeopleReadRow(person, index = 0) {
   const row = document.createElement("div");
   row.className = "person-card person-read-row";
   row.innerHTML = `
+    <div class="person-sequence" aria-label="Person sequence">${index + 1}</div>
     <span></span>
     <span></span>
     <span></span>
@@ -4319,7 +4431,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "focus-task", "focus-project", "focus-goal", "focus-person"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "focus-task", "focus-project", "focus-goal", "focus-person"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -4358,6 +4470,7 @@ function render() {
     people: "People",
     "people-filter": "People Filter",
     projects: "Projects",
+    "project-filter": "Project Filter",
     ideas: "Ideas",
     graph: "Task Graph",
     timeline: "Timeline",
@@ -4374,7 +4487,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -4585,6 +4698,14 @@ els.taskList.addEventListener("click", (event) => {
     sessionStorage.removeItem("people-relationship-filter");
     sessionStorage.removeItem("people-project-filter");
     sessionStorage.removeItem("people-role-filter");
+    renderTasks();
+    return;
+  }
+  const clearProjectFiltersButton = event.target.closest(".clear-project-filters");
+  if (clearProjectFiltersButton) {
+    sessionStorage.removeItem("project-type-filter");
+    sessionStorage.removeItem("project-status-filter");
+    sessionStorage.removeItem("project-person-filter");
     renderTasks();
     return;
   }
@@ -5148,6 +5269,14 @@ els.taskList.addEventListener("change", (event) => {
     sessionStorage.setItem("people-relationship-filter", relationshipFilter);
     sessionStorage.setItem("people-project-filter", projectFilter);
     sessionStorage.setItem("people-role-filter", roleFilter);
+    renderTasks();
+    return;
+  }
+  const projectFilter = event.target.closest("[name='projectTypeFilter'], [name='projectStatusFilter'], [name='projectPersonFilter']");
+  if (projectFilter) {
+    sessionStorage.setItem("project-type-filter", els.taskList.querySelector("[name='projectTypeFilter']")?.value || "");
+    sessionStorage.setItem("project-status-filter", els.taskList.querySelector("[name='projectStatusFilter']")?.value || "");
+    sessionStorage.setItem("project-person-filter", els.taskList.querySelector("[name='projectPersonFilter']")?.value || "");
     renderTasks();
     return;
   }
