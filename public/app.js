@@ -1,9 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.8.6";
+const APP_VERSION = "1.8.7";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
+const timelineZoomLevels = [1.2, 2, 3.5, 6, 10, 18, 30, 42, 60, 84, 120];
 const autosaveTimers = new Map();
 let assignmentDrag = null;
 let suppressAssignmentClick = false;
@@ -333,6 +334,86 @@ function daysBetween(start, end) {
   const startDate = new Date(`${start}T12:00:00`);
   const endDate = new Date(`${end}T12:00:00`);
   return Math.round((endDate - startDate) / 86400000);
+}
+
+function startOfMonthIso(value) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(1);
+  return date.toISOString().slice(0, 10);
+}
+
+function addMonthsToIso(value, months) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+
+function timelineMonthLabel(value, includeYear = false) {
+  const date = new Date(`${value}T12:00:00`);
+  return new Intl.DateTimeFormat(undefined, includeYear ? { month: "short", year: "numeric" } : { month: "short" }).format(date);
+}
+
+function timelineZoomIndex(value = state.timelineZoom) {
+  const zoom = Number(value) || 42;
+  let closest = 0;
+  let distance = Infinity;
+  timelineZoomLevels.forEach((level, index) => {
+    const levelDistance = Math.abs(level - zoom);
+    if (levelDistance < distance) {
+      closest = index;
+      distance = levelDistance;
+    }
+  });
+  return closest;
+}
+
+function timelineZoomLabel(pixelsPerDay) {
+  if (pixelsPerDay <= 2) return "Year";
+  if (pixelsPerDay <= 6) return "Quarter";
+  if (pixelsPerDay <= 12) return "Month";
+  if (pixelsPerDay <= 30) return "Week";
+  return `${pixelsPerDay}px/day`;
+}
+
+function timelineTickStep(pixelsPerDay) {
+  if (pixelsPerDay <= 2) return { unit: "month", step: 3 };
+  if (pixelsPerDay <= 6) return { unit: "month", step: 1 };
+  if (pixelsPerDay <= 12) return { unit: "month", step: 1 };
+  if (pixelsPerDay <= 30) return { unit: "day", step: 14 };
+  if (pixelsPerDay <= 60) return { unit: "day", step: 7 };
+  return { unit: "day", step: pixelsPerDay >= 84 ? 1 : 2 };
+}
+
+function timelineTicks(startDate, endDate, pixelsPerDay) {
+  const ticks = [];
+  const { unit, step } = timelineTickStep(pixelsPerDay);
+  if (unit === "month") {
+    let current = startOfMonthIso(startDate);
+    if (pixelsPerDay <= 2) {
+      const aligned = new Date(`${current}T12:00:00`);
+      aligned.setMonth(Math.floor(aligned.getMonth() / 3) * 3);
+      current = aligned.toISOString().slice(0, 10);
+    }
+    while (current <= endDate) {
+      const date = new Date(`${current}T12:00:00`);
+      const month = date.getMonth();
+      const isJanuary = month === 0;
+      const shouldLabel = pixelsPerDay <= 2 ? month % 3 === 0 : true;
+      ticks.push({
+        date: current,
+        label: shouldLabel ? timelineMonthLabel(current, isJanuary || pixelsPerDay <= 2) : "",
+        major: isJanuary
+      });
+      current = addMonthsToIso(current, step);
+    }
+    return ticks;
+  }
+
+  for (let day = 0; day <= daysBetween(startDate, endDate); day += step) {
+    const date = addDaysToIso(startDate, day);
+    ticks.push({ date, label: formatDate(date), major: false });
+  }
+  return ticks;
 }
 
 function defaultDueDateForView() {
@@ -3033,32 +3114,37 @@ function renderTimelineView() {
   ];
   const minDate = timelineDates.reduce((min, date) => (date < min ? date : min), timelineDates[0]);
   const maxDate = timelineDates.reduce((max, date) => (date > max ? date : max), timelineDates[0]);
-  const startDate = addDaysToIso(minDate < today ? minDate : today, -5);
-  const endDate = addDaysToIso(maxDate > today ? maxDate : today, 10);
+  const zoomIndex = timelineZoomIndex();
+  const pixelsPerDay = timelineZoomLevels[zoomIndex];
+  state.timelineZoom = pixelsPerDay;
+  const rangePad = pixelsPerDay <= 2 ? 45 : pixelsPerDay <= 6 ? 28 : pixelsPerDay <= 12 ? 14 : 10;
+  const startDate = addDaysToIso(minDate < today ? minDate : today, -rangePad);
+  const endDate = addDaysToIso(maxDate > today ? maxDate : today, rangePad);
   const dayCount = Math.max(1, daysBetween(startDate, endDate));
-  const pixelsPerDay = Math.min(120, Math.max(18, state.timelineZoom));
   const margin = 120;
-  const projectRowHeight = 62;
-  const rowHeight = 86;
+  const compactTimeline = pixelsPerDay <= 6;
+  const broadTimeline = pixelsPerDay <= 2;
+  const projectRowHeight = broadTimeline ? 42 : compactTimeline ? 50 : 62;
+  const rowHeight = broadTimeline ? 52 : compactTimeline ? 64 : 86;
   const axisTop = 78;
   const projectLabelTop = 118;
-  const projectLaneTop = 150;
+  const projectLaneTop = broadTimeline ? 142 : 150;
   const projectBandHeight = Math.max(1, timelineProjects.length) * projectRowHeight;
   const dividerTop = projectLaneTop + projectBandHeight + 28;
   const taskLabelTop = dividerTop + 24;
   const laneTop = taskLabelTop + 34;
   const noDateTop = laneTop + Math.max(1, datedTasks.length) * rowHeight + 44;
   const width = margin * 2 + dayCount * pixelsPerDay;
-  const height = noDateTop + Math.max(1, noDateTasks.length) * 74 + 60;
-  const tickInterval = pixelsPerDay >= 76 ? 1 : pixelsPerDay >= 42 ? 2 : pixelsPerDay >= 26 ? 4 : 7;
+  const height = noDateTop + Math.max(1, noDateTasks.length) * (broadTimeline ? 50 : 74) + 60;
+  const ticks = timelineTicks(startDate, endDate, pixelsPerDay);
 
   const timeline = document.createElement("div");
-  timeline.className = "timeline-view";
+  timeline.className = `timeline-view ${compactTimeline ? "compact-timeline" : ""} ${broadTimeline ? "broad-timeline" : ""}`;
   timeline.innerHTML = `
     <div class="timeline-controls">
-      <button class="ghost-button timeline-zoom" data-zoom="-8" type="button">-</button>
-      <span>${pixelsPerDay}px/day</span>
-      <button class="ghost-button timeline-zoom" data-zoom="8" type="button">+</button>
+      <button class="ghost-button timeline-zoom" data-zoom-dir="-1" type="button" ${zoomIndex === 0 ? "disabled" : ""}>-</button>
+      <span>${timelineZoomLabel(pixelsPerDay)}</span>
+      <button class="ghost-button timeline-zoom" data-zoom-dir="1" type="button" ${zoomIndex === timelineZoomLevels.length - 1 ? "disabled" : ""}>+</button>
       <button class="ghost-button timeline-today" type="button">Today</button>
     </div>
     <div class="timeline-scroller">
@@ -3077,22 +3163,39 @@ function renderTimelineView() {
   axis.style.width = `${dayCount * pixelsPerDay}px`;
   canvas.append(axis);
 
-  for (let day = 0; day <= dayCount; day += 1) {
-    const date = addDaysToIso(startDate, day);
-    const left = margin + day * pixelsPerDay;
+  for (const tick of ticks) {
+    const left = margin + daysBetween(startDate, tick.date) * pixelsPerDay;
     const line = document.createElement("div");
-    line.className = `timeline-tick ${date === today ? "today" : ""}`;
+    line.className = `timeline-tick ${tick.major ? "major" : ""}`;
     line.style.left = `${left}px`;
     line.style.top = `${axisTop - 22}px`;
     line.style.height = `${Math.max(height, 460) - axisTop - 24}px`;
     canvas.append(line);
-    if (day % tickInterval === 0 || date === today) {
+    if (tick.label) {
       const label = document.createElement("div");
-      label.className = `timeline-date ${date === today ? "today" : ""}`;
+      label.className = `timeline-date ${tick.major ? "major" : ""}`;
       label.style.left = `${left}px`;
       label.style.top = `${axisTop - 46}px`;
-      label.textContent = formatDate(date);
+      label.textContent = tick.label;
       canvas.append(label);
+    }
+  }
+
+  const todayLeft = margin + daysBetween(startDate, today) * pixelsPerDay;
+  if (todayLeft >= margin && todayLeft <= margin + dayCount * pixelsPerDay) {
+    const todayLine = document.createElement("div");
+    todayLine.className = "timeline-tick today";
+    todayLine.style.left = `${todayLeft}px`;
+    todayLine.style.top = `${axisTop - 22}px`;
+    todayLine.style.height = `${Math.max(height, 460) - axisTop - 24}px`;
+    canvas.append(todayLine);
+    if (pixelsPerDay > 6) {
+      const todayLabel = document.createElement("div");
+      todayLabel.className = "timeline-date today";
+      todayLabel.style.left = `${todayLeft}px`;
+      todayLabel.style.top = `${axisTop - 46}px`;
+      todayLabel.textContent = "Today";
+      canvas.append(todayLabel);
     }
   }
 
@@ -3104,7 +3207,7 @@ function renderTimelineView() {
       const startX = margin + daysBetween(startDate, projectStart) * pixelsPerDay;
       const endX = margin + daysBetween(startDate, projectEnd) * pixelsPerDay;
       const y = projectLaneTop + index * projectRowHeight;
-      canvas.append(makeTimelineProject(project, startX, y, Math.max(140, endX - startX + pixelsPerDay)));
+      canvas.append(makeTimelineProject(project, startX, y, Math.max(broadTimeline ? 44 : compactTimeline ? 76 : 140, endX - startX + Math.max(2, pixelsPerDay))));
     });
   } else {
     const emptyProjects = document.createElement("div");
@@ -3137,14 +3240,13 @@ function renderTimelineView() {
     label.textContent = "No date";
     canvas.append(label);
     noDateTasks.forEach((task, index) => {
-      canvas.append(makeTimelineTask(task, margin + index * 232, noDateTop));
+      canvas.append(makeTimelineTask(task, margin + index * (broadTimeline ? 132 : 232), noDateTop));
     });
   }
 
   els.taskList.append(timeline);
   const scroller = timeline.querySelector(".timeline-scroller");
   requestAnimationFrame(() => {
-    const todayLeft = margin + daysBetween(startDate, today) * pixelsPerDay;
     scroller.scrollLeft = Math.max(0, todayLeft - scroller.clientWidth / 2);
   });
 }
@@ -3520,7 +3622,8 @@ els.taskList.addEventListener("click", (event) => {
   }
   const zoomButton = event.target.closest(".timeline-zoom");
   if (zoomButton) {
-    state.timelineZoom = Math.min(120, Math.max(18, state.timelineZoom + Number(zoomButton.dataset.zoom)));
+    const nextIndex = Math.min(timelineZoomLevels.length - 1, Math.max(0, timelineZoomIndex() + Number(zoomButton.dataset.zoomDir)));
+    state.timelineZoom = timelineZoomLevels[nextIndex];
     localStorage.setItem("timeline-zoom", String(state.timelineZoom));
     renderTasks();
     return;
