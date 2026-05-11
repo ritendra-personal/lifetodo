@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.7.5";
+const APP_VERSION = "1.7.6";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2227,12 +2227,11 @@ function drawAssignmentLines() {
     for (const goalId of goalIdsForTask(task)) {
       const goalHandle = els.taskList.querySelector(`[data-assignment-goal-id="${CSS.escape(goalId)}"] .goal-handle`);
       if (!goalHandle) continue;
-      const end = assignmentHandlePoint(goalHandle, svg);
+      const end = assignmentGoalArrowPoint(goalHandle, svg);
       const isActive = task.id === state.selectedAssignmentTaskId;
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", assignmentCurvePath(start, end));
       path.setAttribute("class", isActive ? "assignment-line active" : "assignment-line");
-      path.setAttribute("marker-start", `url(#${isActive ? "assignment-arrow-active" : "assignment-arrow"})`);
       path.setAttribute("marker-end", `url(#${isActive ? "assignment-arrow-active" : "assignment-arrow"})`);
       svg.append(path);
     }
@@ -2242,11 +2241,11 @@ function drawAssignmentLines() {
 function assignmentMarkerDefs() {
   return `
     <defs>
-      <marker id="assignment-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
-        <path d="M 1 1 L 9 5 L 1 9 z" fill="#8aa5bf"></path>
+      <marker id="assignment-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+        <path d="M 1 1 L 9 5 L 1 9 z"></path>
       </marker>
-      <marker id="assignment-arrow-active" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
-        <path d="M 1 1 L 9 5 L 1 9 z" fill="#0e7c74"></path>
+      <marker id="assignment-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+        <path d="M 1 1 L 9 5 L 1 9 z"></path>
       </marker>
     </defs>
   `;
@@ -2273,6 +2272,11 @@ function assignmentHandlePoint(handle, svg) {
   return assignmentSvgPoint(svg, rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
 
+function assignmentGoalArrowPoint(handle, svg) {
+  const rect = handle.getBoundingClientRect();
+  return assignmentSvgPoint(svg, rect.left - 5, rect.top + rect.height / 2);
+}
+
 function updateAssignmentDraft(clientX, clientY) {
   if (!assignmentDrag) return;
   const point = assignmentSvgPoint(assignmentDrag.svg, clientX, clientY);
@@ -2294,7 +2298,6 @@ function beginAssignmentDrag(handle, event) {
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("class", "assignment-line assignment-line-draft");
   path.setAttribute("d", assignmentCurvePath(start, start));
-  path.setAttribute("marker-start", "url(#assignment-arrow-active)");
   path.setAttribute("marker-end", "url(#assignment-arrow-active)");
   svg.append(path);
   assignmentDrag = { taskId: task.dataset.assignmentTaskId, line: path, start, svg, bounds };

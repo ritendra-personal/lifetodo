@@ -1188,10 +1188,18 @@ body.resizing .resize-handle::before {
   opacity: 0.58;
 }
 
+#assignment-arrow path {
+  fill: #8aa5bf;
+}
+
 .assignment-line.active {
   stroke: var(--teal);
   stroke-width: 1.6;
   opacity: 0.78;
+}
+
+#assignment-arrow-active path {
+  fill: var(--teal);
 }
 
 .assignment-panel {
