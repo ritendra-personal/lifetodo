@@ -1165,7 +1165,7 @@ body.resizing .resize-handle::before {
   position: relative;
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 1.1fr);
-  gap: 88px;
+  gap: 150px;
   padding: var(--task-list-pad);
 }
 
@@ -1180,16 +1180,17 @@ body.resizing .resize-handle::before {
 
 .assignment-line {
   stroke: #8aa5bf;
-  stroke-width: 1.15;
+  stroke-width: 1;
   fill: none;
   stroke-linecap: round;
-  opacity: 0.5;
+  stroke-linejoin: round;
+  opacity: 0.58;
 }
 
 .assignment-line.active {
   stroke: var(--teal);
-  stroke-width: 1.75;
-  opacity: 0.8;
+  stroke-width: 1.35;
+  opacity: 0.78;
 }
 
 .assignment-panel {
@@ -1225,6 +1226,14 @@ body.resizing .resize-handle::before {
   text-align: left;
   display: grid;
   gap: 3px;
+}
+
+.assignment-task {
+  cursor: grab;
+}
+
+.assignment-task:active {
+  cursor: grabbing;
 }
 
 .assignment-task.active,
@@ -1266,8 +1275,8 @@ body.resizing .resize-handle::before {
 
 .assignment-line-draft {
   stroke: var(--teal-dark);
-  stroke-width: 1.8;
-  opacity: 0.85;
+  stroke-width: 1.35;
+  opacity: 0.82;
 }
 
 .assignment-task span,
