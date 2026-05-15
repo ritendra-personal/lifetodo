@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.36";
+const APP_VERSION = "1.10.37";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -86,6 +86,8 @@ const state = {
   config: null,
   supabase: null,
   session: null,
+  sessionRefreshPromise: null,
+  lastSessionRefreshAt: 0,
   user: null,
   areas: loadAreas(),
   plannerKey: localStorage.getItem("planner-key") || "",
@@ -989,13 +991,42 @@ async function initSupabase() {
   const { data } = await state.supabase.auth.getSession();
   state.session = data.session;
   state.user = data.session?.user || null;
-  state.supabase.auth.onAuthStateChange(async (_event, session) => {
+  state.supabase.auth.onAuthStateChange(async (event, session) => {
     state.session = session;
     state.user = session?.user || null;
+    console.info("[LifeTodo diagnostic]", { stage: "auth:event", event, hasUser: Boolean(state.user), visibility: document.visibilityState });
+    if (event === "TOKEN_REFRESHED") return;
     state.selectedId = null;
     await claimLegacyTasks();
     await loadTasks();
   });
+}
+
+async function refreshSupabaseSession(reason = "manual", options = {}) {
+  if (!state.supabase || !state.session) return state.session;
+  const minIntervalMs = options.minIntervalMs ?? 30000;
+  const now = Date.now();
+  if (!options.force && state.lastSessionRefreshAt && now - state.lastSessionRefreshAt < minIntervalMs) return state.session;
+  if (state.sessionRefreshPromise) return state.sessionRefreshPromise;
+  console.info("[LifeTodo diagnostic]", { stage: "auth:refresh-start", reason, visibility: document.visibilityState });
+  state.sessionRefreshPromise = state.supabase.auth
+    .refreshSession()
+    .then(({ data, error }) => {
+      if (error) throw error;
+      state.session = data.session || state.session;
+      state.user = state.session?.user || state.user;
+      state.lastSessionRefreshAt = Date.now();
+      console.info("[LifeTodo diagnostic]", { stage: "auth:refresh-done", reason, hasUser: Boolean(state.user) });
+      return state.session;
+    })
+    .catch((error) => {
+      console.warn("[LifeTodo diagnostic]", { stage: "auth:refresh-error", reason, message: error.message });
+      return state.session;
+    })
+    .finally(() => {
+      state.sessionRefreshPromise = null;
+    });
+  return state.sessionRefreshPromise;
 }
 
 async function signInWithGoogle() {
@@ -2036,6 +2067,11 @@ async function persistPerson(person, options = {}) {
     return { savedToCloud: false };
   }
   try {
+    await withSlowOperationNotice(
+      () => refreshSupabaseSession("person-save"),
+      5000,
+      "Session refresh is taking longer than usual. Still waiting before saving..."
+    );
     trace("upsert:start");
     const { data, error } = await withSlowOperationNotice(
       () =>
@@ -6243,6 +6279,10 @@ els.keyButton.addEventListener("click", async () => {
     return;
   }
   await signInWithGoogle();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshSupabaseSession("visibility", { minIntervalMs: 15000 });
 });
 
 applyRouteFromLocation();
