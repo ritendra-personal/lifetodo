@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.32";
+const APP_VERSION = "1.10.33";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -5443,7 +5443,6 @@ els.taskList.addEventListener("submit", async (event) => {
     try {
       await withOperationTimeout(
         async () => {
-          await waitForInitialCloudLoad();
           const latestForm = new FormData(event.target);
           const firstName = latestForm.get("firstName").trim();
           const lastName = latestForm.get("lastName").trim();
