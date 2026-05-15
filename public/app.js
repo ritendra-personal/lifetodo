@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.34";
+const APP_VERSION = "1.10.35";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -464,10 +464,35 @@ function plannerLoadSummary() {
 
 function withOperationTimeout(callback, timeoutMs = 10000, message = "Database operation timed out. Try Sync, or reload and try again.") {
   let timeoutId;
+  let settled = false;
+  let handleVisibility = null;
+  const clearTimer = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+  const cleanup = () => {
+    settled = true;
+    clearTimer();
+    if (handleVisibility) document.removeEventListener("visibilitychange", handleVisibility);
+  };
+  const operation = Promise.resolve().then(callback).finally(cleanup);
   const timeout = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+    const armTimer = () => {
+      clearTimer();
+      if (settled) return;
+      if (document.hidden) return;
+      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+    };
+    handleVisibility = () => {
+      if (document.hidden) clearTimer();
+      else armTimer();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    armTimer();
   });
-  return Promise.race([Promise.resolve().then(callback), timeout]).finally(() => clearTimeout(timeoutId));
+  return Promise.race([operation, timeout]).finally(cleanup);
 }
 
 function withAutosaveTimeout(callback, timeoutMs = 10000) {
