@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.31";
+const APP_VERSION = "1.10.32";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -462,12 +462,16 @@ function plannerLoadSummary() {
   ].join(", ")} for ${keyLabel()}.`;
 }
 
-function withAutosaveTimeout(callback, timeoutMs = 10000) {
+function withOperationTimeout(callback, timeoutMs = 10000, message = "Database operation timed out. Try Sync, or reload and try again.") {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("Autosave timed out. Try Sync, or reload and try again.")), timeoutMs);
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
   });
   return Promise.race([Promise.resolve().then(callback), timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+function withAutosaveTimeout(callback, timeoutMs = 10000) {
+  return withOperationTimeout(callback, timeoutMs, "Autosave timed out. Try Sync, or reload and try again.");
 }
 
 function setFormSaving(form, saving, label = "Saving...") {
@@ -1130,8 +1134,14 @@ async function loadTasks() {
   return loadTasksPromise;
 }
 
-async function waitForInitialCloudLoad() {
-  if (loadTasksPromise) await loadTasksPromise;
+async function waitForInitialCloudLoad(timeoutMs = 10000) {
+  if (loadTasksPromise) {
+    await withOperationTimeout(
+      () => loadTasksPromise,
+      timeoutMs,
+      "Initial database load timed out. Your save did not run; press Sync, or reload and try again."
+    );
+  }
 }
 
 async function loadTasksNow() {
@@ -1934,7 +1944,11 @@ async function persistPerson(person, options = {}) {
   if (!normalized.first_name) return;
   const previousPeople = state.people;
   if (options.requireCloud && isSupabaseReady() && !state.peopleCloudReady) {
-    const peopleData = await loadPeopleData();
+    const peopleData = await withOperationTimeout(
+      () => loadPeopleData(),
+      10000,
+      "People database setup check timed out. Person was not saved."
+    );
     if (peopleData) {
       state.people = peopleData.people;
       state.skills = peopleData.skills;
@@ -1949,10 +1963,12 @@ async function persistPerson(person, options = {}) {
     throw new Error(state.syncError);
   }
   const exists = state.people.some((item) => item.id === normalized.id);
-  state.people = exists
-    ? state.people.map((item) => (item.id === normalized.id ? normalized : item))
-    : [normalized, ...state.people];
-  saveLocal({ silent: options.requireCloud });
+  if (!options.requireCloud) {
+    state.people = exists
+      ? state.people.map((item) => (item.id === normalized.id ? normalized : item))
+      : [normalized, ...state.people];
+    saveLocal();
+  }
   if (!isSupabaseReady() || !state.peopleCloudReady) {
     if (options.requireCloud) {
       state.syncError = "Person was saved locally only; database is not connected or the people tables are not ready.";
@@ -1966,23 +1982,31 @@ async function persistPerson(person, options = {}) {
     return { savedToCloud: false };
   }
   try {
-    const { data, error } = await state.supabase
-      .from("planner_people")
-      .upsert({
-        id: normalized.id,
-        user_id: state.user.id,
-        first_name: normalized.first_name,
-        last_name: normalized.last_name,
-        skill_ids: normalized.skill_ids,
-        relationship_type_id: normalized.relationship_type_id || null,
-        created_at: normalized.created_at,
-        updated_at: normalized.updated_at
-      })
-      .select()
-      .single();
+    const { data, error } = await withOperationTimeout(
+      () =>
+        state.supabase
+          .from("planner_people")
+          .upsert({
+            id: normalized.id,
+            user_id: state.user.id,
+            first_name: normalized.first_name,
+            last_name: normalized.last_name,
+            skill_ids: normalized.skill_ids,
+            relationship_type_id: normalized.relationship_type_id || null,
+            created_at: normalized.created_at,
+            updated_at: normalized.updated_at
+          })
+          .select()
+          .single(),
+      12000,
+      "Person database save timed out. Person was not saved; press Sync, or reload and try again."
+    );
     if (error) throw error;
     const saved = normalizePerson(data);
-    state.people = state.people.map((item) => (item.id === saved.id ? saved : item));
+    state.people = state.people.some((item) => item.id === saved.id)
+      ? state.people.map((item) => (item.id === saved.id ? saved : item))
+      : [saved, ...state.people];
+    saveLocal({ silent: true });
     state.syncMessage = `Saved person to database at ${savedAtLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
@@ -5415,28 +5439,37 @@ els.taskList.addEventListener("submit", async (event) => {
   } else if (personForm) {
     setFormSaving(event.target, true);
     showSyncMessage("Saving person...");
+    let personSaved = false;
     try {
-      await waitForInitialCloudLoad();
-      const latestForm = new FormData(event.target);
-      const firstName = latestForm.get("firstName").trim();
-      const lastName = latestForm.get("lastName").trim();
-      const fullName = personNameFromParts(firstName, lastName);
-      if (hasDuplicatePersonName(firstName, lastName)) {
-        alertDuplicate("Person", fullName);
-        saveCreationDraft(event.target);
-        state.syncMessage = "";
-        renderSyncStatus();
-        return;
-      }
-      await persistPerson(
-        {
-          first_name: firstName,
-          last_name: lastName,
-          relationship_type_id: latestForm.get("relationshipTypeId") || "",
-          skill_ids: latestForm.getAll("skillIds")
+      await withOperationTimeout(
+        async () => {
+          await waitForInitialCloudLoad();
+          const latestForm = new FormData(event.target);
+          const firstName = latestForm.get("firstName").trim();
+          const lastName = latestForm.get("lastName").trim();
+          const fullName = personNameFromParts(firstName, lastName);
+          if (hasDuplicatePersonName(firstName, lastName)) {
+            alertDuplicate("Person", fullName);
+            saveCreationDraft(event.target);
+            state.syncMessage = "";
+            renderSyncStatus();
+            return;
+          }
+          await persistPerson(
+            {
+              first_name: firstName,
+              last_name: lastName,
+              relationship_type_id: latestForm.get("relationshipTypeId") || "",
+              skill_ids: latestForm.getAll("skillIds")
+            },
+            { requireCloud: true, render: false }
+          );
+          personSaved = true;
         },
-        { requireCloud: true, render: false }
+        16000,
+        "Person save timed out. Person was not confirmed in the database; press Sync, or reload and try again."
       );
+      if (!personSaved) return;
       clearCreationDraft(event.target);
       event.target.reset();
       render();
