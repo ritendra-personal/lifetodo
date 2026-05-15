@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.33";
+const APP_VERSION = "1.10.34";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1127,9 +1127,19 @@ let loadTasksPromise = null;
 
 async function loadTasks() {
   if (!loadTasksPromise) {
-    loadTasksPromise = loadTasksNow().finally(() => {
-      loadTasksPromise = null;
-    });
+    loadTasksPromise = withOperationTimeout(
+      () => loadTasksNow(),
+      20000,
+      "Database load timed out. Press Sync to retry, or reload if the connection stays stuck."
+    )
+      .catch((error) => {
+        state.syncError = error.message;
+        state.syncMessage = "";
+        render();
+      })
+      .finally(() => {
+        loadTasksPromise = null;
+      });
   }
   return loadTasksPromise;
 }
