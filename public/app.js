@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.39";
+const APP_VERSION = "1.10.40";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -939,7 +939,6 @@ function databasePayload(task) {
     completed_at: task.completed_at
   };
   if (task.dependency_ids?.length) payload.dependency_ids = parseIds(task.dependency_ids);
-  if (!state.projectsCloudReady) delete payload.project_id;
   return payload;
 }
 
@@ -952,7 +951,6 @@ function databasePatchPayload(changes) {
   if ("parent_id" in payload) payload.parent_id = payload.parent_id || null;
   if ("goal_id" in payload) payload.goal_id = payload.goal_id || null;
   if ("project_id" in payload) payload.project_id = payload.project_id || null;
-  if (!state.projectsCloudReady) delete payload.project_id;
   if ("due_date" in payload) payload.due_date = payload.due_date || null;
   if ("area_id" in payload) payload.area_id = payload.area_id || null;
   if ("area" in payload) payload.area = areaNameFor(payload);
@@ -1321,10 +1319,6 @@ async function loadTasks() {
   return loadTasksPromise;
 }
 
-async function waitForInitialCloudLoad() {
-  if (loadTasksPromise) await loadTasksPromise;
-}
-
 async function loadTasksNow() {
   if (!isSupabaseReady()) {
     loadLocal();
@@ -1426,7 +1420,7 @@ async function syncTaskGoalLinks(taskId, goalIds) {
     ...state.goalLinks.filter((link) => link.task_id !== taskId),
     ...ids.map((goalId) => ({ task_id: taskId, goal_id: goalId, user_id: state.user?.id || null }))
   ];
-  if (!isSupabaseReady() || !state.goalLinksCloudReady) return;
+  if (!isSupabaseReady()) return;
   await deleteRowsDirect("planner_task_goal_links", `task_id=eq.${encodeURIComponent(taskId)}`, null, "goal links");
   if (!ids.length) return;
   const rows = ids.map((goalId) => ({ task_id: taskId, goal_id: goalId, user_id: state.user.id }));
@@ -1434,7 +1428,7 @@ async function syncTaskGoalLinks(taskId, goalIds) {
 }
 
 async function seedGoalLinksFromLegacyTasks() {
-  if (!state.goalLinksCloudReady || state.goalLinks.length) return;
+  if (state.goalLinks.length) return;
   const legacyTasks = state.tasks.filter((task) => task.goal_id);
   if (!legacyTasks.length) return;
   for (const task of legacyTasks) {
@@ -1669,12 +1663,8 @@ async function persistProject(project, options = {}) {
   const normalized = normalizeProject({ ...project, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!normalized.name) return;
   const previousProjects = state.projects;
-  if (options.requireCloud && isSupabaseReady() && !state.projectsCloudReady) {
-    const projects = await loadProjectsData();
-    if (projects) state.projects = projects;
-  }
-  if ((!isSupabaseReady() || !state.projectsCloudReady) && options.requireCloud) {
-    state.syncError = "Project was not saved to database: database is not connected or the project tables are not ready.";
+  if (!isSupabaseReady() && options.requireCloud) {
+    state.syncError = "Project was not saved to database: database is not connected.";
     state.syncMessage = "";
     if (options.render !== false) render();
     throw new Error(state.syncError);
@@ -1684,7 +1674,7 @@ async function persistProject(project, options = {}) {
     ? state.projects.map((item) => (item.id === normalized.id ? normalized : item))
     : [normalized, ...state.projects];
   saveLocal({ silent: options.requireCloud });
-  if (!isSupabaseReady() || !state.projectsCloudReady) {
+  if (!isSupabaseReady()) {
     if (options.render !== false) render();
     return;
   }
@@ -1703,10 +1693,8 @@ async function persistProject(project, options = {}) {
       created_at: normalized.created_at,
       updated_at: normalized.updated_at
     };
-    if (state.venuesCloudReady) {
-      const venueExists = normalized.venue_id && state.venues.some((venue) => venue.id === normalized.venue_id);
-      payload.venue_id = venueExists ? normalized.venue_id : null;
-    }
+    const venueExists = normalized.venue_id && state.venues.some((venue) => venue.id === normalized.venue_id);
+    payload.venue_id = venueExists ? normalized.venue_id : null;
     const data = await withSlowOperationNotice(
       () => upsertRowDirect("planner_projects", payload, null, "project"),
       8000,
@@ -1744,7 +1732,7 @@ async function deleteProject(id) {
   state.projectAssignments = state.projectAssignments.filter((assignment) => assignment.project_id !== id);
   state.tasks = state.tasks.map((task) => (task.project_id === id ? { ...task, project_id: "" } : task));
   saveLocal();
-  if (!isSupabaseReady() || !state.projectsCloudReady) {
+  if (!isSupabaseReady()) {
     render();
     return;
   }
@@ -1769,7 +1757,7 @@ async function persistProjectAssignment(assignment, options = {}) {
     ? state.projectAssignments.map((item) => (item.id === normalized.id ? normalized : item))
     : [...state.projectAssignments, normalized];
   saveLocal();
-  if (!isSupabaseReady() || !state.projectsCloudReady) {
+  if (!isSupabaseReady()) {
     if (options.render !== false) render();
     return;
   }
@@ -1810,7 +1798,7 @@ async function deleteProjectAssignment(id, options = {}) {
   if (!assignment) return;
   state.projectAssignments = state.projectAssignments.filter((item) => item.id !== id);
   saveLocal();
-  if (!isSupabaseReady() || !state.projectsCloudReady) {
+  if (!isSupabaseReady()) {
     if (options.render !== false) render();
     return;
   }
@@ -1832,7 +1820,14 @@ async function deleteProjectAssignment(id, options = {}) {
 
 async function persistIdea(idea, options = {}) {
   const normalized = normalizeIdea({ ...idea, user_id: state.user?.id || null, updated_at: nowIso() });
+  if (!normalized.text) return;
   if (!isSupabaseReady()) {
+    if (options.requireCloud) {
+      state.syncError = "Idea was not saved to database: database is not connected.";
+      state.syncMessage = "";
+      if (options.render !== false) render();
+      throw new Error(state.syncError);
+    }
     const exists = state.ideas.some((item) => item.id === normalized.id);
     state.ideas = exists
       ? state.ideas.map((item) => (item.id === normalized.id ? normalized : item))
@@ -1852,9 +1847,9 @@ async function persistIdea(idea, options = {}) {
     state.syncError = "";
     if (options.render !== false) render();
   } catch (error) {
-    state.syncError = error.message;
+    state.syncError = `Idea was not saved to database: ${error.message}`;
     if (options.render !== false) render();
-    else throw error;
+    if (options.requireCloud || options.render === false) throw new Error(state.syncError);
   }
 }
 
@@ -2135,24 +2130,9 @@ async function persistPerson(person, options = {}) {
   if (!normalized.first_name) return;
   const previousPeople = state.people;
   trace("persist:start", { requireCloud: Boolean(options.requireCloud), hasSupabase: Boolean(state.supabase), hasSession: Boolean(state.session) });
-  if (options.requireCloud && isSupabaseReady() && !state.peopleCloudReady) {
-    trace("people-setup:start");
-    const peopleData = await withSlowOperationNotice(
-      () => loadPeopleData(),
-      8000,
-      "People setup is taking longer than usual. Still waiting for the database..."
-    );
-    trace("people-setup:done", { loadedPeople: peopleData?.people?.length || 0 });
-    if (peopleData) {
-      state.people = peopleData.people;
-      state.skills = peopleData.skills;
-      state.relationshipTypes = peopleData.relationshipTypes;
-      saveNamedOptions();
-    }
-  }
-  if ((!isSupabaseReady() || !state.peopleCloudReady) && options.requireCloud) {
+  if (!isSupabaseReady() && options.requireCloud) {
     trace("persist:not-ready", { hasSupabase: Boolean(state.supabase), hasUser: Boolean(state.user), peopleCloudReady: state.peopleCloudReady });
-    state.syncError = "Person was not saved to database: database is not connected or the people tables are not ready.";
+    state.syncError = "Person was not saved to database: database is not connected.";
     state.syncMessage = "";
     if (options.render !== false) render();
     throw new Error(state.syncError);
@@ -2164,9 +2144,9 @@ async function persistPerson(person, options = {}) {
       : [normalized, ...state.people];
     saveLocal();
   }
-  if (!isSupabaseReady() || !state.peopleCloudReady) {
+  if (!isSupabaseReady()) {
     if (options.requireCloud) {
-      state.syncError = "Person was saved locally only; database is not connected or the people tables are not ready.";
+      state.syncError = "Person was saved locally only; database is not connected.";
       state.syncMessage = "";
       if (options.render !== false) render();
       throw new Error(state.syncError);
@@ -2228,12 +2208,12 @@ async function deletePerson(id) {
   state.people = state.people.filter((item) => item.id !== id);
   state.projectAssignments = state.projectAssignments.filter((assignment) => assignment.person_id !== id);
   saveLocal();
-  if (!isSupabaseReady() || !state.peopleCloudReady) {
+  if (!isSupabaseReady()) {
     render();
     return;
   }
   try {
-    if (state.projectsCloudReady) await deleteRowsDirect("planner_project_people", `person_id=eq.${encodeURIComponent(id)}`, null, "person project assignments");
+    await deleteRowsDirect("planner_project_people", `person_id=eq.${encodeURIComponent(id)}`, null, "person project assignments");
     await deleteRowDirect("planner_people", id, null, "person");
     state.syncMessage = `Deleted person for ${keyLabel()}.`;
     state.syncError = "";
@@ -2264,9 +2244,7 @@ async function deleteGoal(id) {
   }
   try {
     await patchRowsDirect("planner_tasks", `goal_id=eq.${encodeURIComponent(id)}`, { goal_id: null, updated_at: nowIso() }, null, "goal task unlink");
-    if (state.goalLinksCloudReady) {
-      await deleteRowsDirect("planner_task_goal_links", `goal_id=eq.${encodeURIComponent(id)}`, null, "goal links");
-    }
+    await deleteRowsDirect("planner_task_goal_links", `goal_id=eq.${encodeURIComponent(id)}`, null, "goal links");
     await deleteRowDirect("planner_goals", id, null, "goal");
     state.goals = state.goals.filter((item) => item.id !== id);
     state.goalLinks = state.goalLinks.filter((link) => link.goal_id !== id);
@@ -5212,7 +5190,6 @@ els.taskForm.addEventListener("submit", async (event) => {
   setFormSaving(els.taskForm, true);
   showSyncMessage("Saving task...");
   try {
-    await waitForInitialCloudLoad();
     const form = new FormData(els.taskForm);
     const task = normalizeTask({
       title: form.get("title").trim(),
@@ -5555,7 +5532,6 @@ els.taskList.addEventListener("submit", async (event) => {
     setFormSaving(event.target, true);
     showSyncMessage("Saving life goal...");
     try {
-      await waitForInitialCloudLoad();
       const latestForm = new FormData(event.target);
       const name = latestForm.get("name").trim();
       if (hasDuplicateGoalName(name)) {
@@ -5581,13 +5557,12 @@ els.taskList.addEventListener("submit", async (event) => {
     setFormSaving(event.target, true);
     showSyncMessage("Saving idea...");
     try {
-      await waitForInitialCloudLoad();
       const latestForm = new FormData(event.target);
       await persistIdea({
         text: latestForm.get("text").trim(),
         area_id: latestForm.get("area") || null,
         area: areaById(latestForm.get("area"))?.name || "Life"
-      }, { render: false });
+      }, { requireCloud: true, render: false });
       clearCreationDraft(event.target);
       event.target.reset();
       render();
@@ -5603,7 +5578,6 @@ els.taskList.addEventListener("submit", async (event) => {
     setFormSaving(event.target, true);
     showSyncMessage("Saving area...");
     try {
-      await waitForInitialCloudLoad();
       const latestForm = new FormData(event.target);
       const area = ensureArea(latestForm.get("name").trim(), latestForm.get("color") || "#39ff14");
       if (area) await persistArea(area, { render: false });
@@ -5674,7 +5648,6 @@ els.taskList.addEventListener("submit", async (event) => {
     setFormSaving(event.target, true);
     showSyncMessage("Saving project...");
     try {
-      await waitForInitialCloudLoad();
       normalizeDateRangeInputs(projectForm, { anchorEnd: Boolean(projectForm.querySelector("[name='startDate']")?.value) });
       const projectFormData = new FormData(projectForm);
       const name = projectFormData.get("name").trim();
@@ -5708,7 +5681,6 @@ els.taskList.addEventListener("submit", async (event) => {
   } else if (namedSettingsForm) {
     setFormSaving(event.target, true);
     try {
-      await waitForInitialCloudLoad();
       const latestForm = new FormData(event.target);
       const type = namedSettingsForm.dataset.optionType;
       const config = optionConfig(type);
