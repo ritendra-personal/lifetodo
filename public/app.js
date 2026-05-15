@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.37";
+const APP_VERSION = "1.10.38";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1027,6 +1027,52 @@ async function refreshSupabaseSession(reason = "manual", options = {}) {
       state.sessionRefreshPromise = null;
     });
   return state.sessionRefreshPromise;
+}
+
+async function supabaseRestRequest(path, options = {}) {
+  const token = state.session?.access_token;
+  if (!state.config?.supabaseUrl || !state.config?.supabaseAnonKey || !token) {
+    throw new Error("Supabase session is not ready.");
+  }
+  const response = await fetch(`${state.config.supabaseUrl.replace(/\/$/, "")}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: state.config.supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    throw new Error(body?.message || body?.error_description || body?.error || `Supabase REST request failed (${response.status})`);
+  }
+  return body;
+}
+
+async function upsertPersonDirect(payload, trace) {
+  const request = () =>
+    supabaseRestRequest("planner_people?on_conflict=id&select=*", {
+      method: "POST",
+      headers: {
+        Prefer: "resolution=merge-duplicates,return=representation"
+      },
+      body: JSON.stringify(payload)
+    });
+  try {
+    trace("rest-upsert:start", { tokenPresent: Boolean(state.session?.access_token) });
+    const data = await request();
+    trace("rest-upsert:response", { rowCount: Array.isArray(data) ? data.length : 0 });
+    return Array.isArray(data) ? data[0] : data;
+  } catch (error) {
+    if (!/401|JWT|token|expired|Unauthorized/i.test(error.message)) throw error;
+    trace("rest-upsert:refresh-after-auth-error", { message: error.message });
+    await refreshSupabaseSession("person-save-retry", { force: true });
+    const data = await request();
+    trace("rest-upsert:retry-response", { rowCount: Array.isArray(data) ? data.length : 0 });
+    return Array.isArray(data) ? data[0] : data;
+  }
 }
 
 async function signInWithGoogle() {
@@ -2067,17 +2113,10 @@ async function persistPerson(person, options = {}) {
     return { savedToCloud: false };
   }
   try {
-    await withSlowOperationNotice(
-      () => refreshSupabaseSession("person-save"),
-      5000,
-      "Session refresh is taking longer than usual. Still waiting before saving..."
-    );
-    trace("upsert:start");
-    const { data, error } = await withSlowOperationNotice(
+    const data = await withSlowOperationNotice(
       () =>
-        state.supabase
-          .from("planner_people")
-          .upsert({
+        upsertPersonDirect(
+          {
             id: normalized.id,
             user_id: state.user.id,
             first_name: normalized.first_name,
@@ -2086,14 +2125,12 @@ async function persistPerson(person, options = {}) {
             relationship_type_id: normalized.relationship_type_id || null,
             created_at: normalized.created_at,
             updated_at: normalized.updated_at
-          })
-          .select()
-          .single(),
+          },
+          trace
+        ),
       8000,
       "Person save is taking longer than usual. Still waiting for the database..."
     );
-    trace("upsert:response", { hasError: Boolean(error), savedId: data?.id || "" });
-    if (error) throw error;
     const saved = normalizePerson(data);
     state.people = state.people.some((item) => item.id === saved.id)
       ? state.people.map((item) => (item.id === saved.id ? saved : item))
