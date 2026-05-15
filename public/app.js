@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.38";
+const APP_VERSION = "1.10.39";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1051,28 +1051,83 @@ async function supabaseRestRequest(path, options = {}) {
   return body;
 }
 
-async function upsertPersonDirect(payload, trace) {
-  const request = () =>
-    supabaseRestRequest("planner_people?on_conflict=id&select=*", {
-      method: "POST",
-      headers: {
-        Prefer: "resolution=merge-duplicates,return=representation"
-      },
-      body: JSON.stringify(payload)
-    });
+async function supabaseRestMutation(path, options = {}) {
+  const runRequest = () => supabaseRestRequest(path, options);
   try {
-    trace("rest-upsert:start", { tokenPresent: Boolean(state.session?.access_token) });
-    const data = await request();
-    trace("rest-upsert:response", { rowCount: Array.isArray(data) ? data.length : 0 });
-    return Array.isArray(data) ? data[0] : data;
+    return await runRequest();
   } catch (error) {
     if (!/401|JWT|token|expired|Unauthorized/i.test(error.message)) throw error;
-    trace("rest-upsert:refresh-after-auth-error", { message: error.message });
-    await refreshSupabaseSession("person-save-retry", { force: true });
-    const data = await request();
-    trace("rest-upsert:retry-response", { rowCount: Array.isArray(data) ? data.length : 0 });
-    return Array.isArray(data) ? data[0] : data;
+    await refreshSupabaseSession("rest-mutation-retry", { force: true });
+    return runRequest();
   }
+}
+
+async function upsertRowDirect(table, payload, trace, label = table) {
+  trace?.("rest-upsert:start", { table, tokenPresent: Boolean(state.session?.access_token) });
+  const data = await supabaseRestMutation(`${table}?on_conflict=id&select=*`, {
+    method: "POST",
+    headers: {
+      Prefer: "resolution=merge-duplicates,return=representation"
+    },
+    body: JSON.stringify(payload)
+  });
+  trace?.("rest-upsert:response", { table, label, rowCount: Array.isArray(data) ? data.length : 0 });
+  return Array.isArray(data) ? data[0] : data;
+}
+
+async function patchRowDirect(table, id, payload, trace, label = table) {
+  trace?.("rest-patch:start", { table, label, id });
+  const data = await supabaseRestMutation(`${table}?id=eq.${encodeURIComponent(id)}&select=*`, {
+    method: "PATCH",
+    headers: {
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(payload)
+  });
+  trace?.("rest-patch:response", { table, label, rowCount: Array.isArray(data) ? data.length : 0 });
+  return Array.isArray(data) ? data[0] : data;
+}
+
+async function patchRowsDirect(table, filterQuery, payload, trace, label = table) {
+  trace?.("rest-patch:start", { table, label, filterQuery });
+  const data = await supabaseRestMutation(`${table}?${filterQuery}`, {
+    method: "PATCH",
+    headers: {
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(payload)
+  });
+  trace?.("rest-patch:response", { table, label, rowCount: Array.isArray(data) ? data.length : 0 });
+  return data || [];
+}
+
+async function deleteRowDirect(table, id, trace, label = table) {
+  trace?.("rest-delete:start", { table, label, id });
+  await supabaseRestMutation(`${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+  trace?.("rest-delete:done", { table, label, id });
+}
+
+async function deleteRowsDirect(table, filterQuery, trace, label = table) {
+  trace?.("rest-delete:start", { table, label, filterQuery });
+  await supabaseRestMutation(`${table}?${filterQuery}`, {
+    method: "DELETE"
+  });
+  trace?.("rest-delete:done", { table, label, filterQuery });
+}
+
+async function insertRowsDirect(table, rows, trace, label = table) {
+  trace?.("rest-insert:start", { table, label, rowCount: rows.length });
+  const data = await supabaseRestMutation(table, {
+    method: "POST",
+    headers: {
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(rows)
+  });
+  trace?.("rest-insert:response", { table, label, rowCount: Array.isArray(data) ? data.length : 0 });
+  return data || [];
 }
 
 async function signInWithGoogle() {
@@ -1104,10 +1159,10 @@ async function signOut() {
 async function claimLegacyTasks() {
   if (!state.supabase || !state.user || !state.plannerKey) return;
   try {
-    const { data, error } = await state.supabase.rpc("claim_planner_tasks", {
-      legacy_owner_key: state.plannerKey
+    const data = await supabaseRestMutation("rpc/claim_planner_tasks", {
+      method: "POST",
+      body: JSON.stringify({ legacy_owner_key: state.plannerKey })
     });
-    if (error) throw error;
     if (data) {
       state.syncMessage = `Moved ${data} legacy task${data === 1 ? "" : "s"} into your Google login.`;
     }
@@ -1372,12 +1427,10 @@ async function syncTaskGoalLinks(taskId, goalIds) {
     ...ids.map((goalId) => ({ task_id: taskId, goal_id: goalId, user_id: state.user?.id || null }))
   ];
   if (!isSupabaseReady() || !state.goalLinksCloudReady) return;
-  const { error: deleteError } = await state.supabase.from("planner_task_goal_links").delete().eq("task_id", taskId);
-  if (deleteError) throw deleteError;
+  await deleteRowsDirect("planner_task_goal_links", `task_id=eq.${encodeURIComponent(taskId)}`, null, "goal links");
   if (!ids.length) return;
   const rows = ids.map((goalId) => ({ task_id: taskId, goal_id: goalId, user_id: state.user.id }));
-  const { error } = await state.supabase.from("planner_task_goal_links").insert(rows);
-  if (error) throw error;
+  await insertRowsDirect("planner_task_goal_links", rows, null, "goal links");
 }
 
 async function seedGoalLinksFromLegacyTasks() {
@@ -1403,12 +1456,11 @@ async function persistTask(task) {
 
   const payload = databasePayload(normalizedTask);
   try {
-    const { data: savedRow, error } = await state.supabase
-      .from("planner_tasks")
-      .upsert(payload)
-      .select()
-      .single();
-    if (error) throw error;
+    const savedRow = await withSlowOperationNotice(
+      () => upsertRowDirect("planner_tasks", payload, null, "task"),
+      8000,
+      "Task save is taking longer than usual. Still waiting for the database..."
+    );
     state.syncError = "";
     state.syncMessage = `Saved for ${keyLabel()}.`;
     const saved = normalizeTask({ ...savedRow, goal_ids: goalIdsForTask(normalizedTask) });
@@ -1459,13 +1511,11 @@ async function patchTask(id, changes, options = {}) {
   }
 
   try {
-    const { data: savedRow, error } = await state.supabase
-      .from("planner_tasks")
-      .update(databasePatchPayload({ ...changes, updated_at: updated.updated_at }))
-      .eq("id", id)
-      .select()
-      .single();
-    if (error) throw error;
+    const savedRow = await withSlowOperationNotice(
+      () => patchRowDirect("planner_tasks", id, databasePatchPayload({ ...changes, updated_at: updated.updated_at }), null, "task"),
+      8000,
+      "Task update is taking longer than usual. Still waiting for the database..."
+    );
     state.syncError = "";
     state.syncMessage = `Updated for ${keyLabel()}.`;
     const saved = normalizeTask({ ...savedRow, goal_ids: goalIdsForTask(updated) });
@@ -1516,8 +1566,11 @@ async function persistGoal(goal, options = {}) {
     return;
   }
   try {
-    const { data, error } = await state.supabase.from("planner_goals").upsert(normalized).select().single();
-    if (error) throw error;
+    const data = await withSlowOperationNotice(
+      () => upsertRowDirect("planner_goals", normalized, null, "life goal"),
+      8000,
+      "Life goal save is taking longer than usual. Still waiting for the database..."
+    );
     state.goals = [normalizeGoal(data), ...state.goals.filter((item) => item.id !== data.id)];
     state.syncMessage = `Saved life goal to database at ${savedAtLabel()}.`;
     state.syncError = "";
@@ -1654,12 +1707,11 @@ async function persistProject(project, options = {}) {
       const venueExists = normalized.venue_id && state.venues.some((venue) => venue.id === normalized.venue_id);
       payload.venue_id = venueExists ? normalized.venue_id : null;
     }
-    const { data, error } = await state.supabase
-      .from("planner_projects")
-      .upsert(payload)
-      .select()
-      .single();
-    if (error) throw error;
+    const data = await withSlowOperationNotice(
+      () => upsertRowDirect("planner_projects", payload, null, "project"),
+      8000,
+      "Project save is taking longer than usual. Still waiting for the database..."
+    );
     const saved = normalizeProject(data);
     state.projects = state.projects.map((item) => (item.id === saved.id ? saved : item));
     state.syncMessage = `Saved project to database at ${savedAtLabel()}.`;
@@ -1697,10 +1749,9 @@ async function deleteProject(id) {
     return;
   }
   try {
-    await state.supabase.from("planner_tasks").update({ project_id: null, updated_at: nowIso() }).eq("project_id", id);
-    await state.supabase.from("planner_project_people").delete().eq("project_id", id);
-    const { error } = await state.supabase.from("planner_projects").delete().eq("id", id);
-    if (error) throw error;
+    await patchRowsDirect("planner_tasks", `project_id=eq.${encodeURIComponent(id)}`, { project_id: null, updated_at: nowIso() }, null, "project task unlink");
+    await deleteRowsDirect("planner_project_people", `project_id=eq.${encodeURIComponent(id)}`, null, "project people");
+    await deleteRowDirect("planner_projects", id, null, "project");
     state.syncMessage = `Deleted project for ${keyLabel()}.`;
     state.syncError = "";
     render();
@@ -1723,20 +1774,25 @@ async function persistProjectAssignment(assignment, options = {}) {
     return;
   }
   try {
-    const { data, error } = await state.supabase
-      .from("planner_project_people")
-      .upsert({
-        id: normalized.id,
-        user_id: state.user.id,
-        project_id: normalized.project_id,
-        person_id: normalized.person_id,
-        role_ids: normalized.role_ids,
-        created_at: normalized.created_at,
-        updated_at: normalized.updated_at
-      })
-      .select()
-      .single();
-    if (error) throw error;
+    const data = await withSlowOperationNotice(
+      () =>
+        upsertRowDirect(
+          "planner_project_people",
+          {
+            id: normalized.id,
+            user_id: state.user.id,
+            project_id: normalized.project_id,
+            person_id: normalized.person_id,
+            role_ids: normalized.role_ids,
+            created_at: normalized.created_at,
+            updated_at: normalized.updated_at
+          },
+          null,
+          "project person"
+        ),
+      8000,
+      "Project assignment save is taking longer than usual. Still waiting for the database..."
+    );
     const saved = normalizeProjectAssignment(data);
     state.projectAssignments = state.projectAssignments.map((item) => (item.id === saved.id ? saved : item));
     state.syncMessage = `Saved project person for ${keyLabel()}.`;
@@ -1759,8 +1815,11 @@ async function deleteProjectAssignment(id, options = {}) {
     return;
   }
   try {
-    const { error } = await state.supabase.from("planner_project_people").delete().eq("id", id);
-    if (error) throw error;
+    await withSlowOperationNotice(
+      () => deleteRowDirect("planner_project_people", id, null, "project person"),
+      8000,
+      "Project assignment removal is taking longer than usual. Still waiting for the database..."
+    );
     state.syncMessage = `Removed project person for ${keyLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
@@ -1783,8 +1842,11 @@ async function persistIdea(idea, options = {}) {
     return;
   }
   try {
-    const { data, error } = await state.supabase.from("planner_ideas").upsert(normalized).select().single();
-    if (error) throw error;
+    const data = await withSlowOperationNotice(
+      () => upsertRowDirect("planner_ideas", normalized, null, "idea"),
+      8000,
+      "Idea save is taking longer than usual. Still waiting for the database..."
+    );
     state.ideas = [normalizeIdea(data), ...state.ideas.filter((item) => item.id !== data.id)];
     state.syncMessage = `Saved idea for ${keyLabel()}.`;
     state.syncError = "";
@@ -1818,33 +1880,40 @@ async function persistArea(area, options = {}) {
       created_at: normalized.created_at,
       updated_at: normalized.updated_at
     };
-    const { data, error } = await state.supabase.from("planner_areas").upsert(payload).select().single();
-    if (error) throw error;
+    const data = await upsertRowDirect("planner_areas", payload, null, "area");
     const saved = normalizeArea(data);
     state.areas = state.areas.some((item) => item.id === saved.id)
       ? state.areas.map((item) => (item.id === saved.id ? saved : item))
       : [...state.areas, saved];
-    await state.supabase
-      .from("planner_tasks")
-      .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
-      .eq("user_id", state.user.id)
-      .eq("area_id", saved.id);
-    await state.supabase
-      .from("planner_ideas")
-      .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
-      .eq("user_id", state.user.id)
-      .eq("area_id", saved.id);
+    await patchRowsDirect(
+      "planner_tasks",
+      `user_id=eq.${encodeURIComponent(state.user.id)}&area_id=eq.${encodeURIComponent(saved.id)}`,
+      { area: saved.name, area_id: saved.id, updated_at: nowIso() },
+      null,
+      "area task propagation"
+    );
+    await patchRowsDirect(
+      "planner_ideas",
+      `user_id=eq.${encodeURIComponent(state.user.id)}&area_id=eq.${encodeURIComponent(saved.id)}`,
+      { area: saved.name, area_id: saved.id, updated_at: nowIso() },
+      null,
+      "area idea propagation"
+    );
     if (options.oldName && options.oldName !== saved.name) {
-      await state.supabase
-        .from("planner_tasks")
-        .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
-        .eq("user_id", state.user.id)
-        .eq("area", options.oldName);
-      await state.supabase
-        .from("planner_ideas")
-        .update({ area: saved.name, area_id: saved.id, updated_at: nowIso() })
-        .eq("user_id", state.user.id)
-        .eq("area", options.oldName);
+      await patchRowsDirect(
+        "planner_tasks",
+        `user_id=eq.${encodeURIComponent(state.user.id)}&area=eq.${encodeURIComponent(options.oldName)}`,
+        { area: saved.name, area_id: saved.id, updated_at: nowIso() },
+        null,
+        "area task rename propagation"
+      );
+      await patchRowsDirect(
+        "planner_ideas",
+        `user_id=eq.${encodeURIComponent(state.user.id)}&area=eq.${encodeURIComponent(options.oldName)}`,
+        { area: saved.name, area_id: saved.id, updated_at: nowIso() },
+        null,
+        "area idea rename propagation"
+      );
     }
     saveAreas();
     state.syncMessage = `Saved area for ${keyLabel()}.`;
@@ -1878,8 +1947,7 @@ async function deleteArea(id) {
     return;
   }
   try {
-    const { error } = await state.supabase.from("planner_areas").delete().eq("user_id", state.user.id).eq("id", id);
-    if (error) throw error;
+    await deleteRowsDirect("planner_areas", `user_id=eq.${encodeURIComponent(state.user.id)}&id=eq.${encodeURIComponent(id)}`, null, "area");
     state.syncError = "";
     state.syncMessage = `Deleted area for ${keyLabel()}.`;
     render();
@@ -1958,20 +2026,16 @@ async function persistNamedOption(type, option, options = {}) {
     const payload = { ...normalized, user_id: state.user.id };
     if (type !== "relationships") delete payload.color;
     let fallbackColorLocal = false;
-    let { data, error } = await state.supabase
-      .from(config.table)
-      .upsert(payload)
-      .select()
-      .single();
-    if (error && type === "relationships" && String(error.message || "").toLowerCase().includes("color")) {
+    let data;
+    try {
+      data = await upsertRowDirect(config.table, payload, null, config.label);
+    } catch (error) {
+      if (!(type === "relationships" && String(error.message || "").toLowerCase().includes("color"))) throw error;
       const fallbackPayload = { ...payload };
       delete fallbackPayload.color;
-      const fallback = await state.supabase.from(config.table).upsert(fallbackPayload).select().single();
-      data = fallback.data;
-      error = fallback.error;
-      fallbackColorLocal = !error;
+      data = await upsertRowDirect(config.table, fallbackPayload, null, config.label);
+      fallbackColorLocal = true;
     }
-    if (error) throw error;
     const saved = normalizeNamedOption(data);
     const savedWithLocalColor = type === "relationships" && normalized.color ? { ...saved, color: normalized.color } : saved;
     state[config.stateKey] = state[config.stateKey].map((item) => (item.id === saved.id ? savedWithLocalColor : item));
@@ -2041,15 +2105,15 @@ async function deleteNamedOption(type, id) {
   }
   try {
     if (type === "project-statuses") {
-      const { error: updateError } = await state.supabase
-        .from("planner_projects")
-        .update({ project_status_id: null, status: "", updated_at: nowIso() })
-        .eq("user_id", state.user.id)
-        .eq("project_status_id", id);
-      if (updateError) throw updateError;
+      await patchRowsDirect(
+        "planner_projects",
+        `user_id=eq.${encodeURIComponent(state.user.id)}&project_status_id=eq.${encodeURIComponent(id)}`,
+        { project_status_id: null, status: "", updated_at: nowIso() },
+        null,
+        "project status detach"
+      );
     }
-    const { error } = await state.supabase.from(config.table).delete().eq("user_id", state.user.id).eq("id", id);
-    if (error) throw error;
+    await deleteRowsDirect(config.table, `user_id=eq.${encodeURIComponent(state.user.id)}&id=eq.${encodeURIComponent(id)}`, null, config.label);
     state.syncError = "";
     state.syncMessage = `Deleted ${config.label} for ${keyLabel()}.`;
     render();
@@ -2115,7 +2179,8 @@ async function persistPerson(person, options = {}) {
   try {
     const data = await withSlowOperationNotice(
       () =>
-        upsertPersonDirect(
+        upsertRowDirect(
+          "planner_people",
           {
             id: normalized.id,
             user_id: state.user.id,
@@ -2126,7 +2191,8 @@ async function persistPerson(person, options = {}) {
             created_at: normalized.created_at,
             updated_at: normalized.updated_at
           },
-          trace
+          trace,
+          "person"
         ),
       8000,
       "Person save is taking longer than usual. Still waiting for the database..."
@@ -2167,9 +2233,8 @@ async function deletePerson(id) {
     return;
   }
   try {
-    if (state.projectsCloudReady) await state.supabase.from("planner_project_people").delete().eq("person_id", id);
-    const { error } = await state.supabase.from("planner_people").delete().eq("id", id);
-    if (error) throw error;
+    if (state.projectsCloudReady) await deleteRowsDirect("planner_project_people", `person_id=eq.${encodeURIComponent(id)}`, null, "person project assignments");
+    await deleteRowDirect("planner_people", id, null, "person");
     state.syncMessage = `Deleted person for ${keyLabel()}.`;
     state.syncError = "";
     render();
@@ -2198,14 +2263,11 @@ async function deleteGoal(id) {
     return;
   }
   try {
-    const { error: unlinkError } = await state.supabase.from("planner_tasks").update({ goal_id: null }).eq("goal_id", id);
-    if (unlinkError) throw unlinkError;
+    await patchRowsDirect("planner_tasks", `goal_id=eq.${encodeURIComponent(id)}`, { goal_id: null, updated_at: nowIso() }, null, "goal task unlink");
     if (state.goalLinksCloudReady) {
-      const { error: linkError } = await state.supabase.from("planner_task_goal_links").delete().eq("goal_id", id);
-      if (linkError) throw linkError;
+      await deleteRowsDirect("planner_task_goal_links", `goal_id=eq.${encodeURIComponent(id)}`, null, "goal links");
     }
-    const { error } = await state.supabase.from("planner_goals").delete().eq("id", id);
-    if (error) throw error;
+    await deleteRowDirect("planner_goals", id, null, "goal");
     state.goals = state.goals.filter((item) => item.id !== id);
     state.goalLinks = state.goalLinks.filter((link) => link.goal_id !== id);
     state.tasks = state.tasks.map((task) => {
@@ -2230,8 +2292,7 @@ async function deleteIdea(id) {
     return;
   }
   try {
-    const { error } = await state.supabase.from("planner_ideas").delete().eq("id", id);
-    if (error) throw error;
+    await deleteRowDirect("planner_ideas", id, null, "idea");
     state.ideas = state.ideas.filter((item) => item.id !== id);
     state.syncMessage = `Deleted idea for ${keyLabel()}.`;
     render();
@@ -2255,8 +2316,7 @@ async function deleteTask(id) {
   }
 
   try {
-    const { error: deleteError } = await state.supabase.from("planner_tasks").delete().in("id", ids);
-    if (deleteError) throw deleteError;
+    await deleteRowsDirect("planner_tasks", `id=in.(${ids.map((item) => encodeURIComponent(item)).join(",")})`, null, "tasks");
     state.syncError = "";
     state.syncMessage = `Deleted for ${keyLabel()}.`;
     state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
@@ -2268,11 +2328,7 @@ async function deleteTask(id) {
       .filter((task, index) => task.dependency_ids.length !== state.tasks[index].dependency_ids.length);
     await Promise.all(
       cleanup.map(async (task) => {
-        const { error } = await state.supabase
-          .from("planner_tasks")
-          .update(databasePatchPayload({ dependency_ids: task.dependency_ids, updated_at: nowIso() }))
-          .eq("id", task.id);
-        if (error) throw error;
+        await patchRowDirect("planner_tasks", task.id, databasePatchPayload({ dependency_ids: task.dependency_ids, updated_at: nowIso() }), null, "task dependency cleanup");
       })
     );
     state.tasks = state.tasks.map((task) => cleanup.find((item) => item.id === task.id) || task);
@@ -5102,11 +5158,7 @@ async function persistReorder(changedTasks) {
   try {
     await Promise.all(
       changedTasks.map(async (task) => {
-        const { error } = await state.supabase
-          .from("planner_tasks")
-          .update(databasePatchPayload({ sort_order: task.sort_order, updated_at: nowIso() }))
-          .eq("id", task.id);
-        if (error) throw error;
+        await patchRowDirect("planner_tasks", task.id, databasePatchPayload({ sort_order: task.sort_order, updated_at: nowIso() }), null, "task reorder");
       })
     );
     state.syncError = "";
