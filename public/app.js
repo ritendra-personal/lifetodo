@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.35";
+const APP_VERSION = "1.10.36";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -497,6 +497,31 @@ function withOperationTimeout(callback, timeoutMs = 10000, message = "Database o
 
 function withAutosaveTimeout(callback, timeoutMs = 10000) {
   return withOperationTimeout(callback, timeoutMs, "Autosave timed out. Try Sync, or reload and try again.");
+}
+
+function withSlowOperationNotice(callback, delayMs, message) {
+  const noticeId = setTimeout(() => {
+    if (!state.syncError) showSyncMessage(message);
+  }, delayMs);
+  return Promise.resolve().then(callback).finally(() => clearTimeout(noticeId));
+}
+
+function createDiagnosticTrace(name) {
+  const id = `${name}:${Date.now().toString(36)}`;
+  const startedAt = performance.now();
+  return (stage, details = {}) => {
+    console.info("[LifeTodo diagnostic]", {
+      id,
+      stage,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      visibility: document.visibilityState,
+      online: navigator.onLine,
+      hasUser: Boolean(state.user),
+      peopleCloudReady: state.peopleCloudReady,
+      projectsCloudReady: state.projectsCloudReady,
+      ...details
+    });
+  };
 }
 
 function setFormSaving(form, saving, label = "Saving...") {
@@ -1152,31 +1177,20 @@ let loadTasksPromise = null;
 
 async function loadTasks() {
   if (!loadTasksPromise) {
-    loadTasksPromise = withOperationTimeout(
+    const currentLoad = withSlowOperationNotice(
       () => loadTasksNow(),
-      20000,
-      "Database load timed out. Press Sync to retry, or reload if the connection stays stuck."
-    )
-      .catch((error) => {
-        state.syncError = error.message;
-        state.syncMessage = "";
-        render();
-      })
-      .finally(() => {
-        loadTasksPromise = null;
-      });
+      12000,
+      "Database load is taking longer than usual. You can keep working while it finishes."
+    ).finally(() => {
+      if (loadTasksPromise === currentLoad) loadTasksPromise = null;
+    });
+    loadTasksPromise = currentLoad;
   }
   return loadTasksPromise;
 }
 
-async function waitForInitialCloudLoad(timeoutMs = 10000) {
-  if (loadTasksPromise) {
-    await withOperationTimeout(
-      () => loadTasksPromise,
-      timeoutMs,
-      "Initial database load timed out. Your save did not run; press Sync, or reload and try again."
-    );
-  }
+async function waitForInitialCloudLoad() {
+  if (loadTasksPromise) await loadTasksPromise;
 }
 
 async function loadTasksNow() {
@@ -1975,15 +1989,19 @@ async function deleteNamedOption(type, id) {
 }
 
 async function persistPerson(person, options = {}) {
+  const trace = options.trace || createDiagnosticTrace("person-persist");
   const normalized = normalizePerson({ ...person, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!normalized.first_name) return;
   const previousPeople = state.people;
+  trace("persist:start", { requireCloud: Boolean(options.requireCloud), hasSupabase: Boolean(state.supabase), hasSession: Boolean(state.session) });
   if (options.requireCloud && isSupabaseReady() && !state.peopleCloudReady) {
-    const peopleData = await withOperationTimeout(
+    trace("people-setup:start");
+    const peopleData = await withSlowOperationNotice(
       () => loadPeopleData(),
-      10000,
-      "People database setup check timed out. Person was not saved."
+      8000,
+      "People setup is taking longer than usual. Still waiting for the database..."
     );
+    trace("people-setup:done", { loadedPeople: peopleData?.people?.length || 0 });
     if (peopleData) {
       state.people = peopleData.people;
       state.skills = peopleData.skills;
@@ -1992,6 +2010,7 @@ async function persistPerson(person, options = {}) {
     }
   }
   if ((!isSupabaseReady() || !state.peopleCloudReady) && options.requireCloud) {
+    trace("persist:not-ready", { hasSupabase: Boolean(state.supabase), hasUser: Boolean(state.user), peopleCloudReady: state.peopleCloudReady });
     state.syncError = "Person was not saved to database: database is not connected or the people tables are not ready.";
     state.syncMessage = "";
     if (options.render !== false) render();
@@ -2017,7 +2036,8 @@ async function persistPerson(person, options = {}) {
     return { savedToCloud: false };
   }
   try {
-    const { data, error } = await withOperationTimeout(
+    trace("upsert:start");
+    const { data, error } = await withSlowOperationNotice(
       () =>
         state.supabase
           .from("planner_people")
@@ -2033,9 +2053,10 @@ async function persistPerson(person, options = {}) {
           })
           .select()
           .single(),
-      12000,
-      "Person database save timed out. Person was not saved; press Sync, or reload and try again."
+      8000,
+      "Person save is taking longer than usual. Still waiting for the database..."
     );
+    trace("upsert:response", { hasError: Boolean(error), savedId: data?.id || "" });
     if (error) throw error;
     const saved = normalizePerson(data);
     state.people = state.people.some((item) => item.id === saved.id)
@@ -2045,8 +2066,10 @@ async function persistPerson(person, options = {}) {
     state.syncMessage = `Saved person to database at ${savedAtLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
+    trace("persist:success", { savedId: saved.id });
     return { savedToCloud: true };
   } catch (error) {
+    trace("persist:error", { message: error.message });
     if (options.requireCloud) {
       state.people = previousPeople;
       saveLocal({ silent: true });
@@ -5475,14 +5498,18 @@ els.taskList.addEventListener("submit", async (event) => {
     setFormSaving(event.target, true);
     showSyncMessage("Saving person...");
     let personSaved = false;
+    const trace = createDiagnosticTrace("person-submit");
+    trace("submit:start");
     try {
-      await withOperationTimeout(
+      await withSlowOperationNotice(
         async () => {
           const latestForm = new FormData(event.target);
           const firstName = latestForm.get("firstName").trim();
           const lastName = latestForm.get("lastName").trim();
           const fullName = personNameFromParts(firstName, lastName);
+          trace("submit:form-read", { hasFirstName: Boolean(firstName), skillCount: latestForm.getAll("skillIds").length });
           if (hasDuplicatePersonName(firstName, lastName)) {
+            trace("submit:duplicate");
             alertDuplicate("Person", fullName);
             saveCreationDraft(event.target);
             state.syncMessage = "";
@@ -5496,18 +5523,21 @@ els.taskList.addEventListener("submit", async (event) => {
               relationship_type_id: latestForm.get("relationshipTypeId") || "",
               skill_ids: latestForm.getAll("skillIds")
             },
-            { requireCloud: true, render: false }
+            { requireCloud: true, render: false, trace }
           );
           personSaved = true;
+          trace("submit:persist-finished");
         },
-        16000,
-        "Person save timed out. Person was not confirmed in the database; press Sync, or reload and try again."
+        8000,
+        "Person save is taking longer than usual. Still waiting for the database..."
       );
       if (!personSaved) return;
       clearCreationDraft(event.target);
       event.target.reset();
       render();
+      trace("submit:success");
     } catch (error) {
+      trace("submit:error", { message: error.message });
       saveCreationDraft(event.target);
       state.syncError = state.syncError || error.message || "Person was not saved to database.";
       state.syncMessage = "";
