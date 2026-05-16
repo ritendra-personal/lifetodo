@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.43";
+const APP_VERSION = "1.10.44";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -170,6 +170,7 @@ const counts = {
   peopleProjects: document.querySelector("#count-people-projects"),
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
+  peopleDistribution: document.querySelector("#count-people-distribution"),
   projects: document.querySelector("#count-projects"),
   projectFilter: document.querySelector("#count-project-filter"),
   ideas: document.querySelector("#count-ideas"),
@@ -381,6 +382,7 @@ function validView(view) {
     "people-projects",
     "people",
     "people-filter",
+    "people-distribution",
     "projects",
     "project-filter",
     "ideas",
@@ -2503,6 +2505,7 @@ function renderCounts() {
   counts.peopleProjects.textContent = state.projectAssignments.length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
+  counts.peopleDistribution.textContent = state.people.length;
   counts.projects.textContent = state.projects.length;
   counts.projectFilter.textContent = state.projects.length;
   counts.ideas.textContent = state.ideas.length;
@@ -2887,6 +2890,10 @@ function renderTasks() {
   }
   if (state.view === "people-filter") {
     renderPeopleFilterView();
+    return;
+  }
+  if (state.view === "people-distribution") {
+    renderPeopleDistributionView();
     return;
   }
   if (state.view === "projects") {
@@ -4040,6 +4047,139 @@ function renderProjectFilterView() {
   }
 }
 
+function distributionCounts(items, labelForItem, emptyLabel = "Unspecified") {
+  const countsByLabel = new Map();
+  for (const item of items) {
+    const label = labelForItem(item) || emptyLabel;
+    countsByLabel.set(label, (countsByLabel.get(label) || 0) + 1);
+  }
+  return [...countsByLabel.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+}
+
+function projectCountForPerson(person) {
+  return state.projectAssignments.filter((assignment) => assignment.person_id === person.id).length;
+}
+
+function paletteColor(index) {
+  const palette = ["#0e7c74", "#476c9b", "#d6a21e", "#d85b49", "#7b5ea7", "#2f855a", "#b1791f", "#667085"];
+  return palette[index % palette.length];
+}
+
+function makeDistributionPie(title, rows) {
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const card = document.createElement("article");
+  card.className = "distribution-card";
+  card.innerHTML = `
+    <div class="distribution-card-head">
+      <h4></h4>
+      <span></span>
+    </div>
+    <div class="pie-layout">
+      <svg class="pie-chart" viewBox="0 0 120 120" role="img" aria-label="${title} distribution"></svg>
+      <div class="chart-legend"></div>
+    </div>
+  `;
+  card.querySelector("h4").textContent = title;
+  card.querySelector(".distribution-card-head span").textContent = `${total} ${total === 1 ? "person" : "people"}`;
+  const svg = card.querySelector("svg");
+  if (!total) {
+    svg.innerHTML = '<circle cx="60" cy="60" r="42" fill="#eef2f6"></circle>';
+    card.querySelector(".chart-legend").textContent = "No people yet.";
+    return card;
+  }
+  let offset = 0;
+  rows.forEach((row, index) => {
+    const slice = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    const circumference = 2 * Math.PI * 42;
+    const length = (row.value / total) * circumference;
+    slice.setAttribute("cx", "60");
+    slice.setAttribute("cy", "60");
+    slice.setAttribute("r", "42");
+    slice.setAttribute("fill", "none");
+    slice.setAttribute("stroke", paletteColor(index));
+    slice.setAttribute("stroke-width", "22");
+    slice.setAttribute("stroke-dasharray", `${length} ${circumference - length}`);
+    slice.setAttribute("stroke-dashoffset", `${-offset}`);
+    slice.setAttribute("transform", "rotate(-90 60 60)");
+    svg.append(slice);
+    offset += length;
+  });
+  const center = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  center.setAttribute("cx", "60");
+  center.setAttribute("cy", "60");
+  center.setAttribute("r", "28");
+  center.setAttribute("fill", "#fff");
+  svg.append(center);
+  const legend = card.querySelector(".chart-legend");
+  rows.forEach((row, index) => {
+    const item = document.createElement("div");
+    item.className = "legend-row";
+    item.innerHTML = '<span class="legend-swatch"></span><strong></strong><span></span>';
+    item.querySelector(".legend-swatch").style.background = paletteColor(index);
+    item.querySelector("strong").textContent = row.label;
+    item.querySelector("span:last-child").textContent = `${row.value} (${Math.round((row.value / total) * 100)}%)`;
+    legend.append(item);
+  });
+  return card;
+}
+
+function makeDistributionBars(title, rows, options = {}) {
+  const max = Math.max(1, ...rows.map((row) => row.value));
+  const card = document.createElement("article");
+  card.className = "distribution-card distribution-card-wide";
+  card.innerHTML = `
+    <div class="distribution-card-head">
+      <h4></h4>
+      <span></span>
+    </div>
+    <div class="bar-chart"></div>
+  `;
+  card.querySelector("h4").textContent = title;
+  card.querySelector(".distribution-card-head span").textContent = options.caption || `${rows.length} rows`;
+  const chart = card.querySelector(".bar-chart");
+  if (!rows.length) {
+    chart.textContent = "No data yet.";
+    return card;
+  }
+  rows.forEach((row, index) => {
+    const item = document.createElement("div");
+    item.className = "bar-row";
+    item.innerHTML = '<span></span><div><i></i></div><strong></strong>';
+    item.querySelector("span").textContent = row.label;
+    item.querySelector("i").style.width = `${Math.max(4, (row.value / max) * 100)}%`;
+    item.querySelector("i").style.background = paletteColor(index);
+    item.querySelector("strong").textContent = String(row.value);
+    chart.append(item);
+  });
+  return card;
+}
+
+function renderPeopleDistributionView() {
+  els.taskList.innerHTML = '<section class="people-distribution-view"></section>';
+  const view = els.taskList.querySelector(".people-distribution-view");
+  const demographics = document.createElement("div");
+  demographics.className = "distribution-grid";
+  demographics.append(
+    makeDistributionPie("Gender", distributionCounts(state.people, (person) => person.gender)),
+    makeDistributionPie("Race", distributionCounts(state.people, (person) => person.race)),
+    makeDistributionPie("Age", distributionCounts(state.people, (person) => ageCategoryNameForId(person.age_category_id) || person.age_band)),
+    makeDistributionPie("Relationship", distributionCounts(state.people, (person) => relationshipNameForId(person.relationship_type_id))),
+    makeDistributionPie("Skills", distributionCounts(
+      state.people.flatMap((person) => (person.skill_ids.length ? person.skill_ids : [""])),
+      (skillId) => skillId ? state.skills.find((skill) => skill.id === skillId)?.name : ""
+    ))
+  );
+  const projectRows = state.people
+    .map((person) => ({ label: personFullName(person) || "Unnamed", value: projectCountForPerson(person) }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+  view.append(
+    demographics,
+    makeDistributionBars("People by Projects", projectRows, { caption: "Sorted by project count" })
+  );
+}
+
 function makePeopleReadRow(person, index = 0) {
   const row = document.createElement("div");
   row.className = "person-card person-read-row";
@@ -5191,7 +5331,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-distribution", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -5229,6 +5369,7 @@ function render() {
     "people-projects": "People to Projects",
     people: "People",
     "people-filter": "People Filter",
+    "people-distribution": "People Distribution",
     projects: "Projects",
     "project-filter": "Project Filter",
     ideas: "Ideas",
@@ -5249,7 +5390,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-distribution", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);

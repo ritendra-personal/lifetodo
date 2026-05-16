@@ -1643,6 +1643,120 @@ body.resizing .resize-handle::before {
   grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
 }
 
+.people-distribution-view {
+  display: grid;
+  gap: var(--major-gap);
+}
+
+.distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--major-gap);
+}
+
+.distribution-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: var(--detail-pad);
+  display: grid;
+  gap: var(--ui-gap);
+  box-shadow: var(--soft-shadow);
+}
+
+.distribution-card-wide {
+  overflow: hidden;
+}
+
+.distribution-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--ui-gap);
+}
+
+.distribution-card h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.distribution-card-head span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.pie-layout {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: var(--ui-gap);
+  align-items: center;
+}
+
+.pie-chart {
+  width: 132px;
+  height: 132px;
+}
+
+.chart-legend,
+.bar-chart {
+  display: grid;
+  gap: 7px;
+}
+
+.legend-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.legend-row strong {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) 42px;
+  gap: var(--ui-gap);
+  align-items: center;
+}
+
+.bar-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.bar-row div {
+  height: 16px;
+  border-radius: 999px;
+  background: #eef2f6;
+  overflow: hidden;
+}
+
+.bar-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.bar-row strong {
+  text-align: right;
+}
+
 .project-filter-table {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -3114,6 +3228,8 @@ dialog::backdrop {
   .assignment-view,
   .people-filter-bar,
   .project-filter-bar,
+  .pie-layout,
+  .bar-row,
   .project-filter-head,
   .project-filter-row,
   .project-form,
