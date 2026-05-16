@@ -160,20 +160,23 @@ button:focus-visible,
 }
 
 .brand {
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
 }
 
 .mark {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
-  background: #f0b35a;
-  color: #263238;
-  font-weight: 800;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e8ff7a, #38d996 55%, #0e7c74);
+  color: #122126;
+  font-size: 1.25rem;
+  font-weight: 950;
+  box-shadow: 0 10px 28px rgba(56, 217, 150, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .brand h1,
@@ -188,6 +191,25 @@ button:focus-visible,
 
 .brand h1 {
   font-size: 1.05rem;
+}
+
+.brand-wordmark {
+  display: grid;
+  gap: 0;
+  font-size: 1.08rem;
+  line-height: 0.92;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.brand-wordmark span:first-child {
+  color: #f8fafc;
+  font-weight: 850;
+}
+
+.brand-wordmark span:last-child {
+  color: #9ff2c8;
+  font-weight: 950;
 }
 
 .brand p {

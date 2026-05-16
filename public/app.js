@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.54";
+const APP_VERSION = "1.10.55";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -6623,12 +6623,6 @@ els.taskList.addEventListener("change", (event) => {
     renderTasks();
     return;
   }
-  const projectFilterSortButton = event.target.closest("[data-project-filter-sort]");
-  if (projectFilterSortButton) {
-    setProjectFilterSort(projectFilterSortButton.dataset.projectFilterSort);
-    renderTasks();
-    return;
-  }
   const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter'], [name='roleFilter'], [name='genderFilter'], [name='ageFilter'], [name='raceFilter']");
   if (peopleFilter) {
     const genderFilter = els.taskList.querySelector("[name='genderFilter']")?.value || "";
@@ -6709,6 +6703,12 @@ els.taskList.addEventListener("change", (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const projectFilterSortButton = event.target.closest("[data-project-filter-sort]");
+  if (projectFilterSortButton) {
+    setProjectFilterSort(projectFilterSortButton.dataset.projectFilterSort);
+    renderTasks();
+    return;
+  }
   const sortButton = event.target.closest("[data-people-sort]");
   if (!sortButton) return;
   setPeopleSort(sortButton.dataset.peopleSort);
