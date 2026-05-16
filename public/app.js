@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.53";
+const APP_VERSION = "1.10.54";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -49,6 +49,19 @@ function loadPeopleSort() {
   }
 }
 
+function loadProjectFilterSort() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("project-filter-sort") || "{}");
+    const direction = parsed.direction === "asc" || parsed.direction === "desc" ? parsed.direction : "asc";
+    return {
+      key: parsed.key || "name",
+      direction
+    };
+  } catch {
+    return { key: "name", direction: "asc" };
+  }
+}
+
 const state = {
   tasks: [],
   goals: [],
@@ -76,6 +89,7 @@ const state = {
   tagFilter: "",
   sort: "manual",
   peopleSort: loadPeopleSort(),
+  projectFilterSort: loadProjectFilterSort(),
   projectSort: ["created", "name", "year", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "created",
   projectViewMode: localStorage.getItem("project-view-mode") === "minimal" ? "minimal" : "full",
   showDone: localStorage.getItem("show-done") === "true",
@@ -2700,6 +2714,14 @@ function peopleSortHeader(key, label) {
   return `<button class="people-sort-button${active ? " active" : ""}" type="button" data-people-sort="${key}" aria-sort="${ariaSort}">${label}<span>${marker}</span></button>`;
 }
 
+function projectFilterSortHeader(key, label) {
+  const active = state.projectFilterSort.key === key;
+  const direction = active ? state.projectFilterSort.direction : "asc";
+  const marker = active ? (direction === "asc" ? "↑" : "↓") : "";
+  const ariaSort = active ? (direction === "asc" ? "ascending" : "descending") : "none";
+  return `<button class="people-sort-button${active ? " active" : ""}" type="button" data-project-filter-sort="${key}" aria-sort="${ariaSort}">${label}<span>${marker}</span></button>`;
+}
+
 function personSortValue(person, key) {
   if (key === "created") return person.created_at || "";
   if (key === "lastName") return person.last_name || "";
@@ -2745,8 +2767,37 @@ function setPeopleSort(key) {
   localStorage.setItem("people-sort", JSON.stringify(state.peopleSort));
 }
 
+function setProjectFilterSort(key) {
+  state.projectFilterSort = {
+    key,
+    direction: state.projectFilterSort.key === key && state.projectFilterSort.direction === "asc" ? "desc" : "asc"
+  };
+  localStorage.setItem("project-filter-sort", JSON.stringify(state.projectFilterSort));
+}
+
 function sortByLabel(a, b) {
   return String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base", numeric: true });
+}
+
+function projectFilterSortValue(project, key) {
+  if (key === "year") return project.project_year || "";
+  if (key === "type") return projectTypeName(project) || "";
+  if (key === "status") return projectStatusName(project) || "";
+  if (key === "venue") return venueName(project) || "";
+  if (key === "dates") return `${project.start_date || ""} ${project.end_date || ""}`;
+  if (key === "people") return projectPeopleNames(project).join(", ");
+  return project.name || "";
+}
+
+function sortedProjectFilterProjects(projects) {
+  const allowedKeys = ["name", "year", "type", "status", "venue", "dates", "people"];
+  const key = allowedKeys.includes(state.projectFilterSort.key) ? state.projectFilterSort.key : "name";
+  const direction = state.projectFilterSort.direction === "desc" ? -1 : 1;
+  return projects.slice().sort((a, b) => {
+    const primary = sortByLabel(projectFilterSortValue(a, key), projectFilterSortValue(b, key));
+    if (primary) return primary * direction;
+    return sortByLabel(a.name, b.name);
+  });
 }
 
 function sortedByName(items) {
@@ -4051,13 +4102,13 @@ function renderProjectFilterView() {
     <div class="project-filter-table">
       <div class="project-filter-head">
         <span>#</span>
-        <span>Name</span>
-        <span>Year</span>
-        <span>Type</span>
-        <span>Status</span>
-        <span>Venue</span>
-        <span>Dates</span>
-        <span>People</span>
+        ${projectFilterSortHeader("name", "Name")}
+        ${projectFilterSortHeader("year", "Year")}
+        ${projectFilterSortHeader("type", "Type")}
+        ${projectFilterSortHeader("status", "Status")}
+        ${projectFilterSortHeader("venue", "Venue")}
+        ${projectFilterSortHeader("dates", "Dates")}
+        ${projectFilterSortHeader("people", "People")}
         <span></span>
       </div>
       <div class="planning-list project-filter-list"></div>
@@ -4103,7 +4154,7 @@ function renderProjectFilterView() {
   statusSelect.value = statusFilter;
   venueSelect.value = venueFilter;
   personSelect.value = personFilter;
-  const projects = sortedProjects(filteredProjects(typeFilter, statusFilter, personFilter, venueFilter));
+  const projects = sortedProjectFilterProjects(filteredProjects(typeFilter, statusFilter, personFilter, venueFilter));
   const list = els.taskList.querySelector(".project-filter-list");
   if (!projects.length) {
     const empty = document.createElement("div");
@@ -6569,6 +6620,12 @@ els.taskList.addEventListener("change", (event) => {
   if (projectSort) {
     state.projectSort = ["created", "name", "year", "startDate"].includes(projectSort.value) ? projectSort.value : "created";
     localStorage.setItem("project-sort", state.projectSort);
+    renderTasks();
+    return;
+  }
+  const projectFilterSortButton = event.target.closest("[data-project-filter-sort]");
+  if (projectFilterSortButton) {
+    setProjectFilterSort(projectFilterSortButton.dataset.projectFilterSort);
     renderTasks();
     return;
   }
