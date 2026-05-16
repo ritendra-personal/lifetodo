@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.46";
+const APP_VERSION = "1.10.47";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -4579,10 +4579,15 @@ function renderGoalAssignmentsView() {
 
 function renderPeopleProjectsView() {
   const storedPersonFilter = sessionStorage.getItem("people-project-person-filter") || "";
+  const storedProjectFilter = sessionStorage.getItem("people-project-project-filter") || "";
   const validPersonFilter = state.people.some((person) => person.id === storedPersonFilter) ? storedPersonFilter : "";
+  const validProjectFilter = state.projects.some((project) => project.id === storedProjectFilter) ? storedProjectFilter : "";
   const peopleForAssignment = validPersonFilter
     ? state.people.filter((person) => person.id === validPersonFilter)
     : sortedPeople(state.people, ["firstName", "lastName", "relationship", "skills"]);
+  const projectsForAssignment = validProjectFilter
+    ? state.projects.filter((project) => project.id === validProjectFilter)
+    : sortedByName(state.projects);
   if (validPersonFilter) {
     state.selectedAssignmentPersonId = validPersonFilter;
   } else if (!state.selectedAssignmentPersonId || !peopleForAssignment.some((person) => person.id === state.selectedAssignmentPersonId)) {
@@ -4604,6 +4609,7 @@ function renderPeopleProjectsView() {
         <div class="assignment-panel-head">
           <h4>Projects</h4>
           <div class="assignment-toolbar">
+            <select name="assignmentProjectFilter" aria-label="Filter people to projects by project"></select>
             <label class="toggle">
               <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
               <span>Selected only</span>
@@ -4618,6 +4624,7 @@ function renderPeopleProjectsView() {
   const projectList = els.taskList.querySelector(".assignment-project-list");
   const lines = els.taskList.querySelector(".assignment-lines");
   const personFilterSelect = els.taskList.querySelector("[name='assignmentPersonFilter']");
+  const projectFilterSelect = els.taskList.querySelector("[name='assignmentProjectFilter']");
   personFilterSelect.innerHTML = '<option value="">All people</option>';
   for (const person of sortedPeopleByName(state.people)) {
     const option = document.createElement("option");
@@ -4626,6 +4633,14 @@ function renderPeopleProjectsView() {
     personFilterSelect.append(option);
   }
   personFilterSelect.value = validPersonFilter;
+  projectFilterSelect.innerHTML = '<option value="">All projects</option>';
+  for (const project of sortedByName(state.projects)) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name || "Untitled project";
+    projectFilterSelect.append(option);
+  }
+  projectFilterSelect.value = validProjectFilter;
   if (!state.people.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -4656,7 +4671,7 @@ function renderPeopleProjectsView() {
     empty.textContent = "No projects yet.";
     projectList.append(empty);
   }
-  for (const project of state.projects) {
+  for (const project of projectsForAssignment) {
     const assignment = selectedAssignments.find((item) => item.project_id === project.id);
     const active = selectedProjectIds.has(project.id);
     const button = document.createElement("div");
@@ -4679,8 +4694,14 @@ function renderPeopleProjectsView() {
     else button.querySelector(".role-picker").remove();
     projectList.append(button);
   }
+  if (state.projects.length && !projectsForAssignment.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No projects match this filter.";
+    projectList.append(empty);
+  }
   watchAssignmentLayout();
-  if (state.people.length && state.projects.length) scheduleAssignmentLines();
+  if (peopleForAssignment.length && projectsForAssignment.length) scheduleAssignmentLines();
   else lines.innerHTML = "";
 }
 
@@ -6313,6 +6334,12 @@ els.taskList.addEventListener("change", (event) => {
   if (assignmentPersonFilter) {
     sessionStorage.setItem("people-project-person-filter", assignmentPersonFilter.value || "");
     if (assignmentPersonFilter.value) state.selectedAssignmentPersonId = assignmentPersonFilter.value;
+    renderTasks();
+    return;
+  }
+  const assignmentProjectFilter = event.target.closest("[name='assignmentProjectFilter']");
+  if (assignmentProjectFilter) {
+    sessionStorage.setItem("people-project-project-filter", assignmentProjectFilter.value || "");
     renderTasks();
     return;
   }
