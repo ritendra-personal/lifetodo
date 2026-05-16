@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.52";
+const APP_VERSION = "1.10.53";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2571,6 +2571,17 @@ function fillProjectSelect(select, selected = "") {
   select.value = selected || "";
 }
 
+function fillProjectYearSelect(select, selected = "") {
+  select.innerHTML = '<option value="">No year</option>';
+  for (let year = 2018; year <= 2027; year += 1) {
+    const option = document.createElement("option");
+    option.value = String(year);
+    option.textContent = String(year);
+    select.append(option);
+  }
+  select.value = normalizeProjectYear(selected);
+}
+
 function fillProjectTypeSelect(select, selected = "") {
   select.innerHTML = '<option value="">No type</option>';
   for (const type of sortedByName(state.projectTypes)) {
@@ -3378,7 +3389,7 @@ function renderFocusedProjectView() {
         <select name="projectTypeId" aria-label="Project type"></select>
         <select name="projectStatusId" aria-label="Project status"></select>
         <select name="venueId" aria-label="Project venue"></select>
-        <input name="projectYear" type="number" min="0" max="9999" step="1" placeholder="Year" aria-label="Project year">
+        <select name="projectYear" aria-label="Project year"></select>
         <input class="project-description-input" name="description" type="text" aria-label="Project description">
         <div class="project-date-pair">
           <label>
@@ -3410,7 +3421,7 @@ function renderFocusedProjectView() {
   fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
   fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
   fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
-  card.querySelector("[name='projectYear']").value = project.project_year || "";
+  fillProjectYearSelect(card.querySelector("[name='projectYear']"), project.project_year);
   applyProjectCardStatusTone(card);
   card.querySelector("[name='description']").value = project.description;
   card.querySelector("[name='startDate']").value = project.start_date || "";
@@ -4459,7 +4470,7 @@ function renderProjectsView() {
           <input name="name" type="text" placeholder="Project name" required>
         </label>
         <label class="field-label">Year
-          <input name="projectYear" type="number" min="0" max="9999" step="1" placeholder="Year">
+          <select name="projectYear" aria-label="Project year"></select>
         </label>
         <label class="field-label">Type
           <select name="projectTypeId" aria-label="Project type"></select>
@@ -4504,6 +4515,7 @@ function renderProjectsView() {
       <div class="planning-list project-list${isMinimal ? " minimal-project-list" : ""}"></div>
     </section>
   `;
+  fillProjectYearSelect(els.taskList.querySelector("select[name='projectYear']"), "");
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
   fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");
   fillVenueSelect(els.taskList.querySelector("select[name='venueId']"), "");
@@ -4530,7 +4542,7 @@ function renderProjectsView() {
         <input name="name" type="text" required aria-label="Project name">
         <div class="project-task-count"></div>
       </div>
-      <input name="projectYear" type="number" min="0" max="9999" step="1" placeholder="Year" aria-label="Project year">
+      <select name="projectYear" aria-label="Project year"></select>
       <select name="projectTypeId" aria-label="Project type"></select>
       <select name="projectStatusId" aria-label="Project status"></select>
       <select name="venueId" aria-label="Project venue"></select>
@@ -4562,7 +4574,7 @@ function renderProjectsView() {
       </div>
     `;
     card.querySelector("[name='name']").value = project.name;
-    card.querySelector("[name='projectYear']").value = project.project_year || "";
+    fillProjectYearSelect(card.querySelector("[name='projectYear']"), project.project_year);
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
     fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
     fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
