@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.48";
+const APP_VERSION = "1.10.49";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -4224,6 +4224,66 @@ function peopleCountForProject(project) {
   return state.projectAssignments.filter((assignment) => assignment.project_id === project.id).length;
 }
 
+function projectYearBreakdownRows() {
+  const countsByYear = new Map();
+  let undated = 0;
+  for (const project of state.projects) {
+    if (!project.project_year) {
+      undated += 1;
+      continue;
+    }
+    countsByYear.set(project.project_year, (countsByYear.get(project.project_year) || 0) + 1);
+  }
+  const rows = [...countsByYear.entries()]
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([year, value]) => ({ label: year, value }));
+  if (undated) rows.push({ label: "No year", value: undated });
+  let cumulative = 0;
+  return rows.map((row) => {
+    cumulative += row.value;
+    return { ...row, cumulative };
+  });
+}
+
+function makeProjectYearBreakdown() {
+  const rows = projectYearBreakdownRows();
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const max = Math.max(1, ...rows.map((row) => row.value));
+  const datedYearCount = rows.filter((row) => row.label !== "No year").length;
+  const card = document.createElement("article");
+  card.className = "distribution-card distribution-card-wide year-breakdown-card";
+  card.innerHTML = `
+    <div class="distribution-card-head">
+      <h4>Projects by Year</h4>
+      <span></span>
+    </div>
+    <div class="year-breakdown"></div>
+  `;
+  card.querySelector(".distribution-card-head span").textContent = `${total} ${total === 1 ? "project" : "projects"} across ${datedYearCount} ${datedYearCount === 1 ? "year" : "years"}`;
+  const chart = card.querySelector(".year-breakdown");
+  if (!rows.length) {
+    chart.textContent = "No projects yet.";
+    return card;
+  }
+  rows.forEach((row, index) => {
+    const item = document.createElement("div");
+    item.className = "year-breakdown-row";
+    item.innerHTML = `
+      <span></span>
+      <div><i></i></div>
+      <strong></strong>
+      <small></small>
+    `;
+    item.querySelector("span").textContent = row.label;
+    item.querySelector("i").style.width = `${Math.max(4, (row.value / max) * 100)}%`;
+    item.querySelector("i").style.background = paletteColor(index);
+    item.querySelector("strong").textContent = String(row.value);
+    item.querySelector("small").textContent = `${row.cumulative} cumulative`;
+    chart.append(item);
+  });
+  return card;
+}
+
 function renderProjectChartsView() {
   els.taskList.innerHTML = '<section class="charts-view"></section>';
   const view = els.taskList.querySelector(".charts-view");
@@ -4240,6 +4300,7 @@ function renderProjectChartsView() {
     .map((project) => ({ label: project.name || "Untitled project", value: peopleCountForProject(project) }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
   view.append(
+    makeProjectYearBreakdown(),
     projectCharts,
     makeDistributionBars("Projects by People", peopleRows, { caption: "Sorted by assigned people" })
   );
