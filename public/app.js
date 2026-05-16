@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.44";
+const APP_VERSION = "1.10.45";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -170,9 +170,10 @@ const counts = {
   peopleProjects: document.querySelector("#count-people-projects"),
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
-  peopleDistribution: document.querySelector("#count-people-distribution"),
+  peopleCharts: document.querySelector("#count-people-charts"),
   projects: document.querySelector("#count-projects"),
   projectFilter: document.querySelector("#count-project-filter"),
+  projectCharts: document.querySelector("#count-project-charts"),
   ideas: document.querySelector("#count-ideas"),
   graph: document.querySelector("#count-graph"),
   timeline: document.querySelector("#count-timeline"),
@@ -382,7 +383,8 @@ function validView(view) {
     "people-projects",
     "people",
     "people-filter",
-    "people-distribution",
+    "people-charts",
+    "project-charts",
     "projects",
     "project-filter",
     "ideas",
@@ -2505,9 +2507,10 @@ function renderCounts() {
   counts.peopleProjects.textContent = state.projectAssignments.length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
-  counts.peopleDistribution.textContent = state.people.length;
+  counts.peopleCharts.textContent = state.people.length;
   counts.projects.textContent = state.projects.length;
   counts.projectFilter.textContent = state.projects.length;
+  counts.projectCharts.textContent = state.projects.length;
   counts.ideas.textContent = state.ideas.length;
   counts.graph.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
@@ -2892,8 +2895,12 @@ function renderTasks() {
     renderPeopleFilterView();
     return;
   }
-  if (state.view === "people-distribution") {
-    renderPeopleDistributionView();
+  if (state.view === "people-charts") {
+    renderPeopleChartsView();
+    return;
+  }
+  if (state.view === "project-charts") {
+    renderProjectChartsView();
     return;
   }
   if (state.view === "projects") {
@@ -4067,8 +4074,10 @@ function paletteColor(index) {
   return palette[index % palette.length];
 }
 
-function makeDistributionPie(title, rows) {
+function makeDistributionPie(title, rows, options = {}) {
   const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const noun = options.noun || "person";
+  const pluralNoun = options.pluralNoun || `${noun}s`;
   const card = document.createElement("article");
   card.className = "distribution-card";
   card.innerHTML = `
@@ -4082,11 +4091,11 @@ function makeDistributionPie(title, rows) {
     </div>
   `;
   card.querySelector("h4").textContent = title;
-  card.querySelector(".distribution-card-head span").textContent = `${total} ${total === 1 ? "person" : "people"}`;
+  card.querySelector(".distribution-card-head span").textContent = `${total} ${total === 1 ? noun : pluralNoun}`;
   const svg = card.querySelector("svg");
   if (!total) {
     svg.innerHTML = '<circle cx="60" cy="60" r="42" fill="#eef2f6"></circle>';
-    card.querySelector(".chart-legend").textContent = "No people yet.";
+    card.querySelector(".chart-legend").textContent = options.emptyLabel || "No data yet.";
     return card;
   }
   let offset = 0;
@@ -4156,9 +4165,9 @@ function makeDistributionBars(title, rows, options = {}) {
   return card;
 }
 
-function renderPeopleDistributionView() {
-  els.taskList.innerHTML = '<section class="people-distribution-view"></section>';
-  const view = els.taskList.querySelector(".people-distribution-view");
+function renderPeopleChartsView() {
+  els.taskList.innerHTML = '<section class="charts-view"></section>';
+  const view = els.taskList.querySelector(".charts-view");
   const demographics = document.createElement("div");
   demographics.className = "distribution-grid";
   demographics.append(
@@ -4177,6 +4186,30 @@ function renderPeopleDistributionView() {
   view.append(
     demographics,
     makeDistributionBars("People by Projects", projectRows, { caption: "Sorted by project count" })
+  );
+}
+
+function peopleCountForProject(project) {
+  return state.projectAssignments.filter((assignment) => assignment.project_id === project.id).length;
+}
+
+function renderProjectChartsView() {
+  els.taskList.innerHTML = '<section class="charts-view"></section>';
+  const view = els.taskList.querySelector(".charts-view");
+  const projectCharts = document.createElement("div");
+  projectCharts.className = "distribution-grid";
+  const projectOptions = { noun: "project", pluralNoun: "projects", emptyLabel: "No projects yet." };
+  projectCharts.append(
+    makeDistributionPie("Location", distributionCounts(state.projects, (project) => venueName(project)), projectOptions),
+    makeDistributionPie("Type", distributionCounts(state.projects, (project) => projectTypeName(project)), projectOptions),
+    makeDistributionPie("Status", distributionCounts(state.projects, (project) => projectStatusName(project)), projectOptions)
+  );
+  const peopleRows = state.projects
+    .map((project) => ({ label: project.name || "Untitled project", value: peopleCountForProject(project) }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+  view.append(
+    projectCharts,
+    makeDistributionBars("Projects by People", peopleRows, { caption: "Sorted by assigned people" })
   );
 }
 
@@ -5331,7 +5364,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-distribution", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -5369,9 +5402,10 @@ function render() {
     "people-projects": "People to Projects",
     people: "People",
     "people-filter": "People Filter",
-    "people-distribution": "People Distribution",
+    "people-charts": "People charts",
     projects: "Projects",
     "project-filter": "Project Filter",
+    "project-charts": "Project charts",
     ideas: "Ideas",
     graph: "Task Graph",
     timeline: "Timeline",
@@ -5390,7 +5424,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-distribution", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);

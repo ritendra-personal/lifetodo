@@ -1643,7 +1643,7 @@ body.resizing .resize-handle::before {
   grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
 }
 
-.people-distribution-view {
+.charts-view {
   display: grid;
   gap: var(--major-gap);
 }
