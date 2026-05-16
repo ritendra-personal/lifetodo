@@ -253,12 +253,23 @@ create table if not exists planner_relationship_types (
 alter table planner_relationship_types
 add column if not exists color text;
 
+create table if not exists planner_age_categories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  sort_order numeric not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
 create table if not exists planner_people (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   first_name text not null,
   last_name text default '',
   gender text,
+  age_category_id uuid references planner_age_categories(id) on delete set null,
   age_band text,
   race text,
   skill_ids uuid[] not null default '{}',
@@ -269,6 +280,7 @@ create table if not exists planner_people (
 
 alter table planner_people
 add column if not exists gender text,
+add column if not exists age_category_id uuid references planner_age_categories(id) on delete set null,
 add column if not exists age_band text,
 add column if not exists race text;
 
@@ -278,9 +290,7 @@ add constraint planner_people_gender_check
   check (gender is null or gender in ('Male', 'Female'));
 
 alter table planner_people
-drop constraint if exists planner_people_age_band_check,
-add constraint planner_people_age_band_check
-  check (age_band is null or age_band in ('Under 21', '21-35', '35-55', '55+'));
+drop constraint if exists planner_people_age_band_check;
 
 alter table planner_people
 drop constraint if exists planner_people_race_check,
@@ -314,6 +324,7 @@ alter table planner_project_types enable row level security;
 alter table planner_project_statuses enable row level security;
 alter table planner_roles enable row level security;
 alter table planner_venues enable row level security;
+alter table planner_age_categories enable row level security;
 alter table planner_projects enable row level security;
 alter table planner_project_people enable row level security;
 alter table planner_ideas enable row level security;
@@ -335,6 +346,8 @@ create index if not exists planner_roles_user_id_idx on planner_roles(user_id);
 create index if not exists planner_roles_sort_order_idx on planner_roles(sort_order);
 create index if not exists planner_venues_user_id_idx on planner_venues(user_id);
 create index if not exists planner_venues_sort_order_idx on planner_venues(sort_order);
+create index if not exists planner_age_categories_user_id_idx on planner_age_categories(user_id);
+create index if not exists planner_age_categories_sort_order_idx on planner_age_categories(sort_order);
 create index if not exists planner_projects_user_id_idx on planner_projects(user_id);
 create unique index if not exists planner_projects_user_name_natural_key_idx
 on planner_projects (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
@@ -368,6 +381,7 @@ on planner_people (
   ))
 );
 create index if not exists planner_people_skill_ids_idx on planner_people using gin(skill_ids);
+create index if not exists planner_people_age_category_id_idx on planner_people(age_category_id);
 create index if not exists planner_people_relationship_type_id_idx on planner_people(relationship_type_id);
 create index if not exists planner_project_people_user_id_idx on planner_project_people(user_id);
 create index if not exists planner_project_people_project_id_idx on planner_project_people(project_id);
@@ -380,6 +394,7 @@ drop policy if exists "planner_project_types_all_for_authenticated_user" on plan
 drop policy if exists "planner_project_statuses_all_for_authenticated_user" on planner_project_statuses;
 drop policy if exists "planner_roles_all_for_authenticated_user" on planner_roles;
 drop policy if exists "planner_venues_all_for_authenticated_user" on planner_venues;
+drop policy if exists "planner_age_categories_all_for_authenticated_user" on planner_age_categories;
 drop policy if exists "planner_projects_all_for_authenticated_user" on planner_projects;
 drop policy if exists "planner_project_people_all_for_authenticated_user" on planner_project_people;
 drop policy if exists "planner_ideas_all_for_authenticated_user" on planner_ideas;
@@ -420,6 +435,12 @@ with check ((select auth.uid()) = user_id);
 
 create policy "planner_venues_all_for_authenticated_user"
 on planner_venues for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_age_categories_all_for_authenticated_user"
+on planner_age_categories for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);

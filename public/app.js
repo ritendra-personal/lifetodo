@@ -1,11 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.42";
+const APP_VERSION = "1.10.43";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
 const genderOptions = ["Male", "Female"];
-const ageBandOptions = ["Under 21", "21-35", "35-55", "55+"];
 const raceOptions = ["Desi", "White", "Black", "Other"];
 const timelineZoomLevels = [1.2, 2, 3.5, 6, 10, 18, 30, 42, 60, 84, 120];
 const autosaveTimers = new Map();
@@ -26,6 +25,7 @@ const defaultAreas = [
 ];
 
 const defaultSkills = ["Acting", "AI", "Writing"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+const defaultAgeCategories = ["Child", "Teenager", "Young", "Middle-aged", "Elderly"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultRelationshipTypes = [
   { name: "Strong", color: "#2f855a" },
   { name: "OK", color: "#d6a21e" },
@@ -58,6 +58,7 @@ const state = {
   projectAssignments: [],
   goalLinks: [],
   skills: loadNamedOptions("planner-skills", defaultSkills),
+  ageCategories: loadNamedOptions("planner-age-categories", defaultAgeCategories),
   relationshipTypes: loadNamedOptions("planner-relationship-types", defaultRelationshipTypes),
   projectTypes: loadNamedOptions("planner-project-types", defaultProjectTypes),
   projectStatuses: loadNamedOptions("planner-project-statuses", defaultProjectStatuses),
@@ -176,6 +177,7 @@ const counts = {
   timeline: document.querySelector("#count-timeline"),
   areas: document.querySelector("#count-areas"),
   skills: document.querySelector("#count-skills"),
+  ageCategories: document.querySelector("#count-age-categories"),
   relationships: document.querySelector("#count-relationships"),
   projectTypes: document.querySelector("#count-project-types"),
   projectStatuses: document.querySelector("#count-project-statuses"),
@@ -213,6 +215,7 @@ function saveAreas() {
 
 function saveNamedOptions() {
   localStorage.setItem("planner-skills", JSON.stringify(state.skills));
+  localStorage.setItem("planner-age-categories", JSON.stringify(state.ageCategories));
   localStorage.setItem("planner-relationship-types", JSON.stringify(state.relationshipTypes));
   localStorage.setItem("planner-project-types", JSON.stringify(state.projectTypes));
   localStorage.setItem("planner-project-statuses", JSON.stringify(state.projectStatuses));
@@ -385,6 +388,7 @@ function validView(view) {
     "timeline",
     "areas",
     "skills",
+    "age-categories",
     "relationships",
     "project-types",
     "project-statuses",
@@ -935,7 +939,8 @@ function normalizePerson(person) {
     first_name: person.first_name || person.firstName || "",
     last_name: person.last_name || person.lastName || "",
     gender: fixedOptionValue(person.gender, genderOptions),
-    age_band: fixedOptionValue(person.age_band || person.ageBand, ageBandOptions),
+    age_category_id: person.age_category_id || person.ageCategoryId || ageCategoryIdForLegacyBand(person.age_band || person.ageBand),
+    age_band: person.age_band || person.ageBand || "",
     race: fixedOptionValue(person.race, raceOptions),
     skill_ids: parseIds(person.skill_ids || person.skillIds),
     relationship_type_id: person.relationship_type_id || person.relationshipTypeId || "",
@@ -1442,6 +1447,7 @@ async function loadTasksNow() {
     if (peopleData) {
       state.people = peopleData.people;
       state.skills = peopleData.skills;
+      state.ageCategories = peopleData.ageCategories;
       state.relationshipTypes = peopleData.relationshipTypes;
       saveNamedOptions();
     }
@@ -2015,24 +2021,35 @@ async function deleteArea(id) {
 
 async function loadPeopleData() {
   try {
-    const [{ data: skills, error: skillsError }, { data: relationshipTypes, error: relationshipError }, { data: people, error: peopleError }] =
+    const [
+      { data: skills, error: skillsError },
+      { data: ageCategories, error: ageCategoriesError },
+      { data: relationshipTypes, error: relationshipError },
+      { data: people, error: peopleError }
+    ] =
       await Promise.all([
         state.supabase.from("planner_skills").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
+        state.supabase.from("planner_age_categories").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
         state.supabase.from("planner_relationship_types").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
         state.supabase.from("planner_people").select("*").eq("user_id", state.user.id).order("first_name", { ascending: true })
       ]);
-    if (skillsError || relationshipError || peopleError) throw skillsError || relationshipError || peopleError;
+    if (skillsError || ageCategoriesError || relationshipError || peopleError) throw skillsError || ageCategoriesError || relationshipError || peopleError;
     state.peopleCloudReady = true;
     const normalizedSkills = skills.map(normalizeNamedOption);
+    const normalizedAgeCategories = ageCategories.map(normalizeNamedOption);
     const normalizedRelationships = relationshipTypes.map(normalizeNamedOption);
     if (!normalizedSkills.length) {
       await Promise.all(state.skills.map((skill) => persistNamedOption("skills", skill, { render: false })));
+    }
+    if (!normalizedAgeCategories.length) {
+      await Promise.all(state.ageCategories.map((ageCategory) => persistNamedOption("age-categories", ageCategory, { render: false })));
     }
     if (!normalizedRelationships.length) {
       await Promise.all(state.relationshipTypes.map((relationship) => persistNamedOption("relationships", relationship, { render: false })));
     }
     return {
       skills: normalizedSkills.length ? normalizedSkills : state.skills,
+      ageCategories: normalizedAgeCategories.length ? normalizedAgeCategories : state.ageCategories,
       relationshipTypes: normalizedRelationships.length ? normalizedRelationships : state.relationshipTypes,
       people: people.map(normalizePerson)
     };
@@ -2047,6 +2064,9 @@ async function loadPeopleData() {
 function optionConfig(type) {
   if (type === "skills") {
     return { table: "planner_skills", stateKey: "skills", label: "skill", cloudFlag: "peopleCloudReady" };
+  }
+  if (type === "age-categories") {
+    return { table: "planner_age_categories", stateKey: "ageCategories", label: "age category", cloudFlag: "peopleCloudReady" };
   }
   if (type === "project-types") {
     return { table: "planner_project_types", stateKey: "projectTypes", label: "project type", cloudFlag: "projectsCloudReady" };
@@ -2105,6 +2125,7 @@ async function persistNamedOption(type, option, options = {}) {
 
 function namedOptionUsage(type, id) {
   if (type === "skills") return state.people.filter((person) => person.skill_ids.includes(id)).length;
+  if (type === "age-categories") return state.people.filter((person) => person.age_category_id === id).length;
   if (type === "project-types") return state.projects.filter((project) => project.project_type_id === id).length;
   if (type === "project-statuses") return state.projects.filter((project) => project.project_status_id === id).length;
   if (type === "venues") return state.projects.filter((project) => project.venue_id === id).length;
@@ -2115,6 +2136,8 @@ function namedOptionUsage(type, id) {
 function detachAnnotationReferences(type, id) {
   if (type === "skills") {
     state.people = state.people.map((person) => ({ ...person, skill_ids: person.skill_ids.filter((skillId) => skillId !== id) }));
+  } else if (type === "age-categories") {
+    state.people = state.people.map((person) => (person.age_category_id === id ? { ...person, age_category_id: "" } : person));
   } else if (type === "project-types") {
     state.projects = state.projects.map((project) => (project.project_type_id === id ? { ...project, project_type_id: "" } : project));
   } else if (type === "project-statuses") {
@@ -2225,7 +2248,7 @@ async function persistPerson(person, options = {}) {
             first_name: normalized.first_name,
             last_name: normalized.last_name,
             gender: normalized.gender || null,
-            age_band: normalized.age_band || null,
+            age_category_id: normalized.age_category_id || null,
             race: normalized.race || null,
             skill_ids: normalized.skill_ids,
             relationship_type_id: normalized.relationship_type_id || null,
@@ -2487,6 +2510,7 @@ function renderCounts() {
   counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.areas.textContent = state.areas.length;
   counts.skills.textContent = state.skills.length;
+  counts.ageCategories.textContent = state.ageCategories.length;
   counts.relationships.textContent = state.relationshipTypes.length;
   counts.projectTypes.textContent = state.projectTypes.length;
   counts.projectStatuses.textContent = state.projectStatuses.length;
@@ -2524,6 +2548,18 @@ function fillProjectTypeSelect(select, selected = "") {
     const option = document.createElement("option");
     option.value = type.id;
     option.textContent = type.name;
+    select.append(option);
+  }
+  select.value = selected || "";
+}
+
+function fillAgeCategorySelect(select, selected = "", emptyLabel = "No age") {
+  if (!select) return;
+  select.innerHTML = `<option value="">${emptyLabel}</option>`;
+  for (const ageCategory of sortedByName(state.ageCategories)) {
+    const option = document.createElement("option");
+    option.value = ageCategory.id;
+    option.textContent = ageCategory.name;
     select.append(option);
   }
   select.value = selected || "";
@@ -2628,7 +2664,7 @@ function personSortValue(person, key) {
   if (key === "created") return person.created_at || "";
   if (key === "lastName") return person.last_name || "";
   if (key === "gender") return person.gender || "";
-  if (key === "age") return person.age_band || "";
+  if (key === "age") return ageCategoryNameForId(person.age_category_id) || person.age_band || "";
   if (key === "race") return person.race || "";
   if (key === "relationship") return relationshipNameForId(person.relationship_type_id);
   if (key === "skills") {
@@ -2679,6 +2715,23 @@ function sortedByName(items) {
 
 function sortedByTitle(items) {
   return items.slice().sort((a, b) => sortByLabel(a.title, b.title));
+}
+
+function ageCategoryNameForId(id) {
+  return state.ageCategories.find((item) => item.id === id)?.name || "";
+}
+
+function ageCategoryIdForLegacyBand(value) {
+  const normalized = normalizedNaturalKey(value);
+  if (!normalized) return "";
+  const legacyMap = {
+    "under 21": "Child",
+    "21-35": "Young",
+    "35-55": "Middle-aged",
+    "55+": "Elderly"
+  };
+  const target = legacyMap[normalized] || value;
+  return state.ageCategories.find((item) => normalizedNaturalKey(item.name) === normalizedNaturalKey(target))?.id || "";
 }
 
 function sortedPeopleByName(people) {
@@ -2854,6 +2907,10 @@ function renderTasks() {
   }
   if (state.view === "skills") {
     renderNamedSettingsView("skills");
+    return;
+  }
+  if (state.view === "age-categories") {
+    renderNamedSettingsView("age-categories");
     return;
   }
   if (state.view === "relationships") {
@@ -3183,7 +3240,7 @@ function renderFocusedPersonView() {
           <select name="gender" aria-label="Gender"></select>
         </label>
         <label class="field-label">Age
-          <select name="ageBand" aria-label="Age"></select>
+          <select name="ageCategoryId" aria-label="Age"></select>
         </label>
         <label class="field-label">Race
           <select name="race" aria-label="Race"></select>
@@ -3212,7 +3269,7 @@ function renderFocusedPersonView() {
   card.querySelector("[name='firstName']").value = person.first_name;
   card.querySelector("[name='lastName']").value = person.last_name;
   fillFixedSelect(card.querySelector("[name='gender']"), genderOptions, person.gender, "No gender");
-  fillFixedSelect(card.querySelector("[name='ageBand']"), ageBandOptions, person.age_band, "No age");
+  fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
   fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
   fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
   fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
@@ -3609,7 +3666,7 @@ function renderAreasView() {
 
 function renderNamedSettingsView(type) {
   const config = optionConfig(type);
-  const titles = { skills: "Skills", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles", venues: "Venues" };
+  const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles", venues: "Venues" };
   const title = titles[type] || "Settings";
   const items = state[config.stateKey];
   const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
@@ -3678,7 +3735,7 @@ function renderPeopleView() {
           <select name="gender" aria-label="Gender"></select>
         </label>
         <label class="field-label">Age
-          <select name="ageBand" aria-label="Age"></select>
+          <select name="ageCategoryId" aria-label="Age"></select>
         </label>
         <label class="field-label">Race
           <select name="race" aria-label="Race"></select>
@@ -3716,7 +3773,7 @@ function renderPeopleView() {
   `;
   fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
   fillFixedSelect(els.taskList.querySelector("select[name='gender']"), genderOptions, "", "No gender");
-  fillFixedSelect(els.taskList.querySelector("select[name='ageBand']"), ageBandOptions, "", "No age");
+  fillAgeCategorySelect(els.taskList.querySelector("select[name='ageCategoryId']"), "", "No age");
   fillFixedSelect(els.taskList.querySelector("select[name='race']"), raceOptions, "", "No race");
   const personDraft = restoreCreationDraft(els.taskList.querySelector("#person-form"));
   fillSkillPicker(els.taskList.querySelector("#person-form .skill-picker"), personDraft?.skillIds || []);
@@ -3738,7 +3795,7 @@ function renderPeopleView() {
       <input name="firstName" type="text" required aria-label="First name">
       <input name="lastName" type="text" aria-label="Last name">
       <select name="gender" aria-label="Gender"></select>
-      <select name="ageBand" aria-label="Age"></select>
+      <select name="ageCategoryId" aria-label="Age"></select>
       <select name="race" aria-label="Race"></select>
       <select name="relationshipTypeId" aria-label="Relationship"></select>
       <div class="skill-picker" role="group" aria-label="Skills"></div>
@@ -3751,7 +3808,7 @@ function renderPeopleView() {
     card.querySelector("[name='firstName']").value = person.first_name;
     card.querySelector("[name='lastName']").value = person.last_name;
     fillFixedSelect(card.querySelector("[name='gender']"), genderOptions, person.gender, "No gender");
-    fillFixedSelect(card.querySelector("[name='ageBand']"), ageBandOptions, person.age_band, "No age");
+    fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
     fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
     fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
     fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
@@ -3796,7 +3853,7 @@ function renderPeopleFilterView() {
   const projectSelect = els.taskList.querySelector("[name='projectFilter']");
   const roleSelect = els.taskList.querySelector("[name='roleFilter']");
   fillFixedSelect(genderSelect, genderOptions, "", "All genders");
-  fillFixedSelect(ageSelect, ageBandOptions, "", "All ages");
+  fillAgeCategorySelect(ageSelect, "", "All ages");
   fillFixedSelect(raceSelect, raceOptions, "", "All races");
   skillSelect.innerHTML = '<option value="">All skills</option>';
   for (const skill of sortedByName(state.skills)) {
@@ -3854,10 +3911,10 @@ function renderPeopleFilterView() {
   }
 }
 
-function filteredPeople(skillId, relationshipId, projectId = "", roleId = "", gender = "", ageBand = "", race = "") {
+function filteredPeople(skillId, relationshipId, projectId = "", roleId = "", gender = "", ageCategoryId = "", race = "") {
   return state.people.filter((person) => {
     if (gender && person.gender !== gender) return false;
-    if (ageBand && person.age_band !== ageBand) return false;
+    if (ageCategoryId && person.age_category_id !== ageCategoryId) return false;
     if (race && person.race !== race) return false;
     if (skillId && !person.skill_ids.includes(skillId)) return false;
     if (relationshipId && person.relationship_type_id !== relationshipId) return false;
@@ -4001,7 +4058,7 @@ function makePeopleReadRow(person, index = 0) {
   row.querySelectorAll("span")[0].textContent = person.first_name;
   row.querySelectorAll("span")[1].textContent = person.last_name || "";
   row.querySelectorAll("span")[2].textContent = person.gender || "";
-  row.querySelectorAll("span")[3].textContent = person.age_band || "";
+  row.querySelectorAll("span")[3].textContent = ageCategoryNameForId(person.age_category_id) || person.age_band || "";
   row.querySelectorAll("span")[4].textContent = person.race || "";
   row.querySelectorAll("span")[5].textContent = state.relationshipTypes.find((item) => item.id === person.relationship_type_id)?.name || "";
   row.querySelectorAll("span")[6].textContent = person.skill_ids
@@ -5134,7 +5191,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -5183,6 +5240,7 @@ function render() {
     "focus-person": "Person",
     areas: "Areas",
     skills: "Skills",
+    "age-categories": "Age Categories",
     relationships: "Relationships",
     "project-types": "Project Types",
     "project-statuses": "Project Status",
@@ -5191,7 +5249,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "projects", "project-filter", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -5745,7 +5803,7 @@ els.taskList.addEventListener("submit", async (event) => {
               first_name: firstName,
               last_name: lastName,
               gender: latestForm.get("gender") || "",
-              age_band: latestForm.get("ageBand") || "",
+              age_category_id: latestForm.get("ageCategoryId") || "",
               race: latestForm.get("race") || "",
               relationship_type_id: latestForm.get("relationshipTypeId") || "",
               skill_ids: latestForm.getAll("skillIds")
@@ -5937,7 +5995,7 @@ function autosavePersonCard(card) {
         first_name: firstName,
         last_name: card.querySelector("[name='lastName']").value.trim(),
         gender: card.querySelector("[name='gender']")?.value || "",
-        age_band: card.querySelector("[name='ageBand']")?.value || "",
+        age_category_id: card.querySelector("[name='ageCategoryId']")?.value || "",
         race: card.querySelector("[name='race']")?.value || "",
         relationship_type_id: card.querySelector("[name='relationshipTypeId']").value || "",
         skill_ids: [...card.querySelectorAll("[name='skillIds']")].map((input) => input.value),
