@@ -1470,7 +1470,11 @@ body.resizing .resize-handle::before {
 }
 
 .people-form {
-  grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(160px, 0.9fr) minmax(180px, 1fr) auto;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+}
+
+.people-form .field-label:nth-child(7) {
+  grid-column: span 2;
 }
 
 .people-list {
@@ -1487,7 +1491,7 @@ body.resizing .resize-handle::before {
 
 .people-table-head,
 .person-card {
-  grid-template-columns: 34px minmax(112px, 0.5fr) minmax(70px, 0.34fr) minmax(70px, 0.34fr) minmax(120px, 0.58fr) minmax(190px, 1fr) minmax(136px, auto);
+  grid-template-columns: 34px minmax(96px, 0.5fr) minmax(90px, 0.45fr) minmax(76px, 0.35fr) minmax(82px, 0.35fr) minmax(86px, 0.38fr) minmax(76px, 0.35fr) minmax(112px, 0.52fr) minmax(180px, 1fr) minmax(136px, auto);
   display: grid;
   align-items: center;
 }
@@ -1501,7 +1505,7 @@ body.resizing .resize-handle::before {
 
 .people-filter-table .people-table-head,
 .people-filter-table .person-read-row {
-  grid-template-columns: 34px minmax(72px, 0.34fr) minmax(72px, 0.34fr) minmax(96px, 0.42fr) minmax(150px, 0.62fr) minmax(420px, 2fr) 68px;
+  grid-template-columns: 34px minmax(72px, 0.34fr) minmax(72px, 0.34fr) minmax(70px, 0.3fr) minmax(76px, 0.32fr) minmax(70px, 0.3fr) minmax(96px, 0.42fr) minmax(140px, 0.62fr) minmax(360px, 1.8fr) 68px;
 }
 
 .people-table-head > *,

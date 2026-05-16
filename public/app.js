@@ -1,9 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.41";
+const APP_VERSION = "1.10.42";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
+const genderOptions = ["Male", "Female"];
+const ageBandOptions = ["Under 21", "21-35", "35-55", "55+"];
+const raceOptions = ["Desi", "White", "Black", "Other"];
 const timelineZoomLevels = [1.2, 2, 3.5, 6, 10, 18, 30, 42, 60, 84, 120];
 const autosaveTimers = new Map();
 let assignmentDrag = null;
@@ -908,12 +911,32 @@ function normalizeNamedOption(option, index = 0) {
   };
 }
 
+function fixedOptionValue(value, options) {
+  const match = options.find((option) => option.toLowerCase() === String(value || "").trim().toLowerCase());
+  return match || "";
+}
+
+function fillFixedSelect(select, options, selected, emptyLabel) {
+  if (!select) return;
+  select.innerHTML = `<option value="">${emptyLabel}</option>`;
+  for (const optionValue of options) {
+    const option = document.createElement("option");
+    option.value = optionValue;
+    option.textContent = optionValue;
+    select.append(option);
+  }
+  select.value = fixedOptionValue(selected, options);
+}
+
 function normalizePerson(person) {
   return {
     id: person.id || makeId(),
     user_id: person.user_id || person.userId || state.user?.id || null,
     first_name: person.first_name || person.firstName || "",
     last_name: person.last_name || person.lastName || "",
+    gender: fixedOptionValue(person.gender, genderOptions),
+    age_band: fixedOptionValue(person.age_band || person.ageBand, ageBandOptions),
+    race: fixedOptionValue(person.race, raceOptions),
     skill_ids: parseIds(person.skill_ids || person.skillIds),
     relationship_type_id: person.relationship_type_id || person.relationshipTypeId || "",
     created_at: person.created_at || nowIso(),
@@ -2201,6 +2224,9 @@ async function persistPerson(person, options = {}) {
             user_id: state.user.id,
             first_name: normalized.first_name,
             last_name: normalized.last_name,
+            gender: normalized.gender || null,
+            age_band: normalized.age_band || null,
+            race: normalized.race || null,
             skill_ids: normalized.skill_ids,
             relationship_type_id: normalized.relationship_type_id || null,
             created_at: normalized.created_at,
@@ -2601,6 +2627,9 @@ function peopleSortHeader(key, label) {
 function personSortValue(person, key) {
   if (key === "created") return person.created_at || "";
   if (key === "lastName") return person.last_name || "";
+  if (key === "gender") return person.gender || "";
+  if (key === "age") return person.age_band || "";
+  if (key === "race") return person.race || "";
   if (key === "relationship") return relationshipNameForId(person.relationship_type_id);
   if (key === "skills") {
     return person.skill_ids
@@ -2620,7 +2649,7 @@ function personSortValue(person, key) {
   return person.first_name || "";
 }
 
-function sortedPeople(people, allowedKeys = ["created", "firstName", "lastName", "relationship", "skills", "projects"]) {
+function sortedPeople(people, allowedKeys = ["created", "firstName", "lastName", "gender", "age", "race", "relationship", "skills", "projects"]) {
   const key = allowedKeys.includes(state.peopleSort.key) ? state.peopleSort.key : "created";
   const direction = state.peopleSort.direction === "desc" ? -1 : 1;
   return people.slice().sort((a, b) => {
@@ -3150,6 +3179,15 @@ function renderFocusedPersonView() {
         <label class="field-label">Last name
           <input name="lastName" type="text" aria-label="Last name">
         </label>
+        <label class="field-label">Gender
+          <select name="gender" aria-label="Gender"></select>
+        </label>
+        <label class="field-label">Age
+          <select name="ageBand" aria-label="Age"></select>
+        </label>
+        <label class="field-label">Race
+          <select name="race" aria-label="Race"></select>
+        </label>
         <label class="field-label">Relationship
           <select name="relationshipTypeId" aria-label="Relationship"></select>
         </label>
@@ -3173,6 +3211,9 @@ function renderFocusedPersonView() {
   const card = els.taskList.querySelector("[data-person-id]");
   card.querySelector("[name='firstName']").value = person.first_name;
   card.querySelector("[name='lastName']").value = person.last_name;
+  fillFixedSelect(card.querySelector("[name='gender']"), genderOptions, person.gender, "No gender");
+  fillFixedSelect(card.querySelector("[name='ageBand']"), ageBandOptions, person.age_band, "No age");
+  fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
   fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
   fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
   fillPersonProjectSelect(card.querySelector("[name='personProjectId']"), person.id);
@@ -3633,6 +3674,15 @@ function renderPeopleView() {
         <label class="field-label">Last name
           <input name="lastName" type="text" placeholder="Last name">
         </label>
+        <label class="field-label">Gender
+          <select name="gender" aria-label="Gender"></select>
+        </label>
+        <label class="field-label">Age
+          <select name="ageBand" aria-label="Age"></select>
+        </label>
+        <label class="field-label">Race
+          <select name="race" aria-label="Race"></select>
+        </label>
         <label class="field-label">Relationship
           <select name="relationshipTypeId" aria-label="Relationship"></select>
         </label>
@@ -3653,6 +3703,9 @@ function renderPeopleView() {
           ${peopleSortHeader("created", "Created")}
           ${peopleSortHeader("firstName", "First Name")}
           ${peopleSortHeader("lastName", "Last Name")}
+          ${peopleSortHeader("gender", "Gender")}
+          ${peopleSortHeader("age", "Age")}
+          ${peopleSortHeader("race", "Race")}
           ${peopleSortHeader("relationship", "Relationship")}
           ${peopleSortHeader("skills", "Skills")}
           <span></span>
@@ -3662,6 +3715,9 @@ function renderPeopleView() {
     </section>
   `;
   fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
+  fillFixedSelect(els.taskList.querySelector("select[name='gender']"), genderOptions, "", "No gender");
+  fillFixedSelect(els.taskList.querySelector("select[name='ageBand']"), ageBandOptions, "", "No age");
+  fillFixedSelect(els.taskList.querySelector("select[name='race']"), raceOptions, "", "No race");
   const personDraft = restoreCreationDraft(els.taskList.querySelector("#person-form"));
   fillSkillPicker(els.taskList.querySelector("#person-form .skill-picker"), personDraft?.skillIds || []);
   const list = els.taskList.querySelector(".people-list");
@@ -3672,7 +3728,7 @@ function renderPeopleView() {
     list.append(empty);
     return;
   }
-  for (const [index, person] of sortedPeople(state.people, ["created", "firstName", "lastName", "relationship", "skills"]).entries()) {
+  for (const [index, person] of sortedPeople(state.people, ["created", "firstName", "lastName", "gender", "age", "race", "relationship", "skills"]).entries()) {
     const card = document.createElement("div");
     card.className = "person-card";
     card.dataset.personId = person.id;
@@ -3681,6 +3737,9 @@ function renderPeopleView() {
       <span class="created-stamp"></span>
       <input name="firstName" type="text" required aria-label="First name">
       <input name="lastName" type="text" aria-label="Last name">
+      <select name="gender" aria-label="Gender"></select>
+      <select name="ageBand" aria-label="Age"></select>
+      <select name="race" aria-label="Race"></select>
       <select name="relationshipTypeId" aria-label="Relationship"></select>
       <div class="skill-picker" role="group" aria-label="Skills"></div>
       <div class="row-actions">
@@ -3691,6 +3750,9 @@ function renderPeopleView() {
     card.querySelector(".created-stamp").textContent = formatTimestamp(person.created_at);
     card.querySelector("[name='firstName']").value = person.first_name;
     card.querySelector("[name='lastName']").value = person.last_name;
+    fillFixedSelect(card.querySelector("[name='gender']"), genderOptions, person.gender, "No gender");
+    fillFixedSelect(card.querySelector("[name='ageBand']"), ageBandOptions, person.age_band, "No age");
+    fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
     fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
     fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
     applyPersonRelationshipTone(card, relationshipNameForId(person.relationship_type_id));
@@ -3701,6 +3763,9 @@ function renderPeopleView() {
 function renderPeopleFilterView() {
   els.taskList.innerHTML = `
     <div class="people-filter-bar">
+      <select name="genderFilter" aria-label="Filter by gender"></select>
+      <select name="ageFilter" aria-label="Filter by age"></select>
+      <select name="raceFilter" aria-label="Filter by race"></select>
       <select name="skillFilter" aria-label="Filter by skill"></select>
       <select name="relationshipFilter" aria-label="Filter by relationship"></select>
       <select name="projectFilter" aria-label="Filter by project"></select>
@@ -3712,6 +3777,9 @@ function renderPeopleFilterView() {
         <span>#</span>
         ${peopleSortHeader("firstName", "First Name")}
         ${peopleSortHeader("lastName", "Last Name")}
+        ${peopleSortHeader("gender", "Gender")}
+        ${peopleSortHeader("age", "Age")}
+        ${peopleSortHeader("race", "Race")}
         ${peopleSortHeader("relationship", "Relationship")}
         ${peopleSortHeader("skills", "Skills")}
         ${peopleSortHeader("projects", "Projects")}
@@ -3720,10 +3788,16 @@ function renderPeopleFilterView() {
       <div class="planning-list people-list"></div>
     </div>
   `;
+  const genderSelect = els.taskList.querySelector("[name='genderFilter']");
+  const ageSelect = els.taskList.querySelector("[name='ageFilter']");
+  const raceSelect = els.taskList.querySelector("[name='raceFilter']");
   const skillSelect = els.taskList.querySelector("[name='skillFilter']");
   const relationshipSelect = els.taskList.querySelector("[name='relationshipFilter']");
   const projectSelect = els.taskList.querySelector("[name='projectFilter']");
   const roleSelect = els.taskList.querySelector("[name='roleFilter']");
+  fillFixedSelect(genderSelect, genderOptions, "", "All genders");
+  fillFixedSelect(ageSelect, ageBandOptions, "", "All ages");
+  fillFixedSelect(raceSelect, raceOptions, "", "All races");
   skillSelect.innerHTML = '<option value="">All skills</option>';
   for (const skill of sortedByName(state.skills)) {
     const option = document.createElement("option");
@@ -3752,15 +3826,21 @@ function renderPeopleFilterView() {
     option.textContent = role.name;
     roleSelect.append(option);
   }
+  const genderFilter = sessionStorage.getItem("people-gender-filter") || "";
+  const ageFilter = sessionStorage.getItem("people-age-filter") || "";
+  const raceFilter = sessionStorage.getItem("people-race-filter") || "";
   const skillFilter = sessionStorage.getItem("people-skill-filter") || "";
   const relationshipFilter = sessionStorage.getItem("people-relationship-filter") || "";
   const projectFilter = sessionStorage.getItem("people-project-filter") || "";
   const roleFilter = sessionStorage.getItem("people-role-filter") || "";
+  genderSelect.value = genderFilter;
+  ageSelect.value = ageFilter;
+  raceSelect.value = raceFilter;
   skillSelect.value = skillFilter;
   relationshipSelect.value = relationshipFilter;
   projectSelect.value = projectFilter;
   roleSelect.value = roleFilter;
-  const people = sortedPeople(filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter));
+  const people = sortedPeople(filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter, genderFilter, ageFilter, raceFilter));
   const list = els.taskList.querySelector(".people-list");
   if (!people.length) {
     const empty = document.createElement("div");
@@ -3774,8 +3854,11 @@ function renderPeopleFilterView() {
   }
 }
 
-function filteredPeople(skillId, relationshipId, projectId = "", roleId = "") {
+function filteredPeople(skillId, relationshipId, projectId = "", roleId = "", gender = "", ageBand = "", race = "") {
   return state.people.filter((person) => {
+    if (gender && person.gender !== gender) return false;
+    if (ageBand && person.age_band !== ageBand) return false;
+    if (race && person.race !== race) return false;
     if (skillId && !person.skill_ids.includes(skillId)) return false;
     if (relationshipId && person.relationship_type_id !== relationshipId) return false;
     if (projectId && !state.projectAssignments.some((assignment) => assignment.person_id === person.id && assignment.project_id === projectId)) return false;
@@ -3909,13 +3992,19 @@ function makePeopleReadRow(person, index = 0) {
     <span></span>
     <span></span>
     <span></span>
+    <span></span>
+    <span></span>
+    <span></span>
     <span class="person-projects"></span>
     <button class="ghost-button person-edit-button" type="button">Edit</button>
   `;
   row.querySelectorAll("span")[0].textContent = person.first_name;
   row.querySelectorAll("span")[1].textContent = person.last_name || "";
-  row.querySelectorAll("span")[2].textContent = state.relationshipTypes.find((item) => item.id === person.relationship_type_id)?.name || "";
-  row.querySelectorAll("span")[3].textContent = person.skill_ids
+  row.querySelectorAll("span")[2].textContent = person.gender || "";
+  row.querySelectorAll("span")[3].textContent = person.age_band || "";
+  row.querySelectorAll("span")[4].textContent = person.race || "";
+  row.querySelectorAll("span")[5].textContent = state.relationshipTypes.find((item) => item.id === person.relationship_type_id)?.name || "";
+  row.querySelectorAll("span")[6].textContent = person.skill_ids
     .map((id) => state.skills.find((skill) => skill.id === id)?.name)
     .filter(Boolean)
     .join(", ");
@@ -5317,6 +5406,9 @@ els.taskList.addEventListener("click", async (event) => {
     sessionStorage.removeItem("people-relationship-filter");
     sessionStorage.removeItem("people-project-filter");
     sessionStorage.removeItem("people-role-filter");
+    sessionStorage.removeItem("people-gender-filter");
+    sessionStorage.removeItem("people-age-filter");
+    sessionStorage.removeItem("people-race-filter");
     renderTasks();
     return;
   }
@@ -5652,6 +5744,9 @@ els.taskList.addEventListener("submit", async (event) => {
             {
               first_name: firstName,
               last_name: lastName,
+              gender: latestForm.get("gender") || "",
+              age_band: latestForm.get("ageBand") || "",
+              race: latestForm.get("race") || "",
               relationship_type_id: latestForm.get("relationshipTypeId") || "",
               skill_ids: latestForm.getAll("skillIds")
             },
@@ -5841,6 +5936,9 @@ function autosavePersonCard(card) {
         id: person.id,
         first_name: firstName,
         last_name: card.querySelector("[name='lastName']").value.trim(),
+        gender: card.querySelector("[name='gender']")?.value || "",
+        age_band: card.querySelector("[name='ageBand']")?.value || "",
+        race: card.querySelector("[name='race']")?.value || "",
         relationship_type_id: card.querySelector("[name='relationshipTypeId']").value || "",
         skill_ids: [...card.querySelectorAll("[name='skillIds']")].map((input) => input.value),
         created_at: person.created_at
@@ -5992,12 +6090,18 @@ els.taskList.addEventListener("change", (event) => {
     renderTasks();
     return;
   }
-  const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter'], [name='roleFilter']");
+  const peopleFilter = event.target.closest("[name='skillFilter'], [name='relationshipFilter'], [name='projectFilter'], [name='roleFilter'], [name='genderFilter'], [name='ageFilter'], [name='raceFilter']");
   if (peopleFilter) {
+    const genderFilter = els.taskList.querySelector("[name='genderFilter']")?.value || "";
+    const ageFilter = els.taskList.querySelector("[name='ageFilter']")?.value || "";
+    const raceFilter = els.taskList.querySelector("[name='raceFilter']")?.value || "";
     const skillFilter = els.taskList.querySelector("[name='skillFilter']")?.value || "";
     const relationshipFilter = els.taskList.querySelector("[name='relationshipFilter']")?.value || "";
     const projectFilter = els.taskList.querySelector("[name='projectFilter']")?.value || "";
     const roleFilter = els.taskList.querySelector("[name='roleFilter']")?.value || "";
+    sessionStorage.setItem("people-gender-filter", genderFilter);
+    sessionStorage.setItem("people-age-filter", ageFilter);
+    sessionStorage.setItem("people-race-filter", raceFilter);
     sessionStorage.setItem("people-skill-filter", skillFilter);
     sessionStorage.setItem("people-relationship-filter", relationshipFilter);
     sessionStorage.setItem("people-project-filter", projectFilter);

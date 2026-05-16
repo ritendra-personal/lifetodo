@@ -258,11 +258,34 @@ create table if not exists planner_people (
   user_id uuid not null references auth.users(id) on delete cascade,
   first_name text not null,
   last_name text default '',
+  gender text,
+  age_band text,
+  race text,
   skill_ids uuid[] not null default '{}',
   relationship_type_id uuid references planner_relationship_types(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table planner_people
+add column if not exists gender text,
+add column if not exists age_band text,
+add column if not exists race text;
+
+alter table planner_people
+drop constraint if exists planner_people_gender_check,
+add constraint planner_people_gender_check
+  check (gender is null or gender in ('Male', 'Female'));
+
+alter table planner_people
+drop constraint if exists planner_people_age_band_check,
+add constraint planner_people_age_band_check
+  check (age_band is null or age_band in ('Under 21', '21-35', '35-55', '55+'));
+
+alter table planner_people
+drop constraint if exists planner_people_race_check,
+add constraint planner_people_race_check
+  check (race is null or race in ('Desi', 'White', 'Black', 'Other'));
 
 create table if not exists planner_project_people (
   id uuid primary key default gen_random_uuid(),
