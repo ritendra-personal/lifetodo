@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.47";
+const APP_VERSION = "1.10.48";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -76,7 +76,7 @@ const state = {
   tagFilter: "",
   sort: "manual",
   peopleSort: loadPeopleSort(),
-  projectSort: ["created", "name", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "created",
+  projectSort: ["created", "name", "year", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "created",
   projectViewMode: localStorage.getItem("project-view-mode") === "minimal" ? "minimal" : "full",
   showDone: localStorage.getItem("show-done") === "true",
   density: densityOptions.includes(localStorage.getItem("planner-density")) ? localStorage.getItem("planner-density") : "comfort",
@@ -865,6 +865,14 @@ function normalizeIdea(idea) {
   };
 }
 
+function normalizeProjectYear(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const year = Number(raw);
+  if (!Number.isInteger(year) || year < 0 || year > 9999) return "";
+  return String(year);
+}
+
 function normalizeProject(project) {
   const legacyDate = project.target_date || project.targetDate || "";
   return {
@@ -875,6 +883,7 @@ function normalizeProject(project) {
     project_type_id: project.project_type_id || project.projectTypeId || "",
     project_status_id: project.project_status_id || project.projectStatusId || project.status_id || projectStatusIdForName(project.status),
     venue_id: project.venue_id || project.venueId || "",
+    project_year: normalizeProjectYear(project.project_year || project.projectYear || project.year),
     status: project.status || "",
     start_date: project.start_date || project.startDate || "",
     end_date: project.end_date || project.endDate || legacyDate,
@@ -1755,6 +1764,7 @@ async function persistProject(project, options = {}) {
       project_type_id: normalized.project_type_id || null,
       project_status_id: normalized.project_status_id || null,
       status: projectStatusName(normalized),
+      project_year: normalized.project_year ? Number(normalized.project_year) : null,
       start_date: normalized.start_date || null,
       end_date: normalized.end_date || null,
       target_date: normalized.target_date || null,
@@ -1763,14 +1773,26 @@ async function persistProject(project, options = {}) {
     };
     const venueExists = normalized.venue_id && state.venues.some((venue) => venue.id === normalized.venue_id);
     payload.venue_id = venueExists ? normalized.venue_id : null;
-    const data = await withSlowOperationNotice(
-      () => upsertRowDirect("planner_projects", payload, null, "project"),
-      8000,
-      "Project save is taking longer than usual. Still waiting for the database..."
-    );
+    let yearSaved = true;
+    let data;
+    try {
+      data = await withSlowOperationNotice(
+        () => upsertRowDirect("planner_projects", payload, null, "project"),
+        8000,
+        "Project save is taking longer than usual. Still waiting for the database..."
+      );
+    } catch (error) {
+      if (!/project_year|schema cache|column/i.test(error.message)) throw error;
+      yearSaved = false;
+      const { project_year, ...fallbackPayload } = payload;
+      data = await upsertRowDirect("planner_projects", fallbackPayload, null, "project");
+    }
     const saved = normalizeProject(data);
+    if (!yearSaved) saved.project_year = normalized.project_year;
     state.projects = state.projects.map((item) => (item.id === saved.id ? saved : item));
-    state.syncMessage = `Saved project to database at ${savedAtLabel()}.`;
+    state.syncMessage = yearSaved
+      ? `Saved project to database at ${savedAtLabel()}.`
+      : `Saved project to database at ${savedAtLabel()}. Year is local until you run migration 016.`;
     state.syncError = "";
     if (options.render !== false) render();
     return { savedToCloud: true };
@@ -2755,6 +2777,10 @@ function sortedProjects(projects) {
       const dateCompare = (a.start_date || undatedValue).localeCompare(b.start_date || undatedValue);
       if (dateCompare) return dateCompare;
     }
+    if (state.projectSort === "year") {
+      const yearCompare = (Number(a.project_year || 99999) - Number(b.project_year || 99999));
+      if (yearCompare) return yearCompare;
+    }
     return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
   });
 }
@@ -3312,6 +3338,7 @@ function renderFocusedProjectView() {
         <select name="projectTypeId" aria-label="Project type"></select>
         <select name="projectStatusId" aria-label="Project status"></select>
         <select name="venueId" aria-label="Project venue"></select>
+        <input name="projectYear" type="number" min="0" max="9999" step="1" placeholder="Year" aria-label="Project year">
         <input class="project-description-input" name="description" type="text" aria-label="Project description">
         <div class="project-date-pair">
           <label>
@@ -3343,6 +3370,7 @@ function renderFocusedProjectView() {
   fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
   fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
   fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
+  card.querySelector("[name='projectYear']").value = project.project_year || "";
   applyProjectCardStatusTone(card);
   card.querySelector("[name='description']").value = project.description;
   card.querySelector("[name='startDate']").value = project.start_date || "";
@@ -3970,6 +3998,7 @@ function renderProjectFilterView() {
       <div class="project-filter-head">
         <span>#</span>
         <span>Name</span>
+        <span>Year</span>
         <span>Type</span>
         <span>Status</span>
         <span>Venue</span>
@@ -4042,14 +4071,16 @@ function renderProjectFilterView() {
       <span></span>
       <span></span>
       <span></span>
+      <span></span>
       <button class="ghost-button project-focus-button" type="button">Open</button>
     `;
     row.querySelector("strong").textContent = project.name;
-    row.querySelectorAll("span")[0].textContent = projectTypeName(project) || "No type";
-    row.querySelectorAll("span")[1].textContent = projectStatusName(project) || "No status";
-    row.querySelectorAll("span")[2].textContent = venueName(project) || "No venue";
-    row.querySelectorAll("span")[3].textContent = [project.start_date || "No start", project.end_date || "No end"].join(" - ");
-    row.querySelectorAll("span")[4].textContent = projectPeopleNames(project).join(", ") || "No people";
+    row.querySelectorAll("span")[0].textContent = project.project_year || "No year";
+    row.querySelectorAll("span")[1].textContent = projectTypeName(project) || "No type";
+    row.querySelectorAll("span")[2].textContent = projectStatusName(project) || "No status";
+    row.querySelectorAll("span")[3].textContent = venueName(project) || "No venue";
+    row.querySelectorAll("span")[4].textContent = [project.start_date || "No start", project.end_date || "No end"].join(" - ");
+    row.querySelectorAll("span")[5].textContent = projectPeopleNames(project).join(", ") || "No people";
     list.append(row);
   }
 }
@@ -4200,6 +4231,7 @@ function renderProjectChartsView() {
   projectCharts.className = "distribution-grid";
   const projectOptions = { noun: "project", pluralNoun: "projects", emptyLabel: "No projects yet." };
   projectCharts.append(
+    makeDistributionPie("Year", distributionCounts(state.projects, (project) => project.project_year), projectOptions),
     makeDistributionPie("Location", distributionCounts(state.projects, (project) => venueName(project)), projectOptions),
     makeDistributionPie("Type", distributionCounts(state.projects, (project) => projectTypeName(project)), projectOptions),
     makeDistributionPie("Status", distributionCounts(state.projects, (project) => projectStatusName(project)), projectOptions)
@@ -4270,6 +4302,9 @@ function renderProjectsView() {
         <label class="field-label">Name
           <input name="name" type="text" placeholder="Project name" required>
         </label>
+        <label class="field-label">Year
+          <input name="projectYear" type="number" min="0" max="9999" step="1" placeholder="Year">
+        </label>
         <label class="field-label">Type
           <select name="projectTypeId" aria-label="Project type"></select>
         </label>
@@ -4300,6 +4335,7 @@ function renderProjectsView() {
             <select class="project-sort-select" name="projectSort" aria-label="Sort projects">
               <option value="created" ${state.projectSort === "created" ? "selected" : ""}>Created</option>
               <option value="name" ${state.projectSort === "name" ? "selected" : ""}>Name</option>
+              <option value="year" ${state.projectSort === "year" ? "selected" : ""}>Year</option>
               <option value="startDate" ${state.projectSort === "startDate" ? "selected" : ""}>Start date</option>
             </select>
           </label>
@@ -4338,6 +4374,7 @@ function renderProjectsView() {
         <input name="name" type="text" required aria-label="Project name">
         <div class="project-task-count"></div>
       </div>
+      <input name="projectYear" type="number" min="0" max="9999" step="1" placeholder="Year" aria-label="Project year">
       <select name="projectTypeId" aria-label="Project type"></select>
       <select name="projectStatusId" aria-label="Project status"></select>
       <select name="venueId" aria-label="Project venue"></select>
@@ -4369,6 +4406,7 @@ function renderProjectsView() {
       </div>
     `;
     card.querySelector("[name='name']").value = project.name;
+    card.querySelector("[name='projectYear']").value = project.project_year || "";
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
     fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
     fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
@@ -5364,7 +5402,7 @@ function makeTimelineProject(project, x, y, width) {
     <span class="timeline-project-meta"></span>
   `;
   node.querySelector(".timeline-project-title").textContent = project.name || "Untitled project";
-  node.querySelector(".timeline-project-meta").textContent = [type, status, `${formatDate(projectTimelineStart(project))} - ${formatDate(projectTimelineEnd(project))}`]
+  node.querySelector(".timeline-project-meta").textContent = [project.project_year, type, status, `${formatDate(projectTimelineStart(project))} - ${formatDate(projectTimelineEnd(project))}`]
     .filter(Boolean)
     .join(" · ");
   return node;
@@ -6043,6 +6081,7 @@ els.taskList.addEventListener("submit", async (event) => {
       await persistProject({
         name,
         description: projectFormData.get("description").trim(),
+        project_year: normalizeProjectYear(projectFormData.get("projectYear")),
         project_type_id: projectFormData.get("projectTypeId") || "",
         project_status_id: projectFormData.get("projectStatusId") || "",
         venue_id: projectFormData.get("venueId") || "",
@@ -6213,6 +6252,7 @@ function autosaveProjectCard(card) {
         id: project.id,
         name,
         description: card.querySelector("[name='description']").value.trim(),
+        project_year: normalizeProjectYear(card.querySelector("[name='projectYear']").value),
         project_type_id: card.querySelector("[name='projectTypeId']").value || "",
         project_status_id: card.querySelector("[name='projectStatusId']").value || "",
         venue_id: card.querySelector("[name='venueId']").value || "",
@@ -6345,7 +6385,7 @@ els.taskList.addEventListener("change", (event) => {
   }
   const projectSort = event.target.closest("[name='projectSort']");
   if (projectSort) {
-    state.projectSort = ["created", "name", "startDate"].includes(projectSort.value) ? projectSort.value : "created";
+    state.projectSort = ["created", "name", "year", "startDate"].includes(projectSort.value) ? projectSort.value : "created";
     localStorage.setItem("project-sort", state.projectSort);
     renderTasks();
     return;

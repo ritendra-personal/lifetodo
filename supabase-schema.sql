@@ -171,6 +171,7 @@ create table if not exists planner_projects (
   project_type_id uuid,
   project_status_id uuid,
   venue_id uuid,
+  project_year integer,
   status text default '',
   start_date date,
   end_date date,
@@ -184,6 +185,7 @@ alter table planner_projects add column if not exists end_date date;
 alter table planner_projects add column if not exists project_type_id uuid;
 alter table planner_projects add column if not exists project_status_id uuid;
 alter table planner_projects add column if not exists venue_id uuid;
+alter table planner_projects add column if not exists project_year integer;
 alter table planner_projects add column if not exists status text default '';
 
 create table if not exists planner_ideas (
@@ -354,6 +356,7 @@ on planner_projects (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')
 create index if not exists planner_projects_project_type_id_idx on planner_projects(project_type_id);
 create index if not exists planner_projects_project_status_id_idx on planner_projects(project_status_id);
 create index if not exists planner_projects_venue_id_idx on planner_projects(venue_id);
+create index if not exists planner_projects_project_year_idx on planner_projects(project_year);
 create index if not exists planner_projects_start_date_idx on planner_projects(start_date);
 create index if not exists planner_projects_end_date_idx on planner_projects(end_date);
 create index if not exists planner_projects_target_date_idx on planner_projects(target_date);
