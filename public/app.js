@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.49";
+const APP_VERSION = "1.10.50";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -4224,20 +4224,43 @@ function peopleCountForProject(project) {
   return state.projectAssignments.filter((assignment) => assignment.project_id === project.id).length;
 }
 
-function projectYearBreakdownRows() {
-  const countsByYear = new Map();
-  let undated = 0;
+function projectYearBreakdownRows(startYear = 2019) {
+  const currentYear = new Date().getFullYear();
+  const maxProjectYear = Math.max(
+    startYear,
+    currentYear,
+    ...state.projects
+      .map((project) => Number(project.project_year))
+      .filter((year) => Number.isInteger(year) && year >= startYear)
+  );
+  const projectsByYear = new Map();
+  for (let year = startYear; year <= maxProjectYear; year += 1) {
+    projectsByYear.set(String(year), []);
+  }
+  const undatedProjects = [];
   for (const project of state.projects) {
-    if (!project.project_year) {
-      undated += 1;
+    const year = normalizeProjectYear(project.project_year);
+    if (!year) {
+      undatedProjects.push(project);
       continue;
     }
-    countsByYear.set(project.project_year, (countsByYear.get(project.project_year) || 0) + 1);
+    if (!projectsByYear.has(year)) projectsByYear.set(year, []);
+    projectsByYear.get(year).push(project);
   }
-  const rows = [...countsByYear.entries()]
+  const rows = [...projectsByYear.entries()]
     .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([year, value]) => ({ label: year, value }));
-  if (undated) rows.push({ label: "No year", value: undated });
+    .map(([year, projects]) => ({
+      label: year,
+      value: projects.length,
+      projects: projects.slice().sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base", numeric: true }))
+    }));
+  if (undatedProjects.length) {
+    rows.push({
+      label: "No year",
+      value: undatedProjects.length,
+      projects: undatedProjects.slice().sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base", numeric: true }))
+    });
+  }
   let cumulative = 0;
   return rows.map((row) => {
     cumulative += row.value;
@@ -4265,19 +4288,34 @@ function makeProjectYearBreakdown() {
     chart.textContent = "No projects yet.";
     return card;
   }
-  rows.forEach((row, index) => {
+  rows.forEach((row) => {
     const item = document.createElement("div");
     item.className = "year-breakdown-row";
     item.innerHTML = `
-      <span></span>
-      <div><i></i></div>
-      <strong></strong>
+      <div class="year-breakdown-year">
+        <strong></strong>
+        <span></span>
+      </div>
+      <div class="year-stack"></div>
       <small></small>
     `;
-    item.querySelector("span").textContent = row.label;
-    item.querySelector("i").style.width = `${Math.max(4, (row.value / max) * 100)}%`;
-    item.querySelector("i").style.background = paletteColor(index);
-    item.querySelector("strong").textContent = String(row.value);
+    item.querySelector(".year-breakdown-year strong").textContent = row.label;
+    item.querySelector(".year-breakdown-year span").textContent = `${row.value} ${row.value === 1 ? "project" : "projects"}`;
+    const stack = item.querySelector(".year-stack");
+    stack.style.minHeight = `${Math.max(26, row.value ? (row.value / max) * 120 : 2)}px`;
+    if (!row.projects.length) {
+      stack.classList.add("empty");
+    }
+    row.projects.forEach((project, index) => {
+      const segment = document.createElement("button");
+      segment.className = "year-stack-segment project-focus-button";
+      segment.type = "button";
+      segment.dataset.projectId = project.id;
+      segment.style.background = paletteColor(index);
+      segment.textContent = project.name || "Untitled project";
+      segment.title = project.name || "Untitled project";
+      stack.append(segment);
+    });
     item.querySelector("small").textContent = `${row.cumulative} cumulative`;
     chart.append(item);
   });
