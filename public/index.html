@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Life Planner</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?v=1.10.40">
+    <link rel="stylesheet" href="/styles.css?v=1.10.41">
   </head>
   <body>
     <div class="shell">
@@ -257,6 +257,17 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=1.10.40" type="module"></script>
+    <dialog id="confirm-dialog" class="confirm-dialog">
+      <form method="dialog" id="confirm-form">
+        <h2 id="confirm-title">Confirm</h2>
+        <p id="confirm-message"></p>
+        <div class="dialog-actions">
+          <button id="confirm-cancel" class="ghost-button" value="cancel" type="submit">Cancel</button>
+          <button id="confirm-accept" class="danger-button" value="confirm" type="submit">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/app.js?v=1.10.41" type="module"></script>
   </body>
 </html>

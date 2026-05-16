@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.40";
+const APP_VERSION = "1.10.41";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -131,7 +131,13 @@ const els = {
   expandTaskButton: document.querySelector("#expand-task-button"),
   completeButton: document.querySelector("#complete-button"),
   subtaskButton: document.querySelector("#subtask-button"),
-  deleteButton: document.querySelector("#delete-button")
+  deleteButton: document.querySelector("#delete-button"),
+  confirmDialog: document.querySelector("#confirm-dialog"),
+  confirmForm: document.querySelector("#confirm-form"),
+  confirmTitle: document.querySelector("#confirm-title"),
+  confirmMessage: document.querySelector("#confirm-message"),
+  confirmCancel: document.querySelector("#confirm-cancel"),
+  confirmAccept: document.querySelector("#confirm-accept")
 };
 
 const detail = {
@@ -310,6 +316,35 @@ function hasDuplicatePersonName(firstName, lastName, excludeId = "") {
 
 function alertDuplicate(label, value) {
   window.alert(`${label} "${value}" already exists.`);
+}
+
+function confirmAction(message, options = {}) {
+  if (!els.confirmDialog || !els.confirmForm) return Promise.resolve(window.confirm(message));
+  els.confirmTitle.textContent = options.title || "Confirm delete";
+  els.confirmMessage.textContent = message;
+  els.confirmAccept.textContent = options.acceptLabel || "Delete";
+  els.confirmCancel.textContent = options.cancelLabel || "Cancel";
+  return new Promise((resolve) => {
+    const dialog = els.confirmDialog;
+    const form = els.confirmForm;
+    const finish = (confirmed) => {
+      dialog.removeEventListener("close", handleClose);
+      form.removeEventListener("submit", handleSubmit);
+      resolve(confirmed);
+    };
+    const handleClose = () => finish(dialog.returnValue === "confirm");
+    const handleSubmit = () => {
+      requestAnimationFrame(() => {
+        if (!dialog.open) return;
+        dialog.close(dialog.returnValue || "cancel");
+      });
+    };
+    dialog.addEventListener("close", handleClose);
+    form.addEventListener("submit", handleSubmit);
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+    els.confirmCancel.focus();
+  });
 }
 
 function setDensity(density) {
@@ -1727,7 +1762,7 @@ async function deleteProject(id) {
   const message = linkedCount
     ? `Delete "${project.name}"? ${linkedCount} linked task${linkedCount === 1 ? "" : "s"} and ${assignedCount} person assignment${assignedCount === 1 ? "" : "s"} will be unlinked, not deleted.`
     : `Delete "${project.name}"?`;
-  if (!window.confirm(message)) return;
+  if (!(await confirmAction(message))) return;
   state.projects = state.projects.filter((item) => item.id !== id);
   state.projectAssignments = state.projectAssignments.filter((assignment) => assignment.project_id !== id);
   state.tasks = state.tasks.map((task) => (task.project_id === id ? { ...task, project_id: "" } : task));
@@ -1930,7 +1965,7 @@ async function deleteArea(id) {
   const message = usage
     ? `Delete area "${area.name}"? ${usage} linked item${usage === 1 ? "" : "s"} will keep their text, but show with neutral black styling.`
     : `Delete area "${area.name}"?`;
-  if (!window.confirm(message)) return;
+  if (!(await confirmAction(message))) return;
   const previousAreas = state.areas;
   state.areas = state.areas.filter((item) => item.id !== id);
   saveAreas();
@@ -2083,7 +2118,7 @@ async function deleteNamedOption(type, id) {
   const message = usage
     ? `Delete ${config.label} "${option.name}"? ${usage} linked item${usage === 1 ? "" : "s"} will keep their data, but show with neutral black styling where this annotation was used.`
     : `Delete ${config.label} "${option.name}"?`;
-  if (!window.confirm(message)) return;
+  if (!(await confirmAction(message))) return;
   const previousItems = state[config.stateKey];
   const previousPeople = state.people;
   const previousProjects = state.projects;
@@ -2204,7 +2239,7 @@ async function persistPerson(person, options = {}) {
 async function deletePerson(id) {
   const person = state.people.find((item) => item.id === id);
   if (!person) return;
-  if (!window.confirm(`Delete ${person.first_name}${person.last_name ? ` ${person.last_name}` : ""}?`)) return;
+  if (!(await confirmAction(`Delete ${person.first_name}${person.last_name ? ` ${person.last_name}` : ""}?`))) return;
   state.people = state.people.filter((item) => item.id !== id);
   state.projectAssignments = state.projectAssignments.filter((assignment) => assignment.person_id !== id);
   saveLocal();
@@ -2231,7 +2266,7 @@ async function deleteGoal(id) {
   const message = linkedCount
     ? `Delete "${goal.name}"? ${linkedCount} linked task${linkedCount === 1 ? "" : "s"} will be unlinked, not deleted.`
     : `Delete "${goal.name}"?`;
-  if (!window.confirm(message)) return;
+  if (!(await confirmAction(message))) return;
   if (!isSupabaseReady()) {
     state.goals = state.goals.filter((item) => item.id !== id);
     state.tasks = state.tasks.map((task) => {
@@ -2262,7 +2297,7 @@ async function deleteGoal(id) {
 
 async function deleteIdea(id) {
   const idea = state.ideas.find((item) => item.id === id);
-  if (!idea || !window.confirm(`Delete this idea? "${idea.text}"`)) return;
+  if (!idea || !(await confirmAction(`Delete this idea? "${idea.text}"`))) return;
   if (!isSupabaseReady()) {
     state.ideas = state.ideas.filter((item) => item.id !== id);
     saveLocal();
@@ -5219,7 +5254,7 @@ els.taskForm.addEventListener("submit", async (event) => {
   }
 });
 
-els.taskList.addEventListener("click", (event) => {
+els.taskList.addEventListener("click", async (event) => {
   if (suppressAssignmentClick) {
     suppressAssignmentClick = false;
     return;
@@ -5495,9 +5530,7 @@ els.taskList.addEventListener("click", (event) => {
     const message = childCount
       ? `Delete "${task.title}" and ${childCount} subtask${childCount === 1 ? "" : "s"}? This cannot be undone.`
       : `Delete "${task.title}"? This cannot be undone.`;
-    if (window.confirm(message)) {
-      deleteTask(task.id).then(() => leaveFocusView());
-    }
+    if (await confirmAction(message)) deleteTask(task.id).then(() => leaveFocusView());
     return;
   }
   const check = event.target.closest(".check");
@@ -6313,7 +6346,7 @@ els.deleteButton.addEventListener("click", async () => {
   const message = childCount
     ? `Delete "${task.title}" and ${childCount} subtask${childCount === 1 ? "" : "s"}? This cannot be undone.`
     : `Delete "${task.title}"? This cannot be undone.`;
-  if (!window.confirm(message)) return;
+  if (!(await confirmAction(message))) return;
   state.selectedId = null;
   await deleteTask(id);
 });

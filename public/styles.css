@@ -2955,6 +2955,7 @@ body.resizing .resize-handle::before {
 
 dialog {
   width: min(420px, calc(100vw - 32px));
+  margin: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0;
@@ -2971,13 +2972,26 @@ dialog::backdrop {
   padding: 22px;
 }
 
+#confirm-form {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
 #area-form h2,
-#area-form p {
+#area-form p,
+#confirm-form h2,
+#confirm-form p {
   margin: 0;
 }
 
-#area-form p {
+#area-form p,
+#confirm-form p {
   color: var(--muted);
+}
+
+.confirm-dialog {
+  max-width: min(460px, calc(100vw - 32px));
 }
 
 .area-list {
