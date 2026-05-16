@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.50";
+const APP_VERSION = "1.10.52";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -401,7 +401,8 @@ function validView(view) {
     "focus-task",
     "focus-project",
     "focus-goal",
-    "focus-person"
+    "focus-person",
+    "focus-idea"
   ]);
   if (["today", "upcoming", "backlog", "done"].includes(view)) return "tasks";
   return views.has(view) ? view : "home";
@@ -2893,6 +2894,10 @@ function renderTasks() {
     renderFocusedPersonView();
     return;
   }
+  if (state.view === "focus-idea") {
+    renderFocusedIdeaView();
+    return;
+  }
   if (state.view === "tasks") {
     renderTaskListView();
     return;
@@ -3255,6 +3260,41 @@ function renderFocusedGoalView() {
   const outline = card.querySelector(".goal-task-outline");
   outline.append(makeGoalTaskOutline(goal.id, "active"));
   outline.append(makeGoalTaskOutline(goal.id, "done"));
+}
+
+function renderFocusedIdeaView() {
+  const idea = state.ideas.find((item) => item.id === state.focusedId);
+  if (!idea) {
+    renderFocusedEmpty("Idea");
+    return;
+  }
+  els.taskList.innerHTML = `
+    <section class="focus-editor">
+      <div class="focus-editor-head">
+        <button class="ghost-button focus-back-button" type="button">Back</button>
+        <span>Idea</span>
+      </div>
+      <article class="planning-card idea-card focused-idea-card" data-idea-id="${idea.id}">
+        <input name="text" type="text" required aria-label="Idea text">
+        <select name="area" aria-label="Idea area"></select>
+        <span class="created-stamp idea-created-stamp"></span>
+        <button class="danger-button delete-idea-button" type="button">Delete</button>
+      </article>
+    </section>
+  `;
+  const card = els.taskList.querySelector("[data-idea-id]");
+  card.style.borderLeftColor = areaColorFor(idea);
+  card.style.background = `linear-gradient(90deg, ${areaTintFor(idea)}, #fff 46%)`;
+  card.querySelector("[name='text']").value = idea.text;
+  card.querySelector(".idea-created-stamp").textContent = formatTimestamp(idea.created_at);
+  const select = card.querySelector("select");
+  for (const area of sortedByName(state.areas)) {
+    const option = document.createElement("option");
+    option.value = area.id;
+    option.textContent = area.name;
+    select.append(option);
+  }
+  select.value = idea.area_id || areaIdForName(idea.area);
 }
 
 function renderFocusedPersonView() {
@@ -3652,7 +3692,10 @@ function renderIdeasView() {
       <input name="text" type="text" required aria-label="Idea text">
       <select name="area" aria-label="Idea area"></select>
       <span class="created-stamp idea-created-stamp"></span>
-      <button class="danger-button delete-idea-button" type="button">Delete</button>
+      <div class="row-actions">
+        <button class="ghost-button idea-focus-button" type="button">Open</button>
+        <button class="danger-button delete-idea-button" type="button">Delete</button>
+      </div>
     `;
     card.querySelector("[name='text']").value = idea.text;
     card.querySelector(".idea-created-stamp").textContent = formatTimestamp(idea.created_at);
@@ -4187,7 +4230,18 @@ function makeDistributionBars(title, rows, options = {}) {
     const item = document.createElement("div");
     item.className = "bar-row";
     item.innerHTML = '<span></span><div><i></i></div><strong></strong>';
-    item.querySelector("span").textContent = row.label;
+    const labelTarget = item.querySelector("span");
+    if (row.id && row.entityType) {
+      const button = document.createElement("button");
+      button.className = `chart-entity-link ${row.entityType === "project" ? "project-focus-button" : ""}`;
+      button.type = "button";
+      button.textContent = row.label;
+      if (row.entityType === "project") button.dataset.projectId = row.id;
+      if (row.entityType === "person") button.dataset.personEditId = row.id;
+      labelTarget.append(button);
+    } else {
+      labelTarget.textContent = row.label;
+    }
     item.querySelector("i").style.width = `${Math.max(4, (row.value / max) * 100)}%`;
     item.querySelector("i").style.background = paletteColor(index);
     item.querySelector("strong").textContent = String(row.value);
@@ -4212,7 +4266,7 @@ function renderPeopleChartsView() {
     ))
   );
   const projectRows = state.people
-    .map((person) => ({ label: personFullName(person) || "Unnamed", value: projectCountForPerson(person) }))
+    .map((person) => ({ label: personFullName(person) || "Unnamed", value: projectCountForPerson(person), id: person.id, entityType: "person" }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
   view.append(
     demographics,
@@ -4335,7 +4389,7 @@ function renderProjectChartsView() {
     makeDistributionPie("Status", distributionCounts(state.projects, (project) => projectStatusName(project)), projectOptions)
   );
   const peopleRows = state.projects
-    .map((project) => ({ label: project.name || "Untitled project", value: peopleCountForProject(project) }))
+    .map((project) => ({ label: project.name || "Untitled project", value: peopleCountForProject(project), id: project.id, entityType: "project" }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
   view.append(
     makeProjectYearBreakdown(),
@@ -4383,8 +4437,11 @@ function personProjectPills(person) {
     const roles = assignment.role_ids
       .map((id) => state.roles.find((role) => role.id === id)?.name)
       .filter(Boolean);
-    const pill = document.createElement("span");
+    const pill = document.createElement("button");
     pill.className = "person-project-pill";
+    pill.type = "button";
+    pill.dataset.projectId = project?.id || "";
+    if (project?.id) pill.classList.add("project-focus-button");
     pill.textContent = `${project?.name || "Unknown project"}${roles.length ? ` (${roles.join(", ")})` : ""}`;
     return pill;
   });
@@ -4597,11 +4654,12 @@ function renderProjectPersonList(card, projectId) {
     row.className = "project-person-row";
     row.dataset.projectAssignmentId = assignment.id;
     row.innerHTML = `
-      <span class="project-person-name"></span>
+      <button class="project-person-name chart-entity-link" type="button"></button>
       <div class="role-picker" role="group" aria-label="Project roles"></div>
       <button class="ghost-button remove-project-person-button" type="button">Remove</button>
     `;
     row.querySelector(".project-person-name").textContent = person ? personFullName(person) : "Unknown person";
+    if (person) row.querySelector(".project-person-name").dataset.personEditId = person.id;
     fillRolePicker(row.querySelector(".role-picker"), assignment.role_ids);
     list.append(row);
   }
@@ -4630,11 +4688,12 @@ function renderPersonProjectList(card, personId) {
     row.className = "project-person-row person-project-row";
     row.dataset.projectAssignmentId = assignment.id;
     row.innerHTML = `
-      <span class="project-person-name"></span>
+      <button class="project-person-name chart-entity-link project-focus-button" type="button"></button>
       <div class="role-picker" role="group" aria-label="Project roles"></div>
       <button class="ghost-button remove-project-person-button" type="button">Remove</button>
     `;
     row.querySelector(".project-person-name").textContent = project?.name || "Unknown project";
+    if (project) row.querySelector(".project-person-name").dataset.projectId = project.id;
     fillRolePicker(row.querySelector(".role-picker"), assignment.role_ids);
     list.append(row);
   }
@@ -5522,7 +5581,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -5571,6 +5630,7 @@ function render() {
     "focus-project": "Project",
     "focus-goal": "Goal",
     "focus-person": "Person",
+    "focus-idea": "Idea",
     areas: "Areas",
     skills: "Skills",
     "age-categories": "Age Categories",
@@ -5580,7 +5640,7 @@ function render() {
     roles: "Roles",
     venues: "Venues"
   };
-  const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person"];
+  const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   const isFocusView = focusViews.includes(state.view);
   const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
 
@@ -5844,8 +5904,14 @@ els.taskList.addEventListener("click", async (event) => {
   }
   const projectFocusButton = event.target.closest(".project-focus-button");
   if (projectFocusButton) {
-    const card = projectFocusButton.closest("[data-project-id]");
-    if (card) focusObject("project", card.dataset.projectId, state.view);
+    const projectId = projectFocusButton.dataset.projectId || projectFocusButton.closest("[data-project-id]")?.dataset.projectId;
+    if (projectId) focusObject("project", projectId, state.view);
+    return;
+  }
+  const ideaFocusButton = event.target.closest(".idea-focus-button");
+  if (ideaFocusButton) {
+    const card = ideaFocusButton.closest("[data-idea-id]");
+    if (card) focusObject("idea", card.dataset.ideaId, state.view);
     return;
   }
   const addProjectPersonButton = event.target.closest(".add-project-person-button");
@@ -5924,7 +5990,12 @@ els.taskList.addEventListener("click", async (event) => {
   const deleteIdeaButton = event.target.closest(".delete-idea-button");
   if (deleteIdeaButton) {
     const card = deleteIdeaButton.closest("[data-idea-id]");
-    if (card) deleteIdea(card.dataset.ideaId);
+    if (card) {
+      const wasFocus = state.view === "focus-idea";
+      deleteIdea(card.dataset.ideaId).then(() => {
+        if (wasFocus && !state.ideas.some((idea) => idea.id === card.dataset.ideaId)) leaveFocusView();
+      });
+    }
     return;
   }
   const zoomButton = event.target.closest(".timeline-zoom");
