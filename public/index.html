@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Life Planner</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?v=1.10.45">
+    <link rel="stylesheet" href="/styles.css?v=1.10.46">
   </head>
   <body>
     <div class="shell">
@@ -23,12 +23,12 @@
           <button class="view-button active" data-view="home" type="button">Home <span id="count-home">0</span></button>
           <div class="nav-group-label">Key Objects</div>
           <button class="view-button nested" data-view="tasks" type="button">Tasks <span id="count-tasks">0</span></button>
-          <button class="view-button nested" data-view="goals" type="button">Life Goals <span id="count-goals">0</span></button>
+          <button class="view-button nested" data-view="goals" type="button">Goals <span id="count-goals">0</span></button>
           <button class="view-button nested" data-view="projects" type="button">Projects <span id="count-projects">0</span></button>
           <button class="view-button nested" data-view="people" type="button">People <span id="count-people">0</span></button>
           <button class="view-button nested" data-view="ideas" type="button">Ideas <span id="count-ideas">0</span></button>
           <div class="nav-group-label">Relationships</div>
-          <button class="view-button nested" data-view="goal-assignments" type="button">Tasks to Life Goals <span id="count-goal-assignments">0</span></button>
+          <button class="view-button nested" data-view="goal-assignments" type="button">Tasks to Goals <span id="count-goal-assignments">0</span></button>
           <button class="view-button nested" data-view="people-projects" type="button">People to Projects <span id="count-people-projects">0</span></button>
           <div class="nav-group-label">Views</div>
           <button class="view-button nested" data-view="graph" type="button">Task Graph <span id="count-graph">0</span></button>
@@ -111,8 +111,8 @@
             <label class="field-label">Area
               <select id="area" name="area" aria-label="Area"></select>
             </label>
-            <label class="field-label">Life goal
-              <select id="goal-id" name="goalId" aria-label="Life goal">
+            <label class="field-label">Goal
+              <select id="goal-id" name="goalId" aria-label="Goal">
                 <option value="">No goal</option>
               </select>
             </label>
@@ -188,7 +188,7 @@
                 </select>
               </label>
               <label>
-                Life goal
+                Goal
                 <select id="detail-goal">
                   <option value="">No goal</option>
                 </select>
@@ -271,6 +271,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=1.10.45" type="module"></script>
+    <script src="/app.js?v=1.10.46" type="module"></script>
   </body>
 </html>

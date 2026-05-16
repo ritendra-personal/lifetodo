@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.45";
+const APP_VERSION = "1.10.46";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -1614,7 +1614,7 @@ async function persistGoal(goal, options = {}) {
   const normalized = normalizeGoal({ ...goal, user_id: state.user?.id || null, updated_at: nowIso() });
   if (!isSupabaseReady()) {
     if (options.requireCloud) {
-      state.syncError = "Life goal was not saved to database: database is not connected.";
+      state.syncError = "Goal was not saved to database: database is not connected.";
       state.syncMessage = "";
       if (options.render !== false) render();
       throw new Error(state.syncError);
@@ -1629,17 +1629,17 @@ async function persistGoal(goal, options = {}) {
   }
   try {
     const data = await withSlowOperationNotice(
-      () => upsertRowDirect("planner_goals", normalized, null, "life goal"),
+      () => upsertRowDirect("planner_goals", normalized, null, "goal"),
       8000,
-      "Life goal save is taking longer than usual. Still waiting for the database..."
+      "Goal save is taking longer than usual. Still waiting for the database..."
     );
     state.goals = [normalizeGoal(data), ...state.goals.filter((item) => item.id !== data.id)];
-    state.syncMessage = `Saved life goal to database at ${savedAtLabel()}.`;
+    state.syncMessage = `Saved goal to database at ${savedAtLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
     return { savedToCloud: true };
   } catch (error) {
-    state.syncError = `Life goal was not saved to database: ${error.message}`;
+    state.syncError = `Goal was not saved to database: ${error.message}`;
     state.syncMessage = "";
     if (options.render !== false) render();
     if (options.requireCloud) throw new Error(state.syncError);
@@ -3142,7 +3142,7 @@ function renderFocusedTaskView() {
         <label class="field-label">Parent task
           <select name="parentId"></select>
         </label>
-        <label class="field-label">Life goal
+        <label class="field-label">Goal
           <select name="goalId"></select>
         </label>
         <label class="field-label">Project
@@ -3202,7 +3202,7 @@ function renderFocusedTaskView() {
 function renderFocusedGoalView() {
   const goal = state.goals.find((item) => item.id === state.focusedId);
   if (!goal) {
-    renderFocusedEmpty("Life goal");
+    renderFocusedEmpty("Goal");
     return;
   }
   const index = state.goals.findIndex((item) => item.id === goal.id);
@@ -3210,11 +3210,11 @@ function renderFocusedGoalView() {
     <section class="focus-editor">
       <div class="focus-editor-head">
         <button class="ghost-button focus-back-button" type="button">Back</button>
-        <span>Life Goal</span>
+        <span>Goal</span>
       </div>
       <article class="planning-card goal-card focused-goal-card" data-goal-id="${goal.id}">
-        <input class="goal-title-input" name="name" type="text" required aria-label="Life goal name">
-        <input class="goal-description-input" name="description" type="text" aria-label="Life goal description">
+        <input class="goal-title-input" name="name" type="text" required aria-label="Goal name">
+        <input class="goal-description-input" name="description" type="text" aria-label="Goal description">
         <div class="goal-task-outline"></div>
         <div class="detail-actions">
           <button class="danger-button delete-goal-button" type="button">Delete</button>
@@ -3385,7 +3385,7 @@ function renderHomeView() {
           <small>${openTasks.length} open tasks</small>
         </button>
         <button class="home-stat-card" data-home-view="goals" type="button">
-          <span>Life Goals</span>
+          <span>Goals</span>
           <strong>${state.goals.length}</strong>
           <small>${linkedTopTasks.length} linked top-level tasks</small>
         </button>
@@ -3522,11 +3522,11 @@ function renderGoalsView() {
   els.taskList.innerHTML = `
     <section class="creation-panel">
       <div class="planning-section-head">
-        <h4>Add new Life Goal</h4>
+        <h4>Add new Goal</h4>
       </div>
       <form id="goal-form" class="planning-form">
         <label class="field-label">Name
-          <input name="name" type="text" placeholder="Life goal" required>
+          <input name="name" type="text" placeholder="Goal" required>
         </label>
         <label class="field-label">Description
           <input name="description" type="text" placeholder="Description">
@@ -3536,7 +3536,7 @@ function renderGoalsView() {
     </section>
     <section class="directory-panel">
       <div class="planning-section-head">
-        <h4>Life Goals</h4>
+        <h4>Goals</h4>
         <span>${state.goals.length} ${state.goals.length === 1 ? "goal" : "goals"}</span>
       </div>
       <div class="planning-list goal-grid"></div>
@@ -3547,7 +3547,7 @@ function renderGoalsView() {
   if (!state.goals.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "No life goals yet.";
+    empty.textContent = "No goals yet.";
     list.append(empty);
     return;
   }
@@ -3557,8 +3557,8 @@ function renderGoalsView() {
     card.dataset.goalId = goal.id;
     card.style.setProperty("--goal-color", goalAccent(index));
     card.innerHTML = `
-      <input class="goal-title-input" name="name" type="text" required aria-label="Life goal name">
-      <input class="goal-description-input" name="description" type="text" aria-label="Life goal description">
+      <input class="goal-title-input" name="name" type="text" required aria-label="Goal name">
+      <input class="goal-description-input" name="description" type="text" aria-label="Goal description">
       <div class="goal-task-outline"></div>
       <div class="detail-actions">
         <button class="ghost-button goal-focus-button" type="button">Open</button>
@@ -4521,7 +4521,7 @@ function renderGoalAssignmentsView() {
       </section>
       <section class="assignment-panel">
         <div class="assignment-panel-head">
-          <h4>Life goals</h4>
+          <h4>Goals</h4>
           <div class="assignment-toolbar">
             <label class="toggle">
               <input class="assignment-selected-only" type="checkbox" ${state.assignmentSelectedOnly ? "checked" : ""}>
@@ -4548,7 +4548,7 @@ function renderGoalAssignmentsView() {
     button.className = `assignment-task ${task.id === state.selectedAssignmentTaskId ? "active" : ""} ${goalCount ? "linked" : ""}`;
     button.type = "button";
     button.dataset.assignmentTaskId = task.id;
-    button.innerHTML = `<span class="assignment-title"></span><small></small><span class="connector-handle task-handle" title="Drag to a life goal" aria-hidden="true"></span>`;
+    button.innerHTML = `<span class="assignment-title"></span><small></small><span class="connector-handle task-handle" title="Drag to a goal" aria-hidden="true"></span>`;
     button.querySelector("span").textContent = task.title;
     button.querySelector("small").textContent = `${goalCount} linked goal${goalCount === 1 ? "" : "s"}`;
     taskList.append(button);
@@ -4569,7 +4569,7 @@ function renderGoalAssignmentsView() {
   if (!state.goals.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "No life goals yet.";
+    empty.textContent = "No goals yet.";
     goalList.append(empty);
   }
   watchAssignmentLayout();
@@ -5397,8 +5397,8 @@ function render() {
     upcoming: "Tasks",
     backlog: "Tasks",
     done: "Tasks",
-    goals: "Life Goals",
-    "goal-assignments": "Tasks to Life Goals",
+    goals: "Goals",
+    "goal-assignments": "Tasks to Goals",
     "people-projects": "People to Projects",
     people: "People",
     "people-filter": "People Filter",
@@ -5411,7 +5411,7 @@ function render() {
     timeline: "Timeline",
     "focus-task": "Task",
     "focus-project": "Project",
-    "focus-goal": "Life Goal",
+    "focus-goal": "Goal",
     "focus-person": "Person",
     areas: "Areas",
     skills: "Skills",
@@ -5888,12 +5888,12 @@ els.taskList.addEventListener("submit", async (event) => {
     await patchTask(taskFocusForm.dataset.taskFocusId, focusedTaskPayload(taskFocusForm));
   } else if (goalForm) {
     setFormSaving(event.target, true);
-    showSyncMessage("Saving life goal...");
+    showSyncMessage("Saving goal...");
     try {
       const latestForm = new FormData(event.target);
       const name = latestForm.get("name").trim();
       if (hasDuplicateGoalName(name)) {
-        alertDuplicate("Life goal", name);
+        alertDuplicate("Goal", name);
         saveCreationDraft(event.target);
         state.syncMessage = "";
         renderSyncStatus();
@@ -5905,7 +5905,7 @@ els.taskList.addEventListener("submit", async (event) => {
       render();
     } catch (error) {
       saveCreationDraft(event.target);
-      state.syncError = state.syncError || error.message || "Life goal was not saved to database.";
+      state.syncError = state.syncError || error.message || "Goal was not saved to database.";
       state.syncMessage = "";
       renderSyncStatus();
     } finally {
