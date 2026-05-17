@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.57";
+const APP_VERSION = "1.10.58";
+const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -2276,7 +2277,7 @@ async function persistPerson(person, options = {}) {
     state.syncMessage = "Saved person locally in this browser only.";
     state.syncError = "";
     if (options.render !== false) render();
-    return { savedToCloud: false };
+    return { savedToCloud: false, person: normalized };
   }
   try {
     const data = await withSlowOperationNotice(
@@ -2311,7 +2312,7 @@ async function persistPerson(person, options = {}) {
     state.syncError = "";
     if (options.render !== false) render();
     trace("persist:success", { savedId: saved.id });
-    return { savedToCloud: true };
+    return { savedToCloud: true, person: saved };
   } catch (error) {
     trace("persist:error", { message: error.message });
     if (options.requireCloud) {
@@ -2779,6 +2780,14 @@ function sortByLabel(a, b) {
   return String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base", numeric: true });
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function projectFilterSortValue(project, key) {
   if (key === "year") return project.project_year || "";
   if (key === "type") return projectTypeName(project) || "";
@@ -2854,6 +2863,16 @@ function sortedIdeas(ideas) {
     if (createdCompare) return createdCompare;
     return (a.text || "").localeCompare(b.text || "", undefined, { sensitivity: "base", numeric: true });
   });
+}
+
+function pendingProjectForNewPerson() {
+  const projectId = sessionStorage.getItem(PENDING_PROJECT_PERSON_KEY) || "";
+  return state.projects.find((project) => project.id === projectId) || null;
+}
+
+function setPendingProjectForNewPerson(projectId) {
+  if (projectId) sessionStorage.setItem(PENDING_PROJECT_PERSON_KEY, projectId);
+  else sessionStorage.removeItem(PENDING_PROJECT_PERSON_KEY);
 }
 
 function projectTypeName(project) {
@@ -3458,6 +3477,7 @@ function renderFocusedProjectView() {
             <div class="project-person-add">
               <select name="projectPersonId" aria-label="Add project person"></select>
               <button class="ghost-button add-project-person-button" type="button">Add</button>
+              <button class="ghost-button project-new-person-button" type="button">New person</button>
             </div>
           </div>
           <div class="project-person-list"></div>
@@ -3866,7 +3886,18 @@ function personFullName(person) {
 }
 
 function renderPeopleView() {
+  const pendingProject = pendingProjectForNewPerson();
   els.taskList.innerHTML = `
+    ${pendingProject ? `
+      <section class="context-panel">
+        <div>
+          <strong>Adding a person for ${escapeHtml(pendingProject.name || "this project")}</strong>
+          <span>Save a new person here and they will be assigned to the project automatically.</span>
+        </div>
+        <button class="ghost-button pending-project-return-button" type="button">Back to project</button>
+        <button class="ghost-button pending-project-clear-button" type="button">Clear</button>
+      </section>
+    ` : ""}
     <section class="creation-panel">
       <div class="planning-section-head">
         <h4>Add new People</h4>
@@ -5971,6 +6002,30 @@ els.taskList.addEventListener("click", async (event) => {
     if (projectId) focusObject("project", projectId, state.view);
     return;
   }
+  const projectNewPersonButton = event.target.closest(".project-new-person-button");
+  if (projectNewPersonButton) {
+    const card = projectNewPersonButton.closest("[data-project-id]");
+    if (card) {
+      setPendingProjectForNewPerson(card.dataset.projectId);
+      state.view = "people";
+      render();
+    }
+    return;
+  }
+  const pendingProjectReturnButton = event.target.closest(".pending-project-return-button");
+  if (pendingProjectReturnButton) {
+    const project = pendingProjectForNewPerson();
+    setPendingProjectForNewPerson("");
+    if (project) focusObject("project", project.id, "people");
+    else render();
+    return;
+  }
+  const pendingProjectClearButton = event.target.closest(".pending-project-clear-button");
+  if (pendingProjectClearButton) {
+    setPendingProjectForNewPerson("");
+    renderTasks();
+    return;
+  }
   const ideaFocusButton = event.target.closest(".idea-focus-button");
   if (ideaFocusButton) {
     const card = ideaFocusButton.closest("[data-idea-id]");
@@ -6246,7 +6301,7 @@ els.taskList.addEventListener("submit", async (event) => {
   } else if (personForm) {
     setFormSaving(event.target, true);
     showSyncMessage("Saving person...");
-    let personSaved = false;
+    let savedPerson = null;
     const trace = createDiagnosticTrace("person-submit");
     trace("submit:start");
     try {
@@ -6265,7 +6320,7 @@ els.taskList.addEventListener("submit", async (event) => {
             renderSyncStatus();
             return;
           }
-          await persistPerson(
+          const result = await persistPerson(
             {
               first_name: firstName,
               last_name: lastName,
@@ -6277,16 +6332,26 @@ els.taskList.addEventListener("submit", async (event) => {
             },
             { requireCloud: true, render: false, trace }
           );
-          personSaved = true;
+          savedPerson = result?.person || null;
           trace("submit:persist-finished");
         },
         8000,
         "Person save is taking longer than usual. Still waiting for the database..."
       );
-      if (!personSaved) return;
+      if (!savedPerson) return;
+      const pendingProject = pendingProjectForNewPerson();
+      if (pendingProject) {
+        showSyncMessage("Assigning person to project...");
+        await persistProjectAssignment(
+          { project_id: pendingProject.id, person_id: savedPerson.id, role_ids: [] },
+          { render: false }
+        );
+        setPendingProjectForNewPerson("");
+      }
       clearCreationDraft(event.target);
       event.target.reset();
-      render();
+      if (pendingProject) focusObject("project", pendingProject.id, "people");
+      else render();
       trace("submit:success");
     } catch (error) {
       trace("submit:error", { message: error.message });

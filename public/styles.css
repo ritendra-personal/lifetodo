@@ -1184,6 +1184,33 @@ body.resizing .resize-handle::before {
   margin-bottom: calc(var(--major-gap) * 1.15);
 }
 
+.context-panel {
+  border: 1px solid rgba(14, 124, 116, 0.28);
+  border-radius: 8px;
+  background: #eefaf7;
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--ui-gap);
+  align-items: center;
+  margin-bottom: var(--major-gap);
+  padding: var(--ui-gap) var(--detail-pad);
+}
+
+.context-panel div {
+  display: grid;
+  gap: 3px;
+}
+
+.context-panel strong {
+  font-size: 0.92rem;
+}
+
+.context-panel span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .planning-section-head {
   display: flex;
   align-items: end;
