@@ -1870,7 +1870,10 @@ body.resizing .resize-handle::before {
 }
 
 .year-stack.empty {
-  min-height: 2px;
+  min-height: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
   padding: 0;
 }
 

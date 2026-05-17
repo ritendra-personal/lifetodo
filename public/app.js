@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.55";
+const APP_VERSION = "1.10.56";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -4304,7 +4304,7 @@ function makeDistributionBars(title, rows, options = {}) {
     } else {
       labelTarget.textContent = row.label;
     }
-    item.querySelector("i").style.width = `${Math.max(4, (row.value / max) * 100)}%`;
+    item.querySelector("i").style.width = row.value ? `${Math.max(4, (row.value / max) * 100)}%` : "0";
     item.querySelector("i").style.background = paletteColor(index);
     item.querySelector("strong").textContent = String(row.value);
     chart.append(item);
@@ -4418,7 +4418,7 @@ function makeProjectYearBreakdown() {
     item.querySelector(".year-breakdown-year strong").textContent = row.label;
     item.querySelector(".year-breakdown-year span").textContent = `${row.value} ${row.value === 1 ? "project" : "projects"}`;
     const stack = item.querySelector(".year-stack");
-    stack.style.minHeight = `${Math.max(26, row.value ? (row.value / max) * 120 : 2)}px`;
+    stack.style.height = row.value ? `${Math.max(26, (row.value / max) * 120)}px` : "0";
     if (!row.projects.length) {
       stack.classList.add("empty");
     }
