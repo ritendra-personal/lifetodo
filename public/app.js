@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.56";
+const APP_VERSION = "1.10.57";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
@@ -4659,7 +4659,7 @@ function fillProjectPersonSelect(select, projectId) {
 function fillPersonProjectSelect(select, personId) {
   const assigned = new Set(state.projectAssignments.filter((assignment) => assignment.person_id === personId).map((assignment) => assignment.project_id));
   select.innerHTML = '<option value="">Add project...</option>';
-  for (const project of sortedProjects(state.projects.filter((item) => !assigned.has(item.id)))) {
+  for (const project of sortedByName(state.projects.filter((item) => !assigned.has(item.id)))) {
     const option = document.createElement("option");
     option.value = project.id;
     option.textContent = project.name;
