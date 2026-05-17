@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.58";
+const APP_VERSION = "1.10.59";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -69,6 +69,8 @@ const state = {
   ideas: [],
   projects: [],
   people: [],
+  peoplePrivateRows: [],
+  peopleLegacyPrivateRows: [],
   projectAssignments: [],
   goalLinks: [],
   skills: loadNamedOptions("planner-skills", defaultSkills),
@@ -99,6 +101,11 @@ const state = {
   syncError: "",
   syncMessage: "",
   peopleCloudReady: false,
+  privateUnlocked: false,
+  privateKey: null,
+  privatePassphrase: "",
+  privateKeyLabel: "",
+  privateTableReady: false,
   projectsCloudReady: false,
   venuesCloudReady: false,
   goalLinksCloudReady: false,
@@ -140,6 +147,7 @@ const els = {
   showDone: document.querySelector("#show-done"),
   tagFilters: document.querySelector("#tag-filters"),
   keyButton: document.querySelector("#key-button"),
+  privateButton: document.querySelector("#private-button"),
   syncButton: document.querySelector("#sync-button"),
   densityDown: document.querySelector("#density-down"),
   densityUp: document.querySelector("#density-up"),
@@ -238,6 +246,16 @@ function saveNamedOptions() {
   localStorage.setItem("planner-project-statuses", JSON.stringify(state.projectStatuses));
   localStorage.setItem("planner-roles", JSON.stringify(state.roles));
   localStorage.setItem("planner-venues", JSON.stringify(state.venues));
+}
+
+function publicPersonForStorage(person) {
+  return {
+    ...person,
+    age_category_id: "",
+    age_band: "",
+    race: "",
+    relationship_type_id: ""
+  };
 }
 
 function creationDraftKey(form) {
@@ -961,6 +979,25 @@ function fillFixedSelect(select, options, selected, emptyLabel) {
   select.value = fixedOptionValue(selected, options);
 }
 
+function fillLockedPrivateSelect(select) {
+  if (!select) return;
+  select.innerHTML = '<option value="">Private locked</option>';
+  select.value = "";
+  select.disabled = true;
+  select.classList.add("private-locked-control");
+}
+
+function setPrivateFieldVisibility(container) {
+  if (!container) return;
+  for (const select of container.querySelectorAll("[name='ageCategoryId'], [name='race'], [name='relationshipTypeId']")) {
+    if (!isPrivatePeopleUnlocked()) fillLockedPrivateSelect(select);
+    else {
+      select.disabled = false;
+      select.classList.remove("private-locked-control");
+    }
+  }
+}
+
 function normalizePerson(person) {
   return {
     id: person.id || makeId(),
@@ -1241,6 +1278,9 @@ async function signOut() {
   await state.supabase.auth.signOut();
   state.session = null;
   state.user = null;
+  state.privateUnlocked = false;
+  state.privateKey = null;
+  state.privatePassphrase = "";
   state.tasks = [];
   state.selectedId = null;
   loadLocal();
@@ -1268,12 +1308,14 @@ function loadLocal() {
   const rawProjects = localStorage.getItem("planner-projects");
   const rawProjectAssignments = localStorage.getItem("planner-project-assignments");
   const rawPeople = localStorage.getItem("planner-people");
+  const rawPeoplePrivate = localStorage.getItem("planner-people-private");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
   state.ideas = rawIdeas ? JSON.parse(rawIdeas).map(normalizeIdea) : [];
   state.projects = rawProjects ? JSON.parse(rawProjects).map(normalizeProject) : [];
   state.projectAssignments = rawProjectAssignments ? JSON.parse(rawProjectAssignments).map(normalizeProjectAssignment) : [];
-  state.people = rawPeople ? JSON.parse(rawPeople).map(normalizePerson) : [];
+  state.people = rawPeople ? JSON.parse(rawPeople).map(normalizePerson).map(publicPersonForStorage).map(normalizePerson) : [];
+  state.peoplePrivateRows = rawPeoplePrivate ? JSON.parse(rawPeoplePrivate) : [];
   state.syncError = "";
   state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
   saveLocal();
@@ -1285,7 +1327,8 @@ function saveLocal(options = {}) {
   localStorage.setItem("planner-ideas", JSON.stringify(state.ideas));
   localStorage.setItem("planner-projects", JSON.stringify(state.projects));
   localStorage.setItem("planner-project-assignments", JSON.stringify(state.projectAssignments));
-  localStorage.setItem("planner-people", JSON.stringify(state.people));
+  localStorage.setItem("planner-people", JSON.stringify(state.people.map(publicPersonForStorage)));
+  localStorage.setItem("planner-people-private", JSON.stringify(state.peoplePrivateRows));
   if (!options.silent) state.syncMessage = "Saved locally in this browser only.";
 }
 
@@ -1478,6 +1521,9 @@ async function loadTasksNow() {
       state.skills = peopleData.skills;
       state.ageCategories = peopleData.ageCategories;
       state.relationshipTypes = peopleData.relationshipTypes;
+      if (state.privateUnlocked && state.privatePassphrase) {
+        await unlockPrivatePeople(state.privatePassphrase);
+      }
       saveNamedOptions();
     }
     state.syncMessage = state.syncMessage || plannerLoadSummary();
@@ -2067,15 +2113,31 @@ async function loadPeopleData() {
       { data: skills, error: skillsError },
       { data: ageCategories, error: ageCategoriesError },
       { data: relationshipTypes, error: relationshipError },
-      { data: people, error: peopleError }
+      { data: people, error: peopleError },
+      privateResult
     ] =
       await Promise.all([
         state.supabase.from("planner_skills").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
         state.supabase.from("planner_age_categories").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
         state.supabase.from("planner_relationship_types").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
-        state.supabase.from("planner_people").select("*").eq("user_id", state.user.id).order("first_name", { ascending: true })
+        state.supabase.from("planner_people").select("*").eq("user_id", state.user.id).order("first_name", { ascending: true }),
+        state.supabase.from("planner_person_private_attributes").select("*").eq("user_id", state.user.id)
       ]);
     if (skillsError || ageCategoriesError || relationshipError || peopleError) throw skillsError || ageCategoriesError || relationshipError || peopleError;
+    if (privateResult.error) {
+      state.privateTableReady = false;
+      console.warn("Private people table unavailable", privateResult.error);
+    } else {
+      state.privateTableReady = true;
+      state.peoplePrivateRows = privateResult.data || [];
+    }
+    const privatePersonIds = new Set(state.peoplePrivateRows.map((row) => row.person_id));
+    state.peopleLegacyPrivateRows = people
+      .map((person) => ({
+        person_id: person.id,
+        values: privateValuesForPerson(normalizePerson(person))
+      }))
+      .filter((row) => !privatePersonIds.has(row.person_id) && Object.values(row.values).some(Boolean));
     state.peopleCloudReady = true;
     const normalizedSkills = skills.map(normalizeNamedOption);
     const normalizedAgeCategories = ageCategories.map(normalizeNamedOption);
@@ -2093,7 +2155,13 @@ async function loadPeopleData() {
       skills: normalizedSkills.length ? normalizedSkills : state.skills,
       ageCategories: normalizedAgeCategories.length ? normalizedAgeCategories : state.ageCategories,
       relationshipTypes: normalizedRelationships.length ? normalizedRelationships : state.relationshipTypes,
-      people: people.map(normalizePerson)
+      people: people.map((person) => normalizePerson({
+        ...person,
+        age_category_id: "",
+        age_band: "",
+        race: "",
+        relationship_type_id: ""
+      }))
     };
   } catch (error) {
     console.warn("Supabase people tables unavailable; using local people data", error);
@@ -2253,6 +2321,12 @@ async function persistPerson(person, options = {}) {
   if (!normalized.first_name) return;
   const previousPeople = state.people;
   trace("persist:start", { requireCloud: Boolean(options.requireCloud), hasSupabase: Boolean(state.supabase), hasSession: Boolean(state.session) });
+  if (options.requireCloud && isPrivatePeopleUnlocked() && !state.privateTableReady) {
+    state.syncError = "Person was not saved to database: private attributes table is not ready. Run migrations/017_private_people_attributes.sql.";
+    state.syncMessage = "";
+    if (options.render !== false) render();
+    throw new Error(state.syncError);
+  }
   if (!isSupabaseReady() && options.requireCloud) {
     trace("persist:not-ready", { hasSupabase: Boolean(state.supabase), hasUser: Boolean(state.user), peopleCloudReady: state.peopleCloudReady });
     state.syncError = "Person was not saved to database: database is not connected.";
@@ -2268,6 +2342,7 @@ async function persistPerson(person, options = {}) {
     saveLocal();
   }
   if (!isSupabaseReady()) {
+    if (isPrivatePeopleUnlocked()) await upsertPrivatePersonRow(normalized.id, privateValuesForPerson(normalized));
     if (options.requireCloud) {
       state.syncError = "Person was saved locally only; database is not connected.";
       state.syncMessage = "";
@@ -2290,10 +2365,11 @@ async function persistPerson(person, options = {}) {
             first_name: normalized.first_name,
             last_name: normalized.last_name,
             gender: normalized.gender || null,
-            age_category_id: normalized.age_category_id || null,
-            race: normalized.race || null,
+            age_category_id: null,
+            age_band: null,
+            race: null,
             skill_ids: normalized.skill_ids,
-            relationship_type_id: normalized.relationship_type_id || null,
+            relationship_type_id: null,
             created_at: normalized.created_at,
             updated_at: normalized.updated_at
           },
@@ -2304,6 +2380,10 @@ async function persistPerson(person, options = {}) {
       "Person save is taking longer than usual. Still waiting for the database..."
     );
     const saved = normalizePerson(data);
+    if (isPrivatePeopleUnlocked()) {
+      await upsertPrivatePersonRow(saved.id, privateValuesForPerson(normalized), { requireCloud: options.requireCloud });
+      Object.assign(saved, privateValuesForPerson(normalized));
+    }
     state.people = state.people.some((item) => item.id === saved.id)
       ? state.people.map((item) => (item.id === saved.id ? saved : item))
       : [saved, ...state.people];
@@ -2332,6 +2412,7 @@ async function deletePerson(id) {
   if (!person) return;
   if (!(await confirmAction(`Delete ${person.first_name}${person.last_name ? ` ${person.last_name}` : ""}?`))) return;
   state.people = state.people.filter((item) => item.id !== id);
+  state.peoplePrivateRows = state.peoplePrivateRows.filter((item) => item.person_id !== id);
   state.projectAssignments = state.projectAssignments.filter((assignment) => assignment.person_id !== id);
   saveLocal();
   if (!isSupabaseReady()) {
@@ -2340,6 +2421,7 @@ async function deletePerson(id) {
   }
   try {
     await deleteRowsDirect("planner_project_people", `person_id=eq.${encodeURIComponent(id)}`, null, "person project assignments");
+    if (state.privateTableReady) await deleteRowsDirect("planner_person_private_attributes", `person_id=eq.${encodeURIComponent(id)}`, null, "private person attributes");
     await deleteRowDirect("planner_people", id, null, "person");
     state.syncMessage = `Deleted person for ${keyLabel()}.`;
     state.syncError = "";
@@ -2697,7 +2779,7 @@ function relationshipTone(relationshipName) {
 
 function applyPersonRelationshipTone(card, relationshipName) {
   if (!card) return;
-  const tone = relationshipTone(relationshipName);
+  const tone = isPrivatePeopleUnlocked() ? relationshipTone(relationshipName) : { color: "#111827", tint: "rgba(17, 24, 39, 0.08)" };
   card.style.setProperty("--person-relationship-color", tone.color);
   card.style.setProperty("--person-relationship-tint", tone.tint);
 }
@@ -2727,9 +2809,9 @@ function personSortValue(person, key) {
   if (key === "created") return person.created_at || "";
   if (key === "lastName") return person.last_name || "";
   if (key === "gender") return person.gender || "";
-  if (key === "age") return ageCategoryNameForId(person.age_category_id) || person.age_band || "";
-  if (key === "race") return person.race || "";
-  if (key === "relationship") return relationshipNameForId(person.relationship_type_id);
+  if (key === "age") return isPrivatePeopleUnlocked() ? ageCategoryNameForId(person.age_category_id) || person.age_band || "" : "";
+  if (key === "race") return isPrivatePeopleUnlocked() ? person.race || "" : "";
+  if (key === "relationship") return isPrivatePeopleUnlocked() ? relationshipNameForId(person.relationship_type_id) : "";
   if (key === "skills") {
     return person.skill_ids
       .map((id) => state.skills.find((skill) => skill.id === id)?.name || "")
@@ -2786,6 +2868,112 @@ function escapeHtml(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+async function derivePrivateKey(passphrase, salt) {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 250000, hash: "SHA-256" },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptPrivateAttributes(values, passphrase = null) {
+  const secret = passphrase || state.privatePassphrase;
+  if (!secret) throw new Error("Private attributes are locked.");
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await derivePrivateKey(secret, salt);
+  const data = new TextEncoder().encode(JSON.stringify(values));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data);
+  return {
+    v: 1,
+    kdf: "PBKDF2-SHA256",
+    iterations: 250000,
+    salt: bytesToBase64(salt),
+    iv: bytesToBase64(iv),
+    data: bytesToBase64(new Uint8Array(encrypted))
+  };
+}
+
+async function decryptPrivatePayload(payload, passphrase) {
+  const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+  if (!parsed?.salt || !parsed?.iv || !parsed?.data) return {};
+  const key = await derivePrivateKey(passphrase, base64ToBytes(parsed.salt));
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(parsed.iv) },
+    key,
+    base64ToBytes(parsed.data)
+  );
+  return {
+    values: JSON.parse(new TextDecoder().decode(decrypted)),
+    key
+  };
+}
+
+function privateValuesForPerson(person) {
+  return {
+    age_category_id: person.age_category_id || "",
+    age_band: person.age_band || "",
+    race: person.race || "",
+    relationship_type_id: person.relationship_type_id || ""
+  };
+}
+
+function withPrivateValues(person, values = {}) {
+  return normalizePerson({
+    ...person,
+    age_category_id: values.age_category_id || "",
+    age_band: values.age_band || "",
+    race: values.race || "",
+    relationship_type_id: values.relationship_type_id || ""
+  });
+}
+
+function privateAttributesLockedLabel() {
+  return state.privateUnlocked ? "" : "Private locked";
+}
+
+function isPrivatePeopleUnlocked() {
+  return Boolean(state.privateUnlocked && state.privateKey);
+}
+
+function privateText(value, fallback = "") {
+  return isPrivatePeopleUnlocked() ? (value || fallback) : privateAttributesLockedLabel();
+}
+
+function personAgeLabel(person) {
+  return privateText(ageCategoryNameForId(person.age_category_id) || person.age_band || "");
+}
+
+function personRaceLabel(person) {
+  return privateText(person.race || "");
+}
+
+function personRelationshipLabel(person) {
+  return privateText(relationshipNameForId(person.relationship_type_id) || "");
 }
 
 function projectFilterSortValue(project, key) {
@@ -2873,6 +3061,94 @@ function pendingProjectForNewPerson() {
 function setPendingProjectForNewPerson(projectId) {
   if (projectId) sessionStorage.setItem(PENDING_PROJECT_PERSON_KEY, projectId);
   else sessionStorage.removeItem(PENDING_PROJECT_PERSON_KEY);
+}
+
+async function upsertPrivatePersonRow(personId, values, options = {}) {
+  if (!isPrivatePeopleUnlocked()) return;
+  const payload = await encryptPrivateAttributes(values);
+  const row = {
+    person_id: personId,
+    user_id: state.user?.id || null,
+    payload,
+    updated_at: nowIso()
+  };
+  state.peoplePrivateRows = state.peoplePrivateRows.some((item) => item.person_id === personId)
+    ? state.peoplePrivateRows.map((item) => (item.person_id === personId ? row : item))
+    : [...state.peoplePrivateRows, row];
+  saveLocal({ silent: true });
+  if (!isSupabaseReady() || !state.privateTableReady) {
+    if (options.requireCloud) throw new Error("Private attributes table is not ready. Run the latest Supabase migration.");
+    return;
+  }
+  await supabaseRestMutation("planner_person_private_attributes?on_conflict=person_id&select=*", {
+    method: "POST",
+    headers: {
+      Prefer: "resolution=merge-duplicates,return=representation"
+    },
+    body: JSON.stringify({
+      person_id: personId,
+      user_id: state.user.id,
+      payload,
+      updated_at: row.updated_at
+    })
+  });
+}
+
+async function unlockPrivatePeople(passphrase) {
+  if (!passphrase) return false;
+  const decryptedByPerson = new Map();
+  let derivedKey = null;
+  for (const row of state.peoplePrivateRows) {
+    if (!row.payload) continue;
+    const decrypted = await decryptPrivatePayload(row.payload, passphrase);
+    decryptedByPerson.set(row.person_id, decrypted.values || {});
+    derivedKey = derivedKey || decrypted.key;
+  }
+  for (const row of state.peopleLegacyPrivateRows) {
+    if (!decryptedByPerson.has(row.person_id)) decryptedByPerson.set(row.person_id, row.values || {});
+  }
+  if (!derivedKey) {
+    const salt = new TextEncoder().encode(state.user?.id || state.plannerKey || "seven-lives-private");
+    derivedKey = await derivePrivateKey(passphrase, salt);
+  }
+  state.privateKey = derivedKey;
+  state.privatePassphrase = passphrase;
+  state.privateUnlocked = true;
+  state.privateKeyLabel = "Unlocked";
+  state.people = state.people.map((person) => withPrivateValues(person, decryptedByPerson.get(person.id)));
+  if (state.privateTableReady && state.peopleLegacyPrivateRows.length) {
+    const legacyRows = [...state.peopleLegacyPrivateRows];
+    for (const row of legacyRows) {
+      await upsertPrivatePersonRow(row.person_id, row.values);
+      if (isSupabaseReady()) {
+        await patchRowDirect(
+          "planner_people",
+          row.person_id,
+          { age_category_id: null, age_band: null, race: null, relationship_type_id: null, updated_at: nowIso() },
+          null,
+          "legacy private person cleanup"
+        );
+      }
+    }
+    state.peopleLegacyPrivateRows = [];
+  }
+  state.syncError = "";
+  state.syncMessage = "Private people attributes unlocked in this browser session.";
+  saveLocal({ silent: true });
+  render();
+  return true;
+}
+
+function lockPrivatePeople() {
+  state.privateUnlocked = false;
+  state.privateKey = null;
+  state.privatePassphrase = "";
+  state.privateKeyLabel = "";
+  if (state.privateTableReady) state.peopleLegacyPrivateRows = [];
+  state.people = state.people.map(publicPersonForStorage).map(normalizePerson);
+  state.syncMessage = "Private people attributes locked.";
+  saveLocal({ silent: true });
+  render();
 }
 
 function projectTypeName(project) {
@@ -3433,6 +3709,7 @@ function renderFocusedPersonView() {
   fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
   fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
   fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
+  setPrivateFieldVisibility(card);
   fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
   fillPersonProjectSelect(card.querySelector("[name='personProjectId']"), person.id);
   renderPersonProjectList(card, person.id);
@@ -3953,6 +4230,7 @@ function renderPeopleView() {
   fillFixedSelect(els.taskList.querySelector("select[name='gender']"), genderOptions, "", "No gender");
   fillAgeCategorySelect(els.taskList.querySelector("select[name='ageCategoryId']"), "", "No age");
   fillFixedSelect(els.taskList.querySelector("select[name='race']"), raceOptions, "", "No race");
+  setPrivateFieldVisibility(els.taskList.querySelector("#person-form"));
   const personDraft = restoreCreationDraft(els.taskList.querySelector("#person-form"));
   fillSkillPicker(els.taskList.querySelector("#person-form .skill-picker"), personDraft?.skillIds || []);
   const list = els.taskList.querySelector(".people-list");
@@ -3989,6 +4267,7 @@ function renderPeopleView() {
     fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
     fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
     fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
+    setPrivateFieldVisibility(card);
     fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
     applyPersonRelationshipTone(card, relationshipNameForId(person.relationship_type_id));
     list.append(card);
@@ -4062,10 +4341,10 @@ function renderPeopleFilterView() {
     roleSelect.append(option);
   }
   const genderFilter = sessionStorage.getItem("people-gender-filter") || "";
-  const ageFilter = sessionStorage.getItem("people-age-filter") || "";
-  const raceFilter = sessionStorage.getItem("people-race-filter") || "";
+  const ageFilter = isPrivatePeopleUnlocked() ? sessionStorage.getItem("people-age-filter") || "" : "";
+  const raceFilter = isPrivatePeopleUnlocked() ? sessionStorage.getItem("people-race-filter") || "" : "";
   const skillFilter = sessionStorage.getItem("people-skill-filter") || "";
-  const relationshipFilter = sessionStorage.getItem("people-relationship-filter") || "";
+  const relationshipFilter = isPrivatePeopleUnlocked() ? sessionStorage.getItem("people-relationship-filter") || "" : "";
   const projectFilter = sessionStorage.getItem("people-project-filter") || "";
   const roleFilter = sessionStorage.getItem("people-role-filter") || "";
   genderSelect.value = genderFilter;
@@ -4073,6 +4352,11 @@ function renderPeopleFilterView() {
   raceSelect.value = raceFilter;
   skillSelect.value = skillFilter;
   relationshipSelect.value = relationshipFilter;
+  if (!isPrivatePeopleUnlocked()) {
+    fillLockedPrivateSelect(ageSelect);
+    fillLockedPrivateSelect(raceSelect);
+    fillLockedPrivateSelect(relationshipSelect);
+  }
   projectSelect.value = projectFilter;
   roleSelect.value = roleFilter;
   const people = sortedPeople(filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter, genderFilter, ageFilter, raceFilter));
@@ -4092,10 +4376,10 @@ function renderPeopleFilterView() {
 function filteredPeople(skillId, relationshipId, projectId = "", roleId = "", gender = "", ageCategoryId = "", race = "") {
   return state.people.filter((person) => {
     if (gender && person.gender !== gender) return false;
-    if (ageCategoryId && person.age_category_id !== ageCategoryId) return false;
-    if (race && person.race !== race) return false;
+    if (isPrivatePeopleUnlocked() && ageCategoryId && person.age_category_id !== ageCategoryId) return false;
+    if (isPrivatePeopleUnlocked() && race && person.race !== race) return false;
     if (skillId && !person.skill_ids.includes(skillId)) return false;
-    if (relationshipId && person.relationship_type_id !== relationshipId) return false;
+    if (isPrivatePeopleUnlocked() && relationshipId && person.relationship_type_id !== relationshipId) return false;
     if (projectId && !state.projectAssignments.some((assignment) => assignment.person_id === person.id && assignment.project_id === projectId)) return false;
     if (roleId && !state.projectAssignments.some((assignment) => assignment.person_id === person.id && assignment.role_ids.includes(roleId))) return false;
     return true;
@@ -4350,9 +4634,9 @@ function renderPeopleChartsView() {
   demographics.className = "distribution-grid";
   demographics.append(
     makeDistributionPie("Gender", distributionCounts(state.people, (person) => person.gender)),
-    makeDistributionPie("Race", distributionCounts(state.people, (person) => person.race)),
-    makeDistributionPie("Age", distributionCounts(state.people, (person) => ageCategoryNameForId(person.age_category_id) || person.age_band)),
-    makeDistributionPie("Relationship", distributionCounts(state.people, (person) => relationshipNameForId(person.relationship_type_id))),
+    makeDistributionPie("Race", isPrivatePeopleUnlocked() ? distributionCounts(state.people, (person) => person.race) : [], { emptyLabel: "Unlock Private to view." }),
+    makeDistributionPie("Age", isPrivatePeopleUnlocked() ? distributionCounts(state.people, (person) => ageCategoryNameForId(person.age_category_id) || person.age_band) : [], { emptyLabel: "Unlock Private to view." }),
+    makeDistributionPie("Relationship", isPrivatePeopleUnlocked() ? distributionCounts(state.people, (person) => relationshipNameForId(person.relationship_type_id)) : [], { emptyLabel: "Unlock Private to view." }),
     makeDistributionPie("Skills", distributionCounts(
       state.people.flatMap((person) => (person.skill_ids.length ? person.skill_ids : [""])),
       (skillId) => skillId ? state.skills.find((skill) => skill.id === skillId)?.name : ""
@@ -4509,9 +4793,9 @@ function makePeopleReadRow(person, index = 0) {
   row.querySelectorAll("span")[0].textContent = person.first_name;
   row.querySelectorAll("span")[1].textContent = person.last_name || "";
   row.querySelectorAll("span")[2].textContent = person.gender || "";
-  row.querySelectorAll("span")[3].textContent = ageCategoryNameForId(person.age_category_id) || person.age_band || "";
-  row.querySelectorAll("span")[4].textContent = person.race || "";
-  row.querySelectorAll("span")[5].textContent = state.relationshipTypes.find((item) => item.id === person.relationship_type_id)?.name || "";
+  row.querySelectorAll("span")[3].textContent = personAgeLabel(person);
+  row.querySelectorAll("span")[4].textContent = personRaceLabel(person);
+  row.querySelectorAll("span")[5].textContent = personRelationshipLabel(person);
   row.querySelectorAll("span")[6].textContent = person.skill_ids
     .map((id) => state.skills.find((skill) => skill.id === id)?.name)
     .filter(Boolean)
@@ -4945,7 +5229,7 @@ function renderPeopleProjectsView() {
     button.dataset.assignmentPersonId = person.id;
     button.innerHTML = `<span class="assignment-title"></span><small></small><span class="connector-handle person-handle" aria-hidden="true"></span>`;
     button.querySelector(".assignment-title").textContent = personFullName(person);
-    button.querySelector("small").textContent = `${relationshipNameForId(person.relationship_type_id) || "No relationship"} · ${assignmentCount} project${assignmentCount === 1 ? "" : "s"}`;
+    button.querySelector("small").textContent = `${isPrivatePeopleUnlocked() ? relationshipNameForId(person.relationship_type_id) || "No relationship" : "Private locked"} · ${assignmentCount} project${assignmentCount === 1 ? "" : "s"}`;
     applyPersonRelationshipTone(button, relationshipNameForId(person.relationship_type_id));
     personList.append(button);
   }
@@ -5752,6 +6036,9 @@ function render() {
   els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.keyButton.textContent = state.user ? "Sign out" : "Google";
   els.keyButton.title = state.user ? `Signed in as ${state.user.email}` : "Sign in with Google";
+  els.privateButton.textContent = isPrivatePeopleUnlocked() ? "Lock private" : "Private";
+  els.privateButton.classList.toggle("active", isPrivatePeopleUnlocked());
+  els.privateButton.title = isPrivatePeopleUnlocked() ? "Lock private people attributes" : "Unlock age, race, and relationship";
   els.showDone.checked = state.showDone;
   els.storageStatus.title = state.syncError || "";
   els.storageStatus.textContent = state.syncError ? "Sync issue" : els.storageStatus.textContent;
@@ -7081,6 +7368,22 @@ els.keyButton.addEventListener("click", async () => {
     return;
   }
   await signInWithGoogle();
+});
+
+els.privateButton.addEventListener("click", async () => {
+  if (isPrivatePeopleUnlocked()) {
+    lockPrivatePeople();
+    return;
+  }
+  const passphrase = window.prompt("Private key for age, race, and relationship");
+  if (!passphrase) return;
+  try {
+    await unlockPrivatePeople(passphrase);
+  } catch (error) {
+    state.syncError = "Private key could not unlock people attributes. Check the key and try again.";
+    state.syncMessage = "";
+    render();
+  }
 });
 
 document.addEventListener("visibilitychange", () => {

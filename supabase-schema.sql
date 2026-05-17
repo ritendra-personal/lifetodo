@@ -310,6 +310,13 @@ create table if not exists planner_project_people (
   unique (project_id, person_id)
 );
 
+create table if not exists planner_person_private_attributes (
+  person_id uuid primary key references planner_people(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  payload jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 alter table planner_tasks
   drop constraint if exists planner_tasks_area_id_fkey,
   add constraint planner_tasks_area_id_fkey
@@ -334,6 +341,7 @@ alter table planner_areas enable row level security;
 alter table planner_skills enable row level security;
 alter table planner_relationship_types enable row level security;
 alter table planner_people enable row level security;
+alter table planner_person_private_attributes enable row level security;
 
 create index if not exists planner_goals_user_id_idx on planner_goals(user_id);
 create unique index if not exists planner_goals_user_name_natural_key_idx
@@ -386,6 +394,7 @@ on planner_people (
 create index if not exists planner_people_skill_ids_idx on planner_people using gin(skill_ids);
 create index if not exists planner_people_age_category_id_idx on planner_people(age_category_id);
 create index if not exists planner_people_relationship_type_id_idx on planner_people(relationship_type_id);
+create index if not exists planner_person_private_attributes_user_id_idx on planner_person_private_attributes(user_id);
 create index if not exists planner_project_people_user_id_idx on planner_project_people(user_id);
 create index if not exists planner_project_people_project_id_idx on planner_project_people(project_id);
 create index if not exists planner_project_people_person_id_idx on planner_project_people(person_id);
@@ -405,6 +414,7 @@ drop policy if exists "planner_areas_all_for_authenticated_user" on planner_area
 drop policy if exists "planner_skills_all_for_authenticated_user" on planner_skills;
 drop policy if exists "planner_relationship_types_all_for_authenticated_user" on planner_relationship_types;
 drop policy if exists "planner_people_all_for_authenticated_user" on planner_people;
+drop policy if exists "planner_person_private_attributes_all_for_authenticated_user" on planner_person_private_attributes;
 
 create policy "planner_goals_all_for_authenticated_user"
 on planner_goals for all
@@ -486,6 +496,12 @@ with check ((select auth.uid()) = user_id);
 
 create policy "planner_people_all_for_authenticated_user"
 on planner_people for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_person_private_attributes_all_for_authenticated_user"
+on planner_person_private_attributes for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);

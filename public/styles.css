@@ -642,6 +642,17 @@ body.has-sync-error #storage-status {
   transform: translateY(-1px);
 }
 
+.ghost-button.active {
+  border-color: var(--teal);
+  background: #e9f8f5;
+  color: var(--teal);
+}
+
+.private-locked-control {
+  color: var(--muted);
+  background: #f4f6f8;
+}
+
 .danger-button {
   color: #fff;
   background: var(--coral);
