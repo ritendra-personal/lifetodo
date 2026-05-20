@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.59";
+const APP_VERSION = "1.10.60";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -977,25 +977,6 @@ function fillFixedSelect(select, options, selected, emptyLabel) {
     select.append(option);
   }
   select.value = fixedOptionValue(selected, options);
-}
-
-function fillLockedPrivateSelect(select) {
-  if (!select) return;
-  select.innerHTML = '<option value="">Private locked</option>';
-  select.value = "";
-  select.disabled = true;
-  select.classList.add("private-locked-control");
-}
-
-function setPrivateFieldVisibility(container) {
-  if (!container) return;
-  for (const select of container.querySelectorAll("[name='ageCategoryId'], [name='race'], [name='relationshipTypeId']")) {
-    if (!isPrivatePeopleUnlocked()) fillLockedPrivateSelect(select);
-    else {
-      select.disabled = false;
-      select.classList.remove("private-locked-control");
-    }
-  }
 }
 
 function normalizePerson(person) {
@@ -2952,28 +2933,8 @@ function withPrivateValues(person, values = {}) {
   });
 }
 
-function privateAttributesLockedLabel() {
-  return state.privateUnlocked ? "" : "Private locked";
-}
-
 function isPrivatePeopleUnlocked() {
   return Boolean(state.privateUnlocked && state.privateKey);
-}
-
-function privateText(value, fallback = "") {
-  return isPrivatePeopleUnlocked() ? (value || fallback) : privateAttributesLockedLabel();
-}
-
-function personAgeLabel(person) {
-  return privateText(ageCategoryNameForId(person.age_category_id) || person.age_band || "");
-}
-
-function personRaceLabel(person) {
-  return privateText(person.race || "");
-}
-
-function personRelationshipLabel(person) {
-  return privateText(relationshipNameForId(person.relationship_type_id) || "");
 }
 
 function projectFilterSortValue(project, key) {
@@ -3660,6 +3621,17 @@ function renderFocusedPersonView() {
     renderFocusedEmpty("Person");
     return;
   }
+  const privateFields = isPrivatePeopleUnlocked() ? `
+        <label class="field-label">Age
+          <select name="ageCategoryId" aria-label="Age"></select>
+        </label>
+        <label class="field-label">Race
+          <select name="race" aria-label="Race"></select>
+        </label>
+        <label class="field-label">Relationship
+          <select name="relationshipTypeId" aria-label="Relationship"></select>
+        </label>
+  ` : "";
   els.taskList.innerHTML = `
     <section class="focus-editor">
       <div class="focus-editor-head">
@@ -3676,15 +3648,7 @@ function renderFocusedPersonView() {
         <label class="field-label">Gender
           <select name="gender" aria-label="Gender"></select>
         </label>
-        <label class="field-label">Age
-          <select name="ageCategoryId" aria-label="Age"></select>
-        </label>
-        <label class="field-label">Race
-          <select name="race" aria-label="Race"></select>
-        </label>
-        <label class="field-label">Relationship
-          <select name="relationshipTypeId" aria-label="Relationship"></select>
-        </label>
+        ${privateFields}
         <div class="field-label">Skills
           <div class="skill-picker" role="group" aria-label="Skills"></div>
         </div>
@@ -3706,10 +3670,11 @@ function renderFocusedPersonView() {
   card.querySelector("[name='firstName']").value = person.first_name;
   card.querySelector("[name='lastName']").value = person.last_name;
   fillFixedSelect(card.querySelector("[name='gender']"), genderOptions, person.gender, "No gender");
-  fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
-  fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
-  fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
-  setPrivateFieldVisibility(card);
+  if (isPrivatePeopleUnlocked()) {
+    fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
+    fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
+    fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
+  }
   fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
   fillPersonProjectSelect(card.querySelector("[name='personProjectId']"), person.id);
   renderPersonProjectList(card, person.id);
@@ -4164,6 +4129,22 @@ function personFullName(person) {
 
 function renderPeopleView() {
   const pendingProject = pendingProjectForNewPerson();
+  const privateFields = isPrivatePeopleUnlocked() ? `
+        <label class="field-label">Age
+          <select name="ageCategoryId" aria-label="Age"></select>
+        </label>
+        <label class="field-label">Race
+          <select name="race" aria-label="Race"></select>
+        </label>
+        <label class="field-label">Relationship
+          <select name="relationshipTypeId" aria-label="Relationship"></select>
+        </label>
+  ` : "";
+  const privateHeadings = isPrivatePeopleUnlocked() ? `
+          ${peopleSortHeader("age", "Age")}
+          ${peopleSortHeader("race", "Race")}
+          ${peopleSortHeader("relationship", "Relationship")}
+  ` : "";
   els.taskList.innerHTML = `
     ${pendingProject ? `
       <section class="context-panel">
@@ -4189,15 +4170,7 @@ function renderPeopleView() {
         <label class="field-label">Gender
           <select name="gender" aria-label="Gender"></select>
         </label>
-        <label class="field-label">Age
-          <select name="ageCategoryId" aria-label="Age"></select>
-        </label>
-        <label class="field-label">Race
-          <select name="race" aria-label="Race"></select>
-        </label>
-        <label class="field-label">Relationship
-          <select name="relationshipTypeId" aria-label="Relationship"></select>
-        </label>
+        ${privateFields}
         <div class="field-label">Skills
           <div class="skill-picker" role="group" aria-label="Skills"></div>
         </div>
@@ -4209,16 +4182,14 @@ function renderPeopleView() {
         <h4>People Directory</h4>
         <span>${state.people.length} ${state.people.length === 1 ? "person" : "people"}</span>
       </div>
-      <div class="people-table">
+      <div class="people-table ${isPrivatePeopleUnlocked() ? "" : "private-hidden"}">
         <div class="people-table-head">
           <span>#</span>
           ${peopleSortHeader("created", "Created")}
           ${peopleSortHeader("firstName", "First Name")}
           ${peopleSortHeader("lastName", "Last Name")}
           ${peopleSortHeader("gender", "Gender")}
-          ${peopleSortHeader("age", "Age")}
-          ${peopleSortHeader("race", "Race")}
-          ${peopleSortHeader("relationship", "Relationship")}
+          ${privateHeadings}
           ${peopleSortHeader("skills", "Skills")}
           <span></span>
         </div>
@@ -4226,11 +4197,12 @@ function renderPeopleView() {
       </div>
     </section>
   `;
-  fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
   fillFixedSelect(els.taskList.querySelector("select[name='gender']"), genderOptions, "", "No gender");
-  fillAgeCategorySelect(els.taskList.querySelector("select[name='ageCategoryId']"), "", "No age");
-  fillFixedSelect(els.taskList.querySelector("select[name='race']"), raceOptions, "", "No race");
-  setPrivateFieldVisibility(els.taskList.querySelector("#person-form"));
+  if (isPrivatePeopleUnlocked()) {
+    fillRelationshipSelect(els.taskList.querySelector("select[name='relationshipTypeId']"), "");
+    fillAgeCategorySelect(els.taskList.querySelector("select[name='ageCategoryId']"), "", "No age");
+    fillFixedSelect(els.taskList.querySelector("select[name='race']"), raceOptions, "", "No race");
+  }
   const personDraft = restoreCreationDraft(els.taskList.querySelector("#person-form"));
   fillSkillPicker(els.taskList.querySelector("#person-form .skill-picker"), personDraft?.skillIds || []);
   const list = els.taskList.querySelector(".people-list");
@@ -4251,9 +4223,11 @@ function renderPeopleView() {
       <input name="firstName" type="text" required aria-label="First name">
       <input name="lastName" type="text" aria-label="Last name">
       <select name="gender" aria-label="Gender"></select>
-      <select name="ageCategoryId" aria-label="Age"></select>
-      <select name="race" aria-label="Race"></select>
-      <select name="relationshipTypeId" aria-label="Relationship"></select>
+      ${isPrivatePeopleUnlocked() ? `
+        <select name="ageCategoryId" aria-label="Age"></select>
+        <select name="race" aria-label="Race"></select>
+        <select name="relationshipTypeId" aria-label="Relationship"></select>
+      ` : ""}
       <div class="skill-picker" role="group" aria-label="Skills"></div>
       <div class="row-actions">
         <button class="ghost-button person-focus-button" type="button">Open</button>
@@ -4264,10 +4238,11 @@ function renderPeopleView() {
     card.querySelector("[name='firstName']").value = person.first_name;
     card.querySelector("[name='lastName']").value = person.last_name;
     fillFixedSelect(card.querySelector("[name='gender']"), genderOptions, person.gender, "No gender");
-    fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
-    fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
-    fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
-    setPrivateFieldVisibility(card);
+    if (isPrivatePeopleUnlocked()) {
+      fillAgeCategorySelect(card.querySelector("[name='ageCategoryId']"), person.age_category_id, "No age");
+      fillFixedSelect(card.querySelector("[name='race']"), raceOptions, person.race, "No race");
+      fillRelationshipSelect(card.querySelector("[name='relationshipTypeId']"), person.relationship_type_id);
+    }
     fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
     applyPersonRelationshipTone(card, relationshipNameForId(person.relationship_type_id));
     list.append(card);
@@ -4275,26 +4250,32 @@ function renderPeopleView() {
 }
 
 function renderPeopleFilterView() {
+  const privateFilters = isPrivatePeopleUnlocked() ? `
+      <select name="ageFilter" aria-label="Filter by age"></select>
+      <select name="raceFilter" aria-label="Filter by race"></select>
+      <select name="relationshipFilter" aria-label="Filter by relationship"></select>
+  ` : "";
+  const privateHeadings = isPrivatePeopleUnlocked() ? `
+        ${peopleSortHeader("age", "Age")}
+        ${peopleSortHeader("race", "Race")}
+        ${peopleSortHeader("relationship", "Relationship")}
+  ` : "";
   els.taskList.innerHTML = `
     <div class="people-filter-bar">
       <select name="genderFilter" aria-label="Filter by gender"></select>
-      <select name="ageFilter" aria-label="Filter by age"></select>
-      <select name="raceFilter" aria-label="Filter by race"></select>
+      ${privateFilters}
       <select name="skillFilter" aria-label="Filter by skill"></select>
-      <select name="relationshipFilter" aria-label="Filter by relationship"></select>
       <select name="projectFilter" aria-label="Filter by project"></select>
       <select name="roleFilter" aria-label="Filter by role"></select>
       <button class="ghost-button clear-people-filters" type="button">Clear filters</button>
     </div>
-    <div class="people-table people-filter-table">
+    <div class="people-table people-filter-table ${isPrivatePeopleUnlocked() ? "" : "private-hidden"}">
       <div class="people-table-head">
         <span>#</span>
         ${peopleSortHeader("firstName", "First Name")}
         ${peopleSortHeader("lastName", "Last Name")}
         ${peopleSortHeader("gender", "Gender")}
-        ${peopleSortHeader("age", "Age")}
-        ${peopleSortHeader("race", "Race")}
-        ${peopleSortHeader("relationship", "Relationship")}
+        ${privateHeadings}
         ${peopleSortHeader("skills", "Skills")}
         ${peopleSortHeader("projects", "Projects")}
         <span></span>
@@ -4310,8 +4291,10 @@ function renderPeopleFilterView() {
   const projectSelect = els.taskList.querySelector("[name='projectFilter']");
   const roleSelect = els.taskList.querySelector("[name='roleFilter']");
   fillFixedSelect(genderSelect, genderOptions, "", "All genders");
-  fillAgeCategorySelect(ageSelect, "", "All ages");
-  fillFixedSelect(raceSelect, raceOptions, "", "All races");
+  if (isPrivatePeopleUnlocked()) {
+    fillAgeCategorySelect(ageSelect, "", "All ages");
+    fillFixedSelect(raceSelect, raceOptions, "", "All races");
+  }
   skillSelect.innerHTML = '<option value="">All skills</option>';
   for (const skill of sortedByName(state.skills)) {
     const option = document.createElement("option");
@@ -4319,12 +4302,14 @@ function renderPeopleFilterView() {
     option.textContent = skill.name;
     skillSelect.append(option);
   }
-  relationshipSelect.innerHTML = '<option value="">All relationships</option>';
-  for (const relationship of sortedByName(state.relationshipTypes)) {
-    const option = document.createElement("option");
-    option.value = relationship.id;
-    option.textContent = relationship.name;
-    relationshipSelect.append(option);
+  if (isPrivatePeopleUnlocked()) {
+    relationshipSelect.innerHTML = '<option value="">All relationships</option>';
+    for (const relationship of sortedByName(state.relationshipTypes)) {
+      const option = document.createElement("option");
+      option.value = relationship.id;
+      option.textContent = relationship.name;
+      relationshipSelect.append(option);
+    }
   }
   projectSelect.innerHTML = '<option value="">All projects</option>';
   for (const project of sortedByName(state.projects)) {
@@ -4348,15 +4333,12 @@ function renderPeopleFilterView() {
   const projectFilter = sessionStorage.getItem("people-project-filter") || "";
   const roleFilter = sessionStorage.getItem("people-role-filter") || "";
   genderSelect.value = genderFilter;
-  ageSelect.value = ageFilter;
-  raceSelect.value = raceFilter;
-  skillSelect.value = skillFilter;
-  relationshipSelect.value = relationshipFilter;
-  if (!isPrivatePeopleUnlocked()) {
-    fillLockedPrivateSelect(ageSelect);
-    fillLockedPrivateSelect(raceSelect);
-    fillLockedPrivateSelect(relationshipSelect);
+  if (isPrivatePeopleUnlocked()) {
+    ageSelect.value = ageFilter;
+    raceSelect.value = raceFilter;
   }
+  skillSelect.value = skillFilter;
+  if (isPrivatePeopleUnlocked()) relationshipSelect.value = relationshipFilter;
   projectSelect.value = projectFilter;
   roleSelect.value = roleFilter;
   const people = sortedPeople(filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter, genderFilter, ageFilter, raceFilter));
@@ -4634,14 +4616,18 @@ function renderPeopleChartsView() {
   demographics.className = "distribution-grid";
   demographics.append(
     makeDistributionPie("Gender", distributionCounts(state.people, (person) => person.gender)),
-    makeDistributionPie("Race", isPrivatePeopleUnlocked() ? distributionCounts(state.people, (person) => person.race) : [], { emptyLabel: "Unlock Private to view." }),
-    makeDistributionPie("Age", isPrivatePeopleUnlocked() ? distributionCounts(state.people, (person) => ageCategoryNameForId(person.age_category_id) || person.age_band) : [], { emptyLabel: "Unlock Private to view." }),
-    makeDistributionPie("Relationship", isPrivatePeopleUnlocked() ? distributionCounts(state.people, (person) => relationshipNameForId(person.relationship_type_id)) : [], { emptyLabel: "Unlock Private to view." }),
     makeDistributionPie("Skills", distributionCounts(
       state.people.flatMap((person) => (person.skill_ids.length ? person.skill_ids : [""])),
       (skillId) => skillId ? state.skills.find((skill) => skill.id === skillId)?.name : ""
     ))
   );
+  if (isPrivatePeopleUnlocked()) {
+    demographics.append(
+      makeDistributionPie("Race", distributionCounts(state.people, (person) => person.race)),
+      makeDistributionPie("Age", distributionCounts(state.people, (person) => ageCategoryNameForId(person.age_category_id) || person.age_band)),
+      makeDistributionPie("Relationship", distributionCounts(state.people, (person) => relationshipNameForId(person.relationship_type_id)))
+    );
+  }
   const projectRows = state.people
     .map((person) => ({ label: personFullName(person) || "Unnamed", value: projectCountForPerson(person), id: person.id, entityType: "person" }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
@@ -4778,14 +4764,17 @@ function renderProjectChartsView() {
 function makePeopleReadRow(person, index = 0) {
   const row = document.createElement("div");
   row.className = "person-card person-read-row";
+  const privateCells = isPrivatePeopleUnlocked() ? `
+    <span></span>
+    <span></span>
+    <span></span>
+  ` : "";
   row.innerHTML = `
     <div class="person-sequence" aria-label="Person sequence">${index + 1}</div>
     <span></span>
     <span></span>
     <span></span>
-    <span></span>
-    <span></span>
-    <span></span>
+    ${privateCells}
     <span></span>
     <span class="person-projects"></span>
     <button class="ghost-button person-edit-button" type="button">Edit</button>
@@ -4793,10 +4782,14 @@ function makePeopleReadRow(person, index = 0) {
   row.querySelectorAll("span")[0].textContent = person.first_name;
   row.querySelectorAll("span")[1].textContent = person.last_name || "";
   row.querySelectorAll("span")[2].textContent = person.gender || "";
-  row.querySelectorAll("span")[3].textContent = personAgeLabel(person);
-  row.querySelectorAll("span")[4].textContent = personRaceLabel(person);
-  row.querySelectorAll("span")[5].textContent = personRelationshipLabel(person);
-  row.querySelectorAll("span")[6].textContent = person.skill_ids
+  let skillIndex = 3;
+  if (isPrivatePeopleUnlocked()) {
+    row.querySelectorAll("span")[3].textContent = ageCategoryNameForId(person.age_category_id) || person.age_band || "";
+    row.querySelectorAll("span")[4].textContent = person.race || "";
+    row.querySelectorAll("span")[5].textContent = relationshipNameForId(person.relationship_type_id) || "";
+    skillIndex = 6;
+  }
+  row.querySelectorAll("span")[skillIndex].textContent = person.skill_ids
     .map((id) => state.skills.find((skill) => skill.id === id)?.name)
     .filter(Boolean)
     .join(", ");
@@ -5229,7 +5222,8 @@ function renderPeopleProjectsView() {
     button.dataset.assignmentPersonId = person.id;
     button.innerHTML = `<span class="assignment-title"></span><small></small><span class="connector-handle person-handle" aria-hidden="true"></span>`;
     button.querySelector(".assignment-title").textContent = personFullName(person);
-    button.querySelector("small").textContent = `${isPrivatePeopleUnlocked() ? relationshipNameForId(person.relationship_type_id) || "No relationship" : "Private locked"} · ${assignmentCount} project${assignmentCount === 1 ? "" : "s"}`;
+    const relationshipPrefix = isPrivatePeopleUnlocked() ? `${relationshipNameForId(person.relationship_type_id) || "No relationship"} · ` : "";
+    button.querySelector("small").textContent = `${relationshipPrefix}${assignmentCount} project${assignmentCount === 1 ? "" : "s"}`;
     applyPersonRelationshipTone(button, relationshipNameForId(person.relationship_type_id));
     personList.append(button);
   }
@@ -6817,7 +6811,7 @@ function autosavePersonCard(card) {
         gender: card.querySelector("[name='gender']")?.value || "",
         age_category_id: card.querySelector("[name='ageCategoryId']")?.value || "",
         race: card.querySelector("[name='race']")?.value || "",
-        relationship_type_id: card.querySelector("[name='relationshipTypeId']").value || "",
+        relationship_type_id: card.querySelector("[name='relationshipTypeId']")?.value || "",
         skill_ids: [...card.querySelectorAll("[name='skillIds']")].map((input) => input.value),
         created_at: person.created_at
       },

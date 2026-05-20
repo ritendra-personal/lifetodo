@@ -648,11 +648,6 @@ body.has-sync-error #storage-status {
   color: var(--teal);
 }
 
-.private-locked-control {
-  color: var(--muted);
-  background: #f4f6f8;
-}
-
 .danger-button {
   color: #fff;
   background: var(--coral);
@@ -1589,6 +1584,16 @@ body.resizing .resize-handle::before {
 .people-filter-table .people-table-head,
 .people-filter-table .person-read-row {
   grid-template-columns: 34px minmax(72px, 0.34fr) minmax(72px, 0.34fr) minmax(70px, 0.3fr) minmax(76px, 0.32fr) minmax(70px, 0.3fr) minmax(96px, 0.42fr) minmax(140px, 0.62fr) minmax(360px, 1.8fr) 68px;
+}
+
+.people-table.private-hidden .people-table-head,
+.people-table.private-hidden .person-card {
+  grid-template-columns: 34px minmax(96px, 0.5fr) minmax(90px, 0.45fr) minmax(76px, 0.35fr) minmax(82px, 0.35fr) minmax(220px, 1fr) minmax(136px, auto);
+}
+
+.people-filter-table.private-hidden .people-table-head,
+.people-filter-table.private-hidden .person-read-row {
+  grid-template-columns: 34px minmax(96px, 0.45fr) minmax(96px, 0.45fr) minmax(76px, 0.35fr) minmax(180px, 0.8fr) minmax(360px, 1.8fr) 68px;
 }
 
 .people-table-head > *,
