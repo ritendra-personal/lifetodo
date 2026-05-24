@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.63";
+const APP_VERSION = "1.10.64";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -208,6 +208,7 @@ const counts = {
   projectStatuses: document.querySelector("#count-project-statuses"),
   roles: document.querySelector("#count-roles"),
   venues: document.querySelector("#count-venues"),
+  backup: document.querySelector("#count-backup"),
   home: document.querySelector("#count-home"),
   open: document.querySelector("#stat-open"),
   focus: document.querySelector("#stat-focus")
@@ -431,6 +432,7 @@ function validView(view) {
     "project-statuses",
     "roles",
     "venues",
+    "backup",
     "focus-task",
     "focus-project",
     "focus-goal",
@@ -1311,6 +1313,278 @@ function saveLocal(options = {}) {
   localStorage.setItem("planner-people", JSON.stringify(state.people.map(publicPersonForStorage)));
   localStorage.setItem("planner-people-private", JSON.stringify(state.peoplePrivateRows));
   if (!options.silent) state.syncMessage = "Saved locally in this browser only.";
+}
+
+function backupData() {
+  return {
+    schema: "seven-lives-backup",
+    schema_version: 1,
+    app_version: APP_VERSION,
+    exported_at: nowIso(),
+    user_email: state.user?.email || "",
+    data: {
+      tasks: state.tasks,
+      goals: state.goals,
+      ideas: state.ideas,
+      projects: state.projects,
+      people: state.people.map(publicPersonForStorage),
+      people_private_rows: state.peoplePrivateRows,
+      project_assignments: state.projectAssignments,
+      goal_links: state.goalLinks,
+      areas: state.areas,
+      skills: state.skills,
+      age_categories: state.ageCategories,
+      relationship_types: state.relationshipTypes,
+      project_types: state.projectTypes,
+      project_statuses: state.projectStatuses,
+      roles: state.roles,
+      venues: state.venues
+    }
+  };
+}
+
+function backupFilename() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return `seven-lives-backup-${stamp}.json`;
+}
+
+function downloadBackup() {
+  const blob = new Blob([JSON.stringify(backupData(), null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = backupFilename();
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  state.syncError = "";
+  state.syncMessage = `Backup downloaded at ${savedAtLabel()}.`;
+  render();
+}
+
+function normalizeBackupData(fileData) {
+  const data = fileData?.data || fileData;
+  if (!data || typeof data !== "object") throw new Error("This does not look like a Seven Lives backup file.");
+  return {
+    tasks: ensureSortOrders((data.tasks || []).map(normalizeTask)),
+    goals: (data.goals || []).map(normalizeGoal),
+    ideas: (data.ideas || []).map(normalizeIdea),
+    projects: (data.projects || []).map(normalizeProject),
+    people: (data.people || []).map(normalizePerson).map(publicPersonForStorage).map(normalizePerson),
+    peoplePrivateRows: data.people_private_rows || data.peoplePrivateRows || [],
+    projectAssignments: (data.project_assignments || data.projectAssignments || []).map(normalizeProjectAssignment),
+    goalLinks: (data.goal_links || data.goalLinks || []).map((link) => ({
+      task_id: link.task_id || link.taskId || "",
+      goal_id: link.goal_id || link.goalId || "",
+      user_id: link.user_id || link.userId || state.user?.id || null,
+      created_at: link.created_at || nowIso()
+    })).filter((link) => link.task_id && link.goal_id),
+    areas: (data.areas?.length ? data.areas : defaultAreas).map(normalizeArea),
+    skills: (data.skills?.length ? data.skills : defaultSkills).map(normalizeNamedOption),
+    ageCategories: (data.age_categories || data.ageCategories || defaultAgeCategories).map(normalizeNamedOption),
+    relationshipTypes: (data.relationship_types || data.relationshipTypes || defaultRelationshipTypes).map(normalizeNamedOption),
+    projectTypes: (data.project_types || data.projectTypes || defaultProjectTypes).map(normalizeNamedOption),
+    projectStatuses: (data.project_statuses || data.projectStatuses || defaultProjectStatuses).map(normalizeNamedOption),
+    roles: (data.roles?.length ? data.roles : defaultRoles).map(normalizeNamedOption),
+    venues: (data.venues?.length ? data.venues : defaultVenues).map(normalizeNamedOption)
+  };
+}
+
+function applyBackupData(data) {
+  state.tasks = data.tasks;
+  state.goals = data.goals;
+  state.ideas = data.ideas;
+  state.projects = data.projects;
+  state.people = data.people;
+  state.peoplePrivateRows = data.peoplePrivateRows;
+  state.projectAssignments = data.projectAssignments;
+  state.goalLinks = data.goalLinks;
+  state.areas = data.areas;
+  state.skills = data.skills;
+  state.ageCategories = data.ageCategories;
+  state.relationshipTypes = data.relationshipTypes;
+  state.projectTypes = data.projectTypes;
+  state.projectStatuses = data.projectStatuses;
+  state.roles = data.roles;
+  state.venues = data.venues;
+  saveAreas();
+  saveNamedOptions();
+  saveLocal({ silent: true });
+}
+
+function withCurrentUser(row) {
+  return { ...row, user_id: state.user.id };
+}
+
+function optionRows(rows) {
+  return rows.map((row) => withCurrentUser(row));
+}
+
+function projectPayload(project) {
+  return {
+    id: project.id,
+    user_id: state.user.id,
+    name: project.name,
+    description: project.description || "",
+    project_type_id: project.project_type_id || null,
+    project_status_id: project.project_status_id || null,
+    venue_id: project.venue_id || null,
+    project_year: project.project_year ? Number(project.project_year) : null,
+    status: project.status || "",
+    start_date: project.start_date || null,
+    end_date: project.end_date || null,
+    target_date: project.target_date || null,
+    created_at: project.created_at,
+    updated_at: project.updated_at
+  };
+}
+
+function ideaPayload(idea) {
+  return {
+    ...withCurrentUser(idea),
+    area_id: idea.area_id || null
+  };
+}
+
+function personPayload(person) {
+  const publicPerson = publicPersonForStorage(person);
+  return {
+    ...withCurrentUser(publicPerson),
+    age_category_id: null,
+    age_band: "",
+    race: "",
+    relationship_type_id: null
+  };
+}
+
+function projectAssignmentPayload(assignment) {
+  return {
+    ...withCurrentUser(assignment),
+    role_ids: parseIds(assignment.role_ids)
+  };
+}
+
+function taskGoalLinkPayload(link) {
+  return {
+    task_id: link.task_id,
+    goal_id: link.goal_id,
+    user_id: state.user.id,
+    created_at: link.created_at || nowIso()
+  };
+}
+
+function privatePersonPayload(row) {
+  return {
+    person_id: row.person_id,
+    user_id: state.user.id,
+    payload: row.payload || {},
+    updated_at: row.updated_at || nowIso()
+  };
+}
+
+async function insertBackupRows(table, rows, label = table) {
+  if (!rows.length) return [];
+  return insertRowsDirect(table, rows, null, label);
+}
+
+async function replaceCloudWithBackup(data) {
+  if (!isSupabaseReady()) throw new Error("Sign in with Google before restoring to Supabase.");
+  await refreshSupabaseSession("restore", { force: true });
+  const userFilter = `user_id=eq.${encodeURIComponent(state.user.id)}`;
+  const deleteOrder = [
+    "planner_person_private_attributes",
+    "planner_project_people",
+    "planner_task_goal_links",
+    "planner_tasks",
+    "planner_ideas",
+    "planner_projects",
+    "planner_people",
+    "planner_goals",
+    "planner_areas",
+    "planner_skills",
+    "planner_age_categories",
+    "planner_relationship_types",
+    "planner_project_types",
+    "planner_project_statuses",
+    "planner_roles",
+    "planner_venues"
+  ];
+  for (const table of deleteOrder) {
+    await deleteRowsDirect(table, userFilter, null, table);
+  }
+
+  await insertBackupRows("planner_areas", optionRows(data.areas), "areas");
+  await insertBackupRows("planner_skills", optionRows(data.skills), "skills");
+  await insertBackupRows("planner_age_categories", optionRows(data.ageCategories), "age categories");
+  await insertBackupRows("planner_relationship_types", optionRows(data.relationshipTypes), "relationships");
+  await insertBackupRows("planner_project_types", optionRows(data.projectTypes), "project types");
+  await insertBackupRows("planner_project_statuses", optionRows(data.projectStatuses), "project statuses");
+  await insertBackupRows("planner_roles", optionRows(data.roles), "roles");
+  await insertBackupRows("planner_venues", optionRows(data.venues), "venues");
+  await insertBackupRows("planner_goals", data.goals.map(withCurrentUser), "goals");
+  await insertBackupRows("planner_projects", data.projects.map(projectPayload), "projects");
+  await insertBackupRows("planner_people", data.people.map(personPayload), "people");
+  await insertBackupRows("planner_ideas", data.ideas.map(ideaPayload), "ideas");
+  await insertBackupRows("planner_tasks", data.tasks.map((task) => databasePayload({ ...task, user_id: state.user.id })), "tasks");
+  await insertBackupRows("planner_task_goal_links", backupGoalLinks(data).map(taskGoalLinkPayload), "goal links");
+  await insertBackupRows("planner_project_people", data.projectAssignments.map(projectAssignmentPayload), "project people");
+  if (data.peoplePrivateRows.length) {
+    await insertBackupRows("planner_person_private_attributes", data.peoplePrivateRows.map(privatePersonPayload), "private people");
+  }
+}
+
+function backupGoalLinks(data) {
+  const seen = new Set();
+  const links = [...data.goalLinks];
+  for (const task of data.tasks) {
+    for (const goalId of goalIdsForTask(task)) links.push({ task_id: task.id, goal_id: goalId, created_at: nowIso() });
+  }
+  return links.filter((link) => {
+    const key = `${link.task_id}:${link.goal_id}`;
+    if (!link.task_id || !link.goal_id || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function restoreBackupFile(file, options = {}) {
+  if (!file) return;
+  let data;
+  try {
+    data = normalizeBackupData(JSON.parse(await file.text()));
+  } catch (error) {
+    state.syncError = `Backup could not be read: ${error.message}`;
+    state.syncMessage = "";
+    render();
+    return;
+  }
+  const totalItems = data.tasks.length + data.goals.length + data.projects.length + data.people.length + data.ideas.length;
+  const message = options.toCloud
+    ? `Replace the current Supabase data for ${state.user?.email || "this account"} with ${totalItems} imported key objects? This cannot be undone unless you have another backup.`
+    : `Replace the data in this browser with ${totalItems} imported key objects?`;
+  const confirmed = await confirmAction(message, {
+    title: options.toCloud ? "Restore to Supabase" : "Restore backup",
+    acceptLabel: options.toCloud ? "Replace data" : "Restore"
+  });
+  if (!confirmed) return;
+
+  try {
+    state.syncError = "";
+    state.syncMessage = options.toCloud ? "Restoring backup to Supabase..." : "Restoring backup locally...";
+    render();
+    applyBackupData(data);
+    if (options.toCloud) await replaceCloudWithBackup(data);
+    state.syncError = "";
+    state.syncMessage = options.toCloud
+      ? `Backup restored to Supabase at ${savedAtLabel()}.`
+      : `Backup restored locally at ${savedAtLabel()}.`;
+    render();
+  } catch (error) {
+    state.syncError = `Restore failed: ${error.message}`;
+    state.syncMessage = "";
+    render();
+  }
 }
 
 function ensureSortOrders(tasks) {
@@ -2627,6 +2901,7 @@ function renderCounts() {
   counts.projectStatuses.textContent = state.projectStatuses.length;
   counts.roles.textContent = state.roles.length;
   counts.venues.textContent = state.venues.length;
+  counts.backup.textContent = "JSON";
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
   counts.focus.textContent = state.tasks.filter((task) => task.status !== "done" && task.priority === "High").length;
 }
@@ -3298,6 +3573,10 @@ function renderTasks() {
   }
   if (state.view === "venues") {
     renderNamedSettingsView("venues");
+    return;
+  }
+  if (state.view === "backup") {
+    renderBackupView();
     return;
   }
   if (state.view === "graph") {
@@ -4125,6 +4404,50 @@ function renderNamedSettingsView(type) {
     row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses", "venues"].includes(type) ? "project" : type === "roles" ? "assignment" : "person"}${usage === 1 ? "" : "s"}`;
     list.append(row);
   }
+}
+
+function renderBackupView() {
+  const totalItems = state.tasks.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
+  els.taskList.innerHTML = `
+    <section class="backup-grid">
+      <article class="backup-card">
+        <div>
+          <h4>Download backup</h4>
+          <p>Export tasks, goals, projects, people, ideas, annotations, relationships, and encrypted private people rows into one JSON file.</p>
+        </div>
+        <dl class="backup-stats">
+          <div><dt>Tasks</dt><dd>${state.tasks.length}</dd></div>
+          <div><dt>Goals</dt><dd>${state.goals.length}</dd></div>
+          <div><dt>Projects</dt><dd>${state.projects.length}</dd></div>
+          <div><dt>People</dt><dd>${state.people.length}</dd></div>
+          <div><dt>Ideas</dt><dd>${state.ideas.length}</dd></div>
+        </dl>
+        <button id="download-backup-button" class="primary-button" type="button">Download JSON backup</button>
+      </article>
+
+      <article class="backup-card">
+        <div>
+          <h4>Restore to this browser</h4>
+          <p>Import a backup file and replace the data stored locally in this browser. This does not require a paid Supabase account.</p>
+        </div>
+        <input id="restore-local-file" class="backup-file-input" type="file" accept="application/json,.json">
+        <button id="restore-local-button" class="ghost-button" type="button">Choose backup file</button>
+      </article>
+
+      <article class="backup-card ${isSupabaseReady() ? "" : "disabled-card"}">
+        <div>
+          <h4>Restore to Supabase</h4>
+          <p>Replace the current signed-in account data in Supabase with a backup file. Use this only when you intentionally want the cloud data overwritten.</p>
+        </div>
+        <input id="restore-cloud-file" class="backup-file-input" type="file" accept="application/json,.json" ${isSupabaseReady() ? "" : "disabled"}>
+        <button id="restore-cloud-button" class="danger-button" type="button" ${isSupabaseReady() ? "" : "disabled"}>Replace Supabase data</button>
+      </article>
+    </section>
+    <section class="directory-panel backup-note">
+      <h4>Backup contents</h4>
+      <p>This backup currently contains ${totalItems} key objects plus annotations and relationship records. Private people fields stay hidden in the app and are exported only as encrypted payload rows when present.</p>
+    </section>
+  `;
 }
 
 function personFullName(person) {
@@ -6014,11 +6337,12 @@ function render() {
     "project-types": "Project Types",
     "project-statuses": "Project Status",
     roles: "Roles",
-    venues: "Venues"
+    venues: "Venues",
+    backup: "Backup"
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -6192,6 +6516,21 @@ els.taskList.addEventListener("click", async (event) => {
   const homeTaskButton = event.target.closest("[data-home-task-id]");
   if (homeTaskButton) {
     focusObject("task", homeTaskButton.dataset.homeTaskId, state.view);
+    return;
+  }
+  const downloadBackupButton = event.target.closest("#download-backup-button");
+  if (downloadBackupButton) {
+    downloadBackup();
+    return;
+  }
+  const restoreLocalButton = event.target.closest("#restore-local-button");
+  if (restoreLocalButton) {
+    els.taskList.querySelector("#restore-local-file")?.click();
+    return;
+  }
+  const restoreCloudButton = event.target.closest("#restore-cloud-button");
+  if (restoreCloudButton) {
+    els.taskList.querySelector("#restore-cloud-file")?.click();
     return;
   }
   const assignmentTask = event.target.closest("[data-assignment-task-id]");
@@ -6932,6 +7271,16 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  if (event.target.id === "restore-local-file") {
+    restoreBackupFile(event.target.files?.[0], { toCloud: false });
+    event.target.value = "";
+    return;
+  }
+  if (event.target.id === "restore-cloud-file") {
+    restoreBackupFile(event.target.files?.[0], { toCloud: true });
+    event.target.value = "";
+    return;
+  }
   const taskFocusForm = event.target.closest("[data-task-focus-id]");
   if (taskFocusForm) {
     queueFocusedTaskAutosave(taskFocusForm);

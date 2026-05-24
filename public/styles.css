@@ -1228,6 +1228,70 @@ body.resizing .resize-handle::before {
   font-size: 0.82rem;
 }
 
+.backup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--major-gap);
+}
+
+.backup-card {
+  display: grid;
+  align-content: start;
+  gap: var(--ui-gap);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  padding: var(--detail-pad);
+}
+
+.backup-card h4,
+.backup-card p,
+.backup-note h4,
+.backup-note p {
+  margin: 0;
+}
+
+.backup-card p,
+.backup-note p {
+  color: var(--muted);
+}
+
+.backup-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.backup-stats div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+.backup-stats dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.backup-stats dd {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.backup-file-input {
+  display: none;
+}
+
+.disabled-card {
+  opacity: 0.58;
+}
+
 .planning-section-head {
   display: flex;
   align-items: end;
@@ -3398,6 +3462,10 @@ dialog::backdrop {
   }
 
   .planner-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-grid {
     grid-template-columns: 1fr;
   }
 
