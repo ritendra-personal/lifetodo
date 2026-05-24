@@ -2465,7 +2465,7 @@ body.resizing .resize-handle::before {
 }
 
 .person-project-add {
-  grid-template-columns: minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(150px, 0.72fr) minmax(190px, 1fr) auto;
 }
 
 .project-person-list {

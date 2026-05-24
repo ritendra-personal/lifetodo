@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.66";
+const APP_VERSION = "1.10.67";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -3940,6 +3940,7 @@ function renderFocusedPersonView() {
             <strong>Projects</strong>
             <div class="person-project-add">
               <select name="personProjectId" aria-label="Add person project"></select>
+              <div class="role-picker person-project-add-role" role="group" aria-label="Roles for new person project"></div>
               <button class="ghost-button add-person-project-button" type="button">Add</button>
             </div>
           </div>
@@ -3960,6 +3961,7 @@ function renderFocusedPersonView() {
   }
   fillSkillPicker(card.querySelector(".skill-picker"), person.skill_ids);
   fillPersonProjectSelect(card.querySelector("[name='personProjectId']"), person.id);
+  fillRolePicker(card.querySelector(".person-project-add-role"), []);
   renderPersonProjectList(card, person.id);
   applyPersonRelationshipTone(card, relationshipNameForId(person.relationship_type_id));
 }
@@ -6674,8 +6676,9 @@ els.taskList.addEventListener("click", async (event) => {
   if (addPersonProjectButton) {
     const card = addPersonProjectButton.closest("[data-person-id]");
     const projectId = card?.querySelector("[name='personProjectId']")?.value || "";
+    const roleIds = [...(card?.querySelectorAll(".person-project-add-role [name='roleIds']") || [])].map((input) => input.value);
     if (card && projectId) {
-      persistProjectAssignment({ project_id: projectId, person_id: card.dataset.personId, role_ids: [] });
+      persistProjectAssignment({ project_id: projectId, person_id: card.dataset.personId, role_ids: roleIds });
     }
     return;
   }
