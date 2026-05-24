@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.60";
+const APP_VERSION = "1.10.61";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -2533,8 +2533,12 @@ function descendantIds(id) {
 }
 
 function taskBucket(task) {
-  const today = todayIso();
   if (task.status === "done") return "done";
+  return taskDateBucket(task);
+}
+
+function taskDateBucket(task) {
+  const today = todayIso();
   if (!task.due_date) return "backlog";
   if (task.due_date <= today) return "today";
   return "upcoming";
@@ -2550,7 +2554,7 @@ function filteredTasks() {
       const taskFilter = state.view === "tasks" ? state.taskFilter : state.view;
       if (taskFilter === "done") return task.status === "done";
       if (task.status === "done" && !state.showDone) return false;
-      return taskBucket(task) === taskFilter;
+      return taskDateBucket(task) === taskFilter;
     })
     .filter((task) => {
       if (!search) return true;
