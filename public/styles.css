@@ -1441,6 +1441,113 @@ body.resizing .resize-handle::before {
   padding: var(--task-list-pad);
 }
 
+.taxonomy-task-view {
+  display: grid;
+  gap: var(--major-gap);
+}
+
+.taxonomy-task-card {
+  border: 1px solid var(--line);
+  border-left: 8px solid var(--teal);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.taxonomy-task-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-gap);
+  padding: var(--task-list-pad);
+  border-bottom: 1px solid var(--line);
+}
+
+.taxonomy-task-card-head h3,
+.taxonomy-task-node h4 {
+  margin: 0;
+}
+
+.taxonomy-task-card-head span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.taxonomy-task-tree {
+  display: grid;
+  gap: 8px;
+  padding: var(--task-list-pad);
+}
+
+.taxonomy-task-node {
+  display: grid;
+  gap: 8px;
+  margin-left: calc(var(--depth) * 22px);
+}
+
+.taxonomy-task-node-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.taxonomy-task-branch {
+  width: 16px;
+  height: 1px;
+  background: var(--line);
+  flex: 0 0 auto;
+}
+
+.taxonomy-task-items {
+  display: grid;
+  gap: 8px;
+  margin-left: 24px;
+}
+
+.taxonomy-task-pill {
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--blue);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ui-gap);
+  align-items: center;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.taxonomy-task-pill:hover {
+  border-color: var(--teal);
+  background: var(--hover-surface);
+}
+
+.taxonomy-task-pill.done {
+  opacity: 0.42;
+}
+
+.taxonomy-task-title {
+  font-weight: 850;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taxonomy-task-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.taxonomy-task-children {
+  display: grid;
+  gap: 8px;
+}
+
 .goal-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;

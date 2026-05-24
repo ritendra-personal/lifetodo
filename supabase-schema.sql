@@ -183,6 +183,14 @@ create table if not exists planner_taxonomy_nodes (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists planner_task_taxonomy_nodes (
+  task_id uuid not null references planner_tasks(id) on delete cascade,
+  taxonomy_node_id uuid not null references planner_taxonomy_nodes(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (task_id, taxonomy_node_id)
+);
+
 create table if not exists planner_projects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -349,6 +357,7 @@ alter table planner_ideas
 
 alter table planner_goals enable row level security;
 alter table planner_task_goal_links enable row level security;
+alter table planner_task_taxonomy_nodes enable row level security;
 alter table planner_project_types enable row level security;
 alter table planner_project_statuses enable row level security;
 alter table planner_roles enable row level security;
@@ -370,6 +379,9 @@ create unique index if not exists planner_goals_user_name_natural_key_idx
 on planner_goals (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
 create index if not exists planner_task_goal_links_user_id_idx on planner_task_goal_links(user_id);
 create index if not exists planner_task_goal_links_goal_id_idx on planner_task_goal_links(goal_id);
+create index if not exists planner_task_taxonomy_nodes_user_id_idx on planner_task_taxonomy_nodes(user_id);
+create index if not exists planner_task_taxonomy_nodes_task_id_idx on planner_task_taxonomy_nodes(task_id);
+create index if not exists planner_task_taxonomy_nodes_taxonomy_node_id_idx on planner_task_taxonomy_nodes(taxonomy_node_id);
 create index if not exists planner_project_types_user_id_idx on planner_project_types(user_id);
 create index if not exists planner_project_types_sort_order_idx on planner_project_types(sort_order);
 create index if not exists planner_project_statuses_user_id_idx on planner_project_statuses(user_id);
@@ -429,6 +441,7 @@ create index if not exists planner_project_people_role_ids_idx on planner_projec
 
 drop policy if exists "planner_goals_all_for_authenticated_user" on planner_goals;
 drop policy if exists "planner_task_goal_links_all_for_authenticated_user" on planner_task_goal_links;
+drop policy if exists "planner_task_taxonomy_nodes_all_for_authenticated_user" on planner_task_taxonomy_nodes;
 drop policy if exists "planner_project_types_all_for_authenticated_user" on planner_project_types;
 drop policy if exists "planner_project_statuses_all_for_authenticated_user" on planner_project_statuses;
 drop policy if exists "planner_roles_all_for_authenticated_user" on planner_roles;
@@ -453,6 +466,12 @@ with check ((select auth.uid()) = user_id);
 
 create policy "planner_task_goal_links_all_for_authenticated_user"
 on planner_task_goal_links for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_task_taxonomy_nodes_all_for_authenticated_user"
+on planner_task_taxonomy_nodes for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);

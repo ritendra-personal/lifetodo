@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.70";
+const APP_VERSION = "1.10.71";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -118,6 +118,7 @@ const state = {
   projectsCloudReady: false,
   venuesCloudReady: false,
   taxonomiesCloudReady: false,
+  taskTaxonomyLinksCloudReady: false,
   goalLinksCloudReady: false,
   config: null,
   supabase: null,
@@ -185,6 +186,7 @@ const detail = {
   goal: document.querySelector("#detail-goal"),
   project: document.querySelector("#detail-project"),
   dependencies: document.querySelector("#detail-dependencies"),
+  taxonomyNodes: document.querySelector("#detail-taxonomy-nodes"),
   tags: document.querySelector("#detail-tags"),
   area: document.querySelector("#detail-area"),
   priority: document.querySelector("#detail-priority"),
@@ -201,6 +203,7 @@ const counts = {
   goals: document.querySelector("#count-goals"),
   goalAssignments: document.querySelector("#count-goal-assignments"),
   peopleProjects: document.querySelector("#count-people-projects"),
+  tasksByTaxonomy: document.querySelector("#count-tasks-by-taxonomy"),
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
   peopleCharts: document.querySelector("#count-people-charts"),
@@ -435,6 +438,7 @@ function validView(view) {
     "ideas",
     "graph",
     "timeline",
+    "tasks-by-taxonomy",
     "areas",
     "skills",
     "age-categories",
@@ -953,6 +957,15 @@ function normalizeProjectAssignment(assignment) {
   };
 }
 
+function normalizeTaskTaxonomyLink(link) {
+  return {
+    task_id: link.task_id || link.taskId || "",
+    taxonomy_node_id: link.taxonomy_node_id || link.taxonomyNodeId || "",
+    user_id: link.user_id || link.userId || state.user?.id || null,
+    created_at: link.created_at || nowIso()
+  };
+}
+
 function normalizeArea(area, index = 0) {
   return {
     id: area.id || makeId(),
@@ -1051,6 +1064,7 @@ function normalizeTask(task) {
     notes: task.notes || "",
     tags: parseTags(task.tags),
     dependency_ids: parseIds(task.dependency_ids || task.dependencyIds),
+    taxonomy_node_ids: parseIds(task.taxonomy_node_ids || task.taxonomyNodeIds),
     area_id: task.area_id || task.areaId || areaIdForName(areaName),
     area: areaName,
     priority: task.priority || "Medium",
@@ -1094,7 +1108,7 @@ function databasePayload(task) {
 function databasePatchPayload(changes) {
   const payload = {};
   for (const [key, value] of Object.entries(changes)) {
-    if (value !== undefined && key !== "goal_ids") payload[key] = value;
+    if (value !== undefined && key !== "goal_ids" && key !== "taxonomy_node_ids") payload[key] = value;
   }
   if ("goal_ids" in changes) payload.goal_id = parseIds(changes.goal_ids)[0] || null;
   if ("parent_id" in payload) payload.parent_id = payload.parent_id || null;
@@ -1612,8 +1626,13 @@ async function deleteTaxonomyNode(taxonomyId, nodeId) {
   if (!confirmed) return;
   const removeIds = new Set([nodeId, ...descendantIds]);
   taxonomy.nodes = taxonomy.nodes.filter((item) => !removeIds.has(item.id));
+  state.tasks = state.tasks.map((task) => normalizeTask({
+    ...task,
+    taxonomy_node_ids: parseIds(task.taxonomy_node_ids).filter((id) => !removeIds.has(id))
+  }));
   taxonomy.updated_at = nowIso();
   saveTaxonomies();
+  saveLocal();
   if (isSupabaseReady() && state.taxonomiesCloudReady) {
     await deleteRowsDirect("planner_taxonomy_nodes", `id=in.(${[...removeIds].map((item) => encodeURIComponent(item)).join(",")})`, null, "taxonomy nodes");
     await upsertRowDirect("planner_taxonomies", taxonomyPayload(taxonomy), null, "taxonomy");
@@ -1629,8 +1648,14 @@ async function deleteTaxonomy(taxonomyId) {
     { title: "Delete taxonomy", acceptLabel: "Delete" }
   );
   if (!confirmed) return;
+  const removeIds = new Set(taxonomy.nodes.map((node) => node.id));
   state.taxonomies = state.taxonomies.filter((item) => item.id !== taxonomyId);
+  state.tasks = state.tasks.map((task) => normalizeTask({
+    ...task,
+    taxonomy_node_ids: parseIds(task.taxonomy_node_ids).filter((id) => !removeIds.has(id))
+  }));
   saveTaxonomies();
+  saveLocal();
   if (isSupabaseReady() && state.taxonomiesCloudReady) {
     await deleteRowsDirect("planner_taxonomy_nodes", `taxonomy_id=eq.${encodeURIComponent(taxonomyId)}`, null, "taxonomy nodes");
     await deleteRowDirect("planner_taxonomies", taxonomyId, null, "taxonomy");
@@ -1699,6 +1724,15 @@ function taskGoalLinkPayload(link) {
   };
 }
 
+function taskTaxonomyLinkPayload(link) {
+  return {
+    task_id: link.task_id,
+    taxonomy_node_id: link.taxonomy_node_id,
+    user_id: state.user.id,
+    created_at: link.created_at || nowIso()
+  };
+}
+
 function privatePersonPayload(row) {
   return {
     person_id: row.person_id,
@@ -1719,6 +1753,7 @@ async function replaceCloudWithBackup(data) {
   const userFilter = `user_id=eq.${encodeURIComponent(state.user.id)}`;
   const deleteOrder = [
     "planner_person_private_attributes",
+    "planner_task_taxonomy_nodes",
     "planner_taxonomy_nodes",
     "planner_taxonomies",
     "planner_project_people",
@@ -1761,6 +1796,7 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_ideas", data.ideas.map(ideaPayload), "ideas");
   await insertBackupRows("planner_tasks", data.tasks.map((task) => databasePayload({ ...task, user_id: state.user.id })), "tasks");
   await insertBackupRows("planner_task_goal_links", backupGoalLinks(data).map(taskGoalLinkPayload), "goal links");
+  await insertBackupRows("planner_task_taxonomy_nodes", backupTaskTaxonomyLinks(data).map(taskTaxonomyLinkPayload), "task taxonomy links");
   await insertBackupRows("planner_project_people", data.projectAssignments.map(projectAssignmentPayload), "project people");
   if (data.peoplePrivateRows.length) {
     await insertBackupRows("planner_person_private_attributes", data.peoplePrivateRows.map(privatePersonPayload), "private people");
@@ -1776,6 +1812,22 @@ function backupGoalLinks(data) {
   return links.filter((link) => {
     const key = `${link.task_id}:${link.goal_id}`;
     if (!link.task_id || !link.goal_id || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function backupTaskTaxonomyLinks(data) {
+  const seen = new Set();
+  const links = [];
+  for (const task of data.tasks) {
+    for (const taxonomyNodeId of parseIds(task.taxonomy_node_ids)) {
+      links.push({ task_id: task.id, taxonomy_node_id: taxonomyNodeId, created_at: nowIso() });
+    }
+  }
+  return links.filter((link) => {
+    const key = `${link.task_id}:${link.taxonomy_node_id}`;
+    if (!link.task_id || !link.taxonomy_node_id || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
@@ -1974,6 +2026,7 @@ async function loadTasksNow() {
     const projects = await loadProjectsData();
     const goalLinks = await loadGoalLinksData();
     const taxonomies = await loadTaxonomiesData();
+    const taskTaxonomyLinks = await loadTaskTaxonomyLinksData();
     let areas = [];
     const { data: areaRows, error: areasError } = await state.supabase
       .from("planner_areas")
@@ -1996,7 +2049,7 @@ async function loadTasksNow() {
       state.areas = areas;
       saveAreas();
     }
-    state.tasks = ensureSortOrders(applyGoalLinksToTasks(rows.map(normalizeTask), goalLinks || []));
+    state.tasks = ensureSortOrders(applyTaskTaxonomyLinksToTasks(applyGoalLinksToTasks(rows.map(normalizeTask), goalLinks || []), taskTaxonomyLinks || []));
     state.goals = goals.map(normalizeGoal);
     state.ideas = ideas.map(normalizeIdea);
     if (projects) state.projects = projects;
@@ -2041,6 +2094,54 @@ async function loadGoalLinksData() {
     state.syncMessage = state.syncMessage || "Goal links are local until you run the latest Supabase migration.";
     return null;
   }
+}
+
+function applyTaskTaxonomyLinksToTasks(tasks, links) {
+  const idsByTask = new Map();
+  for (const link of links || []) {
+    if (!idsByTask.has(link.task_id)) idsByTask.set(link.task_id, []);
+    idsByTask.get(link.task_id).push(link.taxonomy_node_id);
+  }
+  return tasks.map((task) => normalizeTask({
+    ...task,
+    taxonomy_node_ids: idsByTask.get(task.id) || task.taxonomy_node_ids || []
+  }));
+}
+
+async function loadTaskTaxonomyLinksData() {
+  if (!isSupabaseReady()) return null;
+  try {
+    const { data, error } = await state.supabase
+      .from("planner_task_taxonomy_nodes")
+      .select("*")
+      .eq("user_id", state.user.id);
+    if (error) throw error;
+    state.taskTaxonomyLinksCloudReady = true;
+    return (data || []).map(normalizeTaskTaxonomyLink);
+  } catch (error) {
+    console.warn("Supabase task taxonomy links table unavailable; using local taxonomy links", error);
+    state.taskTaxonomyLinksCloudReady = false;
+    state.syncMessage = state.syncMessage || "Task taxonomy links are local until you run migration 019.";
+    return null;
+  }
+}
+
+async function syncTaskTaxonomyLinks(taskId, taxonomyNodeIds) {
+  const ids = parseIds(taxonomyNodeIds);
+  state.tasks = state.tasks.map((task) => (task.id === taskId ? normalizeTask({ ...task, taxonomy_node_ids: ids }) : task));
+  if (!isSupabaseReady()) return;
+  if (!state.taskTaxonomyLinksCloudReady) {
+    if (!ids.length) return;
+    throw new Error("Task taxonomy links were not saved to database: run migration 019.");
+  }
+  await deleteRowsDirect("planner_task_taxonomy_nodes", `task_id=eq.${encodeURIComponent(taskId)}`, null, "task taxonomy links");
+  if (!ids.length) return;
+  const rows = ids.map((taxonomyNodeId) => ({
+    task_id: taskId,
+    taxonomy_node_id: taxonomyNodeId,
+    user_id: state.user.id
+  }));
+  await insertRowsDirect("planner_task_taxonomy_nodes", rows, null, "task taxonomy links");
 }
 
 async function syncTaskGoalLinks(taskId, goalIds) {
@@ -2088,6 +2189,8 @@ async function persistTask(task) {
     state.syncMessage = `Saved for ${keyLabel()}.`;
     const saved = normalizeTask({ ...savedRow, goal_ids: goalIdsForTask(normalizedTask) });
     await syncTaskGoalLinks(saved.id, saved.goal_ids);
+    await syncTaskTaxonomyLinks(saved.id, normalizedTask.taxonomy_node_ids);
+    saved.taxonomy_node_ids = normalizedTask.taxonomy_node_ids;
     const index = state.tasks.findIndex((item) => item.id === saved.id);
     if (index >= 0) state.tasks[index] = saved;
     else state.tasks.unshift(saved);
@@ -2119,6 +2222,9 @@ async function patchTask(id, changes, options = {}) {
         ...goalIdsForTask(updated).map((goalId) => ({ task_id: id, goal_id: goalId, user_id: state.user?.id || null }))
       ];
     }
+    if ("taxonomy_node_ids" in changes) {
+      state.tasks = state.tasks.map((task) => (task.id === id ? normalizeTask({ ...task, taxonomy_node_ids: updated.taxonomy_node_ids }) : task));
+    }
     if (options.render !== false) render();
   }
 
@@ -2126,6 +2232,9 @@ async function patchTask(id, changes, options = {}) {
     if (!optimistic) state.tasks = state.tasks.map((task) => (task.id === id ? updated : task));
     if ("goal_ids" in changes || "goal_id" in changes) {
       await syncTaskGoalLinks(id, goalIdsForTask(updated));
+    }
+    if ("taxonomy_node_ids" in changes) {
+      await syncTaskTaxonomyLinks(id, updated.taxonomy_node_ids);
     }
     ensureSortOrders(state.tasks);
     saveLocal();
@@ -2144,6 +2253,10 @@ async function patchTask(id, changes, options = {}) {
     const saved = normalizeTask({ ...savedRow, goal_ids: goalIdsForTask(updated) });
     if ("goal_ids" in changes || "goal_id" in changes) {
       await syncTaskGoalLinks(id, saved.goal_ids);
+    }
+    if ("taxonomy_node_ids" in changes) {
+      await syncTaskTaxonomyLinks(id, updated.taxonomy_node_ids);
+      saved.taxonomy_node_ids = updated.taxonomy_node_ids;
     }
     state.tasks = state.tasks.map((task) => (task.id === id ? saved : task));
     ensureSortOrders(state.tasks);
@@ -3119,6 +3232,7 @@ function renderCounts() {
   counts.goals.textContent = state.goals.length;
   counts.goalAssignments.textContent = state.tasks.filter((task) => !task.parent_id && task.status !== "done").length;
   counts.peopleProjects.textContent = state.projectAssignments.length;
+  counts.tasksByTaxonomy.textContent = state.tasks.filter((task) => parseIds(task.taxonomy_node_ids).length).length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
   counts.peopleCharts.textContent = state.people.length;
@@ -3162,6 +3276,50 @@ function fillProjectSelect(select, selected = "") {
     select.append(option);
   }
   select.value = selected || "";
+}
+
+function taxonomyNodeLabel(taxonomy, node, byId = new Map(taxonomy.nodes.map((item) => [item.id, item]))) {
+  const labels = [node.name];
+  let parent = node.parent_id ? byId.get(node.parent_id) : null;
+  while (parent) {
+    labels.unshift(parent.name);
+    parent = parent.parent_id ? byId.get(parent.parent_id) : null;
+  }
+  return `${taxonomy.name}: ${labels.join(" / ")}`;
+}
+
+function sortedTaxonomyNodesForSelect() {
+  const rows = [];
+  for (const taxonomy of sortedByName(state.taxonomies)) {
+    const byId = new Map(taxonomy.nodes.map((node) => [node.id, node]));
+    for (const node of taxonomy.nodes) {
+      rows.push({
+        id: node.id,
+        label: taxonomyNodeLabel(taxonomy, node, byId)
+      });
+    }
+  }
+  return rows.sort((a, b) => sortByLabel(a.label, b.label));
+}
+
+function fillTaxonomyNodeSelect(select, selected = []) {
+  if (!select) return;
+  const selectedIds = new Set(parseIds(selected));
+  select.innerHTML = "";
+  for (const row of sortedTaxonomyNodesForSelect()) {
+    const option = document.createElement("option");
+    option.value = row.id;
+    option.textContent = row.label;
+    option.selected = selectedIds.has(row.id);
+    select.append(option);
+  }
+  if (!select.options.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No taxonomies yet";
+    option.disabled = true;
+    select.append(option);
+  }
 }
 
 function fillProjectYearSelect(select, selected = "") {
@@ -3707,6 +3865,7 @@ function renderParentControls() {
     fillGoalSelect(detail.goal, task?.goal_id || "");
     fillProjectSelect(detail.project, task?.project_id || "");
     fillDependencySelect(detail.dependencies, task?.dependency_ids || [], state.selectedId);
+    fillTaxonomyNodeSelect(detail.taxonomyNodes, task?.taxonomy_node_ids || []);
   }
 }
 
@@ -3825,6 +3984,10 @@ function renderTasks() {
   }
   if (state.view === "timeline") {
     renderTimelineView();
+    return;
+  }
+  if (state.view === "tasks-by-taxonomy") {
+    renderTasksByTaxonomyView();
     return;
   }
 
@@ -4047,6 +4210,9 @@ function renderFocusedTaskView() {
       <label class="field-label">Depends on
         <select name="dependencies" multiple size="5"></select>
       </label>
+      <label class="field-label">Taxonomy
+        <select name="taxonomyNodeIds" multiple size="6"></select>
+      </label>
       <div class="detail-actions">
         <button class="ghost-button focus-subtask-button" type="button">Add subtask</button>
         <button class="complete-action-button focus-toggle-task-button ${task.status === "done" ? "reopen" : ""}" type="button">
@@ -4069,6 +4235,7 @@ function renderFocusedTaskView() {
   form.querySelector("[name='energy']").value = task.energy;
   form.querySelector("[name='tags']").value = task.tags.join(", ");
   fillDependencySelect(form.querySelector("[name='dependencies']"), task.dependency_ids, task.id);
+  fillTaxonomyNodeSelect(form.querySelector("[name='taxonomyNodeIds']"), task.taxonomy_node_ids);
 }
 
 function renderFocusedGoalView() {
@@ -4705,6 +4872,119 @@ function renderTaxonomyNode(taxonomy, node, depth, children) {
     fragment.append(renderTaxonomyNode(taxonomy, child, depth + 1, children));
   }
   return fragment;
+}
+
+function taskMatchesTaxonomyView(task) {
+  if (task.status === "done" && !state.showDone) return false;
+  const search = state.search.trim().toLowerCase();
+  if (search && !`${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")}`.toLowerCase().includes(search)) return false;
+  if (state.tagFilter && !task.tags.includes(state.tagFilter)) return false;
+  return true;
+}
+
+function taxonomyTaskBuckets() {
+  const buckets = new Map();
+  for (const task of state.tasks.filter(taskMatchesTaxonomyView)) {
+    for (const nodeId of parseIds(task.taxonomy_node_ids)) {
+      if (!buckets.has(nodeId)) buckets.set(nodeId, []);
+      buckets.get(nodeId).push(task);
+    }
+  }
+  for (const tasks of buckets.values()) {
+    tasks.sort((a, b) => (a.due_date || "9999-12-31").localeCompare(b.due_date || "9999-12-31") || sortByLabel(a.title, b.title));
+  }
+  return buckets;
+}
+
+function taxonomyNodeHasTasks(node, children, buckets) {
+  if (buckets.get(node.id)?.length) return true;
+  return (children.get(node.id) || []).some((child) => taxonomyNodeHasTasks(child, children, buckets));
+}
+
+function makeTaxonomyTaskButton(task) {
+  const button = document.createElement("button");
+  button.className = `taxonomy-task-pill ${task.status === "done" ? "done" : ""}`;
+  button.type = "button";
+  button.dataset.taxonomyTaskId = task.id;
+  button.style.borderLeftColor = areaColorFor(task);
+  button.innerHTML = `
+    <span class="taxonomy-task-title"></span>
+    <span class="taxonomy-task-meta"></span>
+  `;
+  button.querySelector(".taxonomy-task-title").textContent = task.title || "Untitled task";
+  button.querySelector(".taxonomy-task-meta").textContent = [areaNameFor(task), task.priority, formatDate(task.due_date)].filter(Boolean).join(" · ");
+  return button;
+}
+
+function renderTaxonomyTaskNode(taxonomy, node, depth, children, buckets) {
+  if (!taxonomyNodeHasTasks(node, children, buckets)) return null;
+  const section = document.createElement("section");
+  section.className = "taxonomy-task-node";
+  section.style.setProperty("--depth", depth);
+  section.innerHTML = `
+    <div class="taxonomy-task-node-head">
+      <span class="taxonomy-task-branch" aria-hidden="true"></span>
+      <h4></h4>
+    </div>
+    <div class="taxonomy-task-items"></div>
+    <div class="taxonomy-task-children"></div>
+  `;
+  section.querySelector("h4").textContent = node.name;
+  const items = section.querySelector(".taxonomy-task-items");
+  for (const task of buckets.get(node.id) || []) items.append(makeTaxonomyTaskButton(task));
+  if (!items.children.length) items.remove();
+  const childContainer = section.querySelector(".taxonomy-task-children");
+  for (const child of children.get(node.id) || []) {
+    const childNode = renderTaxonomyTaskNode(taxonomy, child, depth + 1, children, buckets);
+    if (childNode) childContainer.append(childNode);
+  }
+  if (!childContainer.children.length) childContainer.remove();
+  return section;
+}
+
+function renderTasksByTaxonomyView() {
+  els.taskList.innerHTML = "";
+  const buckets = taxonomyTaskBuckets();
+  if (!state.taxonomies.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No taxonomies yet.";
+    els.taskList.append(empty);
+    return;
+  }
+  if (!buckets.size) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No tasks are associated with taxonomy nodes yet.";
+    els.taskList.append(empty);
+    return;
+  }
+  const view = document.createElement("div");
+  view.className = "taxonomy-task-view";
+  for (const taxonomy of sortedByName(state.taxonomies)) {
+    const children = taxonomyChildMap(taxonomy);
+    const roots = (children.get("") || []).filter((node) => taxonomyNodeHasTasks(node, children, buckets));
+    if (!roots.length) continue;
+    const card = document.createElement("article");
+    card.className = "taxonomy-task-card";
+    card.innerHTML = `
+      <div class="taxonomy-task-card-head">
+        <h3></h3>
+        <span></span>
+      </div>
+      <div class="taxonomy-task-tree"></div>
+    `;
+    card.querySelector("h3").textContent = taxonomy.name;
+    const taskIds = new Set();
+    for (const node of taxonomy.nodes) {
+      for (const task of buckets.get(node.id) || []) taskIds.add(task.id);
+    }
+    card.querySelector("span").textContent = `${taskIds.size} ${taskIds.size === 1 ? "task" : "tasks"}`;
+    const tree = card.querySelector(".taxonomy-task-tree");
+    for (const root of roots) tree.append(renderTaxonomyTaskNode(taxonomy, root, 0, children, buckets));
+    view.append(card);
+  }
+  els.taskList.append(view);
 }
 
 function renderTaxonomiesView() {
@@ -6648,7 +6928,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -6663,6 +6943,7 @@ function renderDetail() {
   detail.parent.value = task.parent_id || "";
   detail.goal.value = task.goal_id || "";
   detail.project.value = task.project_id || "";
+  fillTaxonomyNodeSelect(detail.taxonomyNodes, task.taxonomy_node_ids);
   detail.tags.value = task.tags.join(", ");
   detail.area.value = task.area_id || areaIdForName(task.area);
   detail.priority.value = task.priority;
@@ -6693,6 +6974,7 @@ function render() {
     ideas: "Ideas",
     graph: "Task Graph",
     timeline: "Timeline",
+    "tasks-by-taxonomy": "Tasks by Taxonomy",
     "focus-task": "Task",
     "focus-project": "Project",
     "focus-goal": "Goal",
@@ -6711,7 +6993,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -6719,7 +7001,7 @@ function render() {
   els.plannerGrid.classList.toggle("timeline-mode", state.view === "timeline");
   els.plannerGrid.classList.toggle("planning-mode", isPlanningView);
   els.plannerGrid.classList.toggle("focus-mode", isFocusView);
-  els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline" || isPlanningView);
+  els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline" || state.view === "tasks-by-taxonomy" || isPlanningView);
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view] || "Planner";
   els.boardTitle.textContent = state.view === "graph" ? "Task Graph" : state.view === "timeline" ? "Task timeline" : titles[state.view] || "Planner";
@@ -7164,6 +7446,11 @@ els.taskList.addEventListener("click", async (event) => {
   const timelineProject = event.target.closest(".timeline-project");
   if (timelineProject) {
     openProjectFromTimeline(timelineProject.dataset.projectId);
+    return;
+  }
+  const taxonomyTask = event.target.closest("[data-taxonomy-task-id]");
+  if (taxonomyTask) {
+    focusObject("task", taxonomyTask.dataset.taxonomyTaskId, "tasks-by-taxonomy");
     return;
   }
   const graphNode = event.target.closest(".graph-node");
@@ -8041,6 +8328,7 @@ function detailPayload() {
     goal_ids: parseIds(detail.goal.value || ""),
     project_id: detail.project.value || null,
     dependency_ids: [...detail.dependencies.selectedOptions].map((option) => option.value),
+    taxonomy_node_ids: [...detail.taxonomyNodes.selectedOptions].map((option) => option.value),
     tags: parseTags(detail.tags.value),
     area_id: detail.area.value || null,
     area: areaById(detail.area.value)?.name || "Life",
@@ -8059,6 +8347,7 @@ function focusedTaskPayload(form) {
     goal_ids: parseIds(form.querySelector("[name='goalId']").value || ""),
     project_id: form.querySelector("[name='projectId']").value || null,
     dependency_ids: [...form.querySelector("[name='dependencies']").selectedOptions].map((option) => option.value),
+    taxonomy_node_ids: [...form.querySelector("[name='taxonomyNodeIds']").selectedOptions].map((option) => option.value),
     tags: parseTags(form.querySelector("[name='tags']").value),
     area_id: form.querySelector("[name='area']").value || null,
     area: areaById(form.querySelector("[name='area']").value)?.name || "Life",

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Seven Lives</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?v=1.10.70">
+    <link rel="stylesheet" href="/styles.css?v=1.10.71">
   </head>
   <body>
     <div class="shell">
@@ -33,6 +33,7 @@
           <div class="nav-group-label">Views</div>
           <button class="view-button nested" data-view="graph" type="button">Task Graph <span id="count-graph">0</span></button>
           <button class="view-button nested" data-view="timeline" type="button">Timeline <span id="count-timeline">0</span></button>
+          <button class="view-button nested" data-view="tasks-by-taxonomy" type="button">Tasks by Taxonomy <span id="count-tasks-by-taxonomy">0</span></button>
           <button class="view-button nested" data-view="people-filter" type="button">People Filter <span id="count-people-filter">0</span></button>
           <button class="view-button nested" data-view="people-charts" type="button">People charts <span id="count-people-charts">0</span></button>
           <button class="view-button nested" data-view="project-filter" type="button">Project Filter <span id="count-project-filter">0</span></button>
@@ -207,6 +208,10 @@
                 <select id="detail-dependencies" multiple size="4"></select>
               </label>
               <label>
+                Taxonomy
+                <select id="detail-taxonomy-nodes" multiple size="5"></select>
+              </label>
+              <label>
                 Tags
                 <input id="detail-tags" type="text" placeholder="comma separated tags">
               </label>
@@ -274,6 +279,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=1.10.70" type="module"></script>
+    <script src="/app.js?v=1.10.71" type="module"></script>
   </body>
 </html>
