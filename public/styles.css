@@ -2453,8 +2453,19 @@ body.resizing .resize-handle::before {
 .person-project-add {
   grid-column: 2 / -1;
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto;
   gap: var(--ui-gap);
+}
+
+.project-person-add {
+  grid-template-columns: minmax(160px, 0.75fr) minmax(220px, 1fr) auto;
+}
+
+.project-person-add:has(.project-new-person-button) {
+  grid-template-columns: minmax(160px, 0.75fr) minmax(220px, 1fr) auto auto;
+}
+
+.person-project-add {
+  grid-template-columns: minmax(180px, 1fr) auto;
 }
 
 .project-person-list {

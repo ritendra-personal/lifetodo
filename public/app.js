@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.64";
+const APP_VERSION = "1.10.65";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -4001,6 +4001,7 @@ function renderFocusedProjectView() {
             <strong>People</strong>
             <div class="project-person-add">
               <select name="projectPersonId" aria-label="Add project person"></select>
+              <div class="role-picker project-person-add-role" role="group" aria-label="Roles for new project person"></div>
               <button class="ghost-button add-project-person-button" type="button">Add</button>
               <button class="ghost-button project-new-person-button" type="button">New person</button>
             </div>
@@ -4026,6 +4027,7 @@ function renderFocusedProjectView() {
   const count = state.tasks.filter((task) => task.project_id === project.id).length;
   card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
   fillProjectPersonSelect(card.querySelector("[name='projectPersonId']"), project.id);
+  fillRolePicker(card.querySelector(".project-person-add-role"), []);
   renderProjectPersonList(card, project.id);
 }
 
@@ -5249,6 +5251,7 @@ function renderProjectsView() {
           <strong>People</strong>
           <div class="project-person-add">
             <select name="projectPersonId" aria-label="Add project person"></select>
+            <div class="role-picker project-person-add-role" role="group" aria-label="Roles for new project person"></div>
             <button class="ghost-button add-project-person-button" type="button">Add</button>
           </div>
         </div>
@@ -5274,6 +5277,7 @@ function renderProjectsView() {
     card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
     if (!isMinimal) {
       fillProjectPersonSelect(card.querySelector("[name='projectPersonId']"), project.id);
+      fillRolePicker(card.querySelector(".project-person-add-role"), []);
       renderProjectPersonList(card, project.id);
     }
     list.append(card);
@@ -6660,8 +6664,9 @@ els.taskList.addEventListener("click", async (event) => {
   if (addProjectPersonButton) {
     const card = addProjectPersonButton.closest("[data-project-id]");
     const personId = card?.querySelector("[name='projectPersonId']")?.value || "";
+    const roleIds = [...(card?.querySelectorAll(".project-person-add-role [name='roleIds']") || [])].map((input) => input.value);
     if (card && personId) {
-      persistProjectAssignment({ project_id: card.dataset.projectId, person_id: personId, role_ids: [] });
+      persistProjectAssignment({ project_id: card.dataset.projectId, person_id: personId, role_ids: roleIds });
     }
     return;
   }
