@@ -418,7 +418,8 @@ textarea:hover {
 .field-label > input,
 .field-label > select,
 .field-label > textarea,
-.field-label > .skill-picker {
+.field-label > .skill-picker,
+.field-label > .taxonomy-picker {
   color: var(--ink);
   font-size: var(--font-base);
   font-weight: 400;
@@ -2774,6 +2775,70 @@ body.resizing .resize-handle::before {
   background: #eef7f6;
 }
 
+.taxonomy-picker {
+  min-height: var(--control-height);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px;
+  display: grid;
+  gap: 7px;
+}
+
+.taxonomy-picker:hover,
+.taxonomy-picker:focus-within {
+  border-color: var(--hover-line);
+  background: #fbfefd;
+}
+
+.taxonomy-add-select {
+  min-height: 32px;
+  border-radius: 6px;
+}
+
+.taxonomy-pills {
+  display: grid;
+  gap: 6px;
+}
+
+.taxonomy-pill {
+  min-height: 30px;
+  border: 1px solid var(--teal);
+  border-radius: 8px;
+  color: var(--teal-dark);
+  background: #eef7f6;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  padding: 4px 7px 4px 9px;
+}
+
+.taxonomy-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taxonomy-remove-button {
+  min-height: 0;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  color: var(--teal-dark);
+  background: transparent;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.taxonomy-remove-button:hover {
+  color: #fff;
+  background: var(--teal);
+}
+
 .skill-remove-button {
   min-height: 0;
   width: 18px;
@@ -3732,6 +3797,7 @@ dialog::backdrop {
   .people-filter-table .people-table-head,
   .people-filter-table .person-read-row,
   .skill-picker,
+  .taxonomy-picker,
   .assignment-view,
   .people-filter-bar,
   .project-filter-bar,

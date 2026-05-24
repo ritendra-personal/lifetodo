@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.71";
+const APP_VERSION = "1.10.72";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -3302,23 +3302,55 @@ function sortedTaxonomyNodesForSelect() {
   return rows.sort((a, b) => sortByLabel(a.label, b.label));
 }
 
-function fillTaxonomyNodeSelect(select, selected = []) {
+function fillTaxonomyNodeOptions(select, selected = "") {
   if (!select) return;
   const selectedIds = new Set(parseIds(selected));
   select.innerHTML = "";
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "Add taxonomy node...";
+  select.append(emptyOption);
+  let availableCount = 0;
   for (const row of sortedTaxonomyNodesForSelect()) {
+    if (selectedIds.has(row.id)) continue;
+    availableCount += 1;
     const option = document.createElement("option");
     option.value = row.id;
     option.textContent = row.label;
-    option.selected = selectedIds.has(row.id);
     select.append(option);
   }
-  if (!select.options.length) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "No taxonomies yet";
-    option.disabled = true;
-    select.append(option);
+  if (!availableCount) {
+    emptyOption.textContent = state.taxonomies.length ? "All taxonomy nodes selected" : "No taxonomies yet";
+    emptyOption.disabled = true;
+  }
+  select.value = "";
+}
+
+function selectedTaxonomyLabels(selected = []) {
+  const labelsById = new Map(sortedTaxonomyNodesForSelect().map((row) => [row.id, row.label]));
+  return parseIds(selected).map((id) => ({ id, label: labelsById.get(id) || "Unknown taxonomy node" }));
+}
+
+function fillTaxonomyPicker(picker, selected = []) {
+  if (!picker) return;
+  const ids = parseIds(selected);
+  picker.innerHTML = `
+    <select class="taxonomy-add-select" aria-label="Add taxonomy node"></select>
+    <div class="taxonomy-pills"></div>
+  `;
+  fillTaxonomyNodeOptions(picker.querySelector(".taxonomy-add-select"), ids);
+  const pills = picker.querySelector(".taxonomy-pills");
+  for (const item of selectedTaxonomyLabels(ids)) {
+    const pill = document.createElement("span");
+    pill.className = "taxonomy-pill";
+    pill.innerHTML = `
+      <input type="hidden" name="taxonomyNodeIds">
+      <span></span>
+      <button class="taxonomy-remove-button" type="button" aria-label="Remove taxonomy node">×</button>
+    `;
+    pill.querySelector("input").value = item.id;
+    pill.querySelector("span").textContent = item.label;
+    pills.append(pill);
   }
 }
 
@@ -3865,7 +3897,7 @@ function renderParentControls() {
     fillGoalSelect(detail.goal, task?.goal_id || "");
     fillProjectSelect(detail.project, task?.project_id || "");
     fillDependencySelect(detail.dependencies, task?.dependency_ids || [], state.selectedId);
-    fillTaxonomyNodeSelect(detail.taxonomyNodes, task?.taxonomy_node_ids || []);
+    fillTaxonomyPicker(detail.taxonomyNodes, task?.taxonomy_node_ids || []);
   }
 }
 
@@ -4210,9 +4242,9 @@ function renderFocusedTaskView() {
       <label class="field-label">Depends on
         <select name="dependencies" multiple size="5"></select>
       </label>
-      <label class="field-label">Taxonomy
-        <select name="taxonomyNodeIds" multiple size="6"></select>
-      </label>
+      <div class="field-label">Taxonomy
+        <div class="taxonomy-picker" role="group" aria-label="Task taxonomy"></div>
+      </div>
       <div class="detail-actions">
         <button class="ghost-button focus-subtask-button" type="button">Add subtask</button>
         <button class="complete-action-button focus-toggle-task-button ${task.status === "done" ? "reopen" : ""}" type="button">
@@ -4235,7 +4267,7 @@ function renderFocusedTaskView() {
   form.querySelector("[name='energy']").value = task.energy;
   form.querySelector("[name='tags']").value = task.tags.join(", ");
   fillDependencySelect(form.querySelector("[name='dependencies']"), task.dependency_ids, task.id);
-  fillTaxonomyNodeSelect(form.querySelector("[name='taxonomyNodeIds']"), task.taxonomy_node_ids);
+  fillTaxonomyPicker(form.querySelector(".taxonomy-picker"), task.taxonomy_node_ids);
 }
 
 function renderFocusedGoalView() {
@@ -6943,7 +6975,7 @@ function renderDetail() {
   detail.parent.value = task.parent_id || "";
   detail.goal.value = task.goal_id || "";
   detail.project.value = task.project_id || "";
-  fillTaxonomyNodeSelect(detail.taxonomyNodes, task.taxonomy_node_ids);
+  fillTaxonomyPicker(detail.taxonomyNodes, task.taxonomy_node_ids);
   detail.tags.value = task.tags.join(", ");
   detail.area.value = task.area_id || areaIdForName(task.area);
   detail.priority.value = task.priority;
@@ -7388,6 +7420,18 @@ els.taskList.addEventListener("click", async (event) => {
       fillSkillPicker(picker, [...picker.querySelectorAll("[name='skillIds']")].map((input) => input.value));
       if (form) saveCreationDraft(form);
     }
+    return;
+  }
+  const removeTaxonomyButton = event.target.closest(".taxonomy-remove-button");
+  if (removeTaxonomyButton) {
+    const picker = removeTaxonomyButton.closest(".taxonomy-picker");
+    const ids = [...picker.querySelectorAll("[name='taxonomyNodeIds']")]
+      .map((input) => input.value)
+      .filter((id) => id !== removeTaxonomyButton.closest(".taxonomy-pill")?.querySelector("[name='taxonomyNodeIds']")?.value);
+    fillTaxonomyPicker(picker, ids);
+    const focusForm = picker.closest("[data-task-focus-id]");
+    if (focusForm) queueFocusedTaskAutosave(focusForm);
+    else if (picker === detail.taxonomyNodes) queueDetailAutosave();
     return;
   }
   const goalTaskLink = event.target.closest(".goal-task-link");
@@ -8115,6 +8159,17 @@ els.taskList.addEventListener("change", (event) => {
     if (row) autosaveProjectAssignmentRow(row);
     return;
   }
+  const taxonomyAdd = event.target.closest(".taxonomy-add-select");
+  if (taxonomyAdd) {
+    const picker = taxonomyAdd.closest(".taxonomy-picker");
+    const selected = [...picker.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value);
+    if (taxonomyAdd.value && !selected.includes(taxonomyAdd.value)) selected.push(taxonomyAdd.value);
+    fillTaxonomyPicker(picker, selected);
+    const focusForm = picker.closest("[data-task-focus-id]");
+    if (focusForm) queueFocusedTaskAutosave(focusForm);
+    else if (picker === detail.taxonomyNodes) queueDetailAutosave();
+    return;
+  }
   const ideaCard = event.target.closest("[data-idea-id]");
   if (ideaCard) {
     autosaveIdeaCard(ideaCard);
@@ -8328,7 +8383,7 @@ function detailPayload() {
     goal_ids: parseIds(detail.goal.value || ""),
     project_id: detail.project.value || null,
     dependency_ids: [...detail.dependencies.selectedOptions].map((option) => option.value),
-    taxonomy_node_ids: [...detail.taxonomyNodes.selectedOptions].map((option) => option.value),
+    taxonomy_node_ids: [...detail.taxonomyNodes.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value),
     tags: parseTags(detail.tags.value),
     area_id: detail.area.value || null,
     area: areaById(detail.area.value)?.name || "Life",
@@ -8347,7 +8402,7 @@ function focusedTaskPayload(form) {
     goal_ids: parseIds(form.querySelector("[name='goalId']").value || ""),
     project_id: form.querySelector("[name='projectId']").value || null,
     dependency_ids: [...form.querySelector("[name='dependencies']").selectedOptions].map((option) => option.value),
-    taxonomy_node_ids: [...form.querySelector("[name='taxonomyNodeIds']").selectedOptions].map((option) => option.value),
+    taxonomy_node_ids: [...form.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value),
     tags: parseTags(form.querySelector("[name='tags']").value),
     area_id: form.querySelector("[name='area']").value || null,
     area: areaById(form.querySelector("[name='area']").value)?.name || "Life",
