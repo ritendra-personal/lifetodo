@@ -157,6 +157,12 @@ button:focus-visible,
   display: flex;
   flex-direction: column;
   gap: calc(var(--major-gap) * 0.72);
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .brand {
@@ -3378,6 +3384,8 @@ dialog::backdrop {
 
   .sidebar {
     position: static;
+    height: auto;
+    overflow: visible;
     padding: 18px;
   }
 
