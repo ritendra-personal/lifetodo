@@ -2457,11 +2457,11 @@ body.resizing .resize-handle::before {
 }
 
 .project-person-add {
-  grid-template-columns: minmax(160px, 0.75fr) minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(150px, 0.72fr) minmax(190px, 1fr) auto;
 }
 
 .project-person-add:has(.project-new-person-button) {
-  grid-template-columns: minmax(160px, 0.75fr) minmax(220px, 1fr) auto auto;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(180px, 1fr) auto auto;
 }
 
 .person-project-add {
@@ -2495,6 +2495,7 @@ body.resizing .resize-handle::before {
 }
 
 .role-picker {
+  min-width: 0;
   min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2507,12 +2508,14 @@ body.resizing .resize-handle::before {
 }
 
 .role-add-select {
-  flex: 0 0 130px;
+  flex: 0 1 120px;
+  min-width: 104px;
   min-height: 28px;
   border-radius: 6px;
 }
 
 .role-pills {
+  min-width: 0;
   flex: 1 1 auto;
   display: flex;
   flex-wrap: nowrap;
