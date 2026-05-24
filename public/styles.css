@@ -892,11 +892,14 @@ body.resizing .resize-handle::before {
 }
 
 .task-item.done {
-  opacity: 0.58;
+  opacity: 0.38;
+  background: #f6f7f7;
+  filter: grayscale(0.35);
 }
 
 .task-item.done .task-title-text {
   text-decoration: line-through;
+  color: var(--muted);
 }
 
 .task-item::before {
@@ -1149,7 +1152,9 @@ body.resizing .resize-handle::before {
 }
 
 .mini-task.done {
-  opacity: 0.58;
+  opacity: 0.38;
+  background: #f6f7f7;
+  filter: grayscale(0.35);
 }
 
 .mini-title {
@@ -2868,7 +2873,9 @@ body.resizing .resize-handle::before {
 }
 
 .goal-task-link.done {
-  opacity: 0.62;
+  opacity: 0.38;
+  background: #f6f7f7;
+  filter: grayscale(0.35);
 }
 
 .goal-task-link span {
@@ -3059,7 +3066,9 @@ body.resizing .resize-handle::before {
 }
 
 .timeline-task.done {
-  opacity: 0.58;
+  opacity: 0.38;
+  background: #f6f7f7;
+  filter: grayscale(0.35);
 }
 
 .timeline-dot {
@@ -3258,7 +3267,9 @@ body.resizing .resize-handle::before {
 }
 
 .graph-node.done {
-  opacity: 0.58;
+  opacity: 0.38;
+  background: #f6f7f7;
+  filter: grayscale(0.35);
 }
 
 .graph-node-title {
