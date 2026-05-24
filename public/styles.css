@@ -1649,6 +1649,7 @@ body.resizing .resize-handle::before {
 
 .focused-project-card .project-description-input,
 .focused-project-card .project-date-pair,
+.focused-project-card .project-taxonomy-field,
 .focused-project-card .project-people,
 .focused-project-card > .danger-button {
   grid-column: 1 / -1;
@@ -2791,6 +2792,12 @@ body.resizing .resize-handle::before {
   background: #fbfefd;
 }
 
+.taxonomy-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
 .taxonomy-add-select {
   min-height: 32px;
   border-radius: 6px;
@@ -3495,6 +3502,7 @@ body.resizing .resize-handle::before {
 
 .project-card.focused-project-card .project-description-input,
 .project-card.focused-project-card .project-date-pair,
+.project-card.focused-project-card .project-taxonomy-field,
 .project-card.focused-project-card .project-people,
 .project-card.focused-project-card > .danger-button {
   grid-column: 1 / -1;
@@ -3798,6 +3806,7 @@ dialog::backdrop {
   .people-filter-table .person-read-row,
   .skill-picker,
   .taxonomy-picker,
+  .taxonomy-add-row,
   .assignment-view,
   .people-filter-bar,
   .project-filter-bar,
@@ -3831,6 +3840,7 @@ dialog::backdrop {
   .project-form .field-label:nth-child(8),
   .project-description-input,
   .project-date-pair,
+  .project-taxonomy-field,
   .minimal-project-card .project-date-pair,
   .project-card > .row-actions {
     grid-column: auto;

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.72";
+const APP_VERSION = "1.10.73";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -119,6 +119,7 @@ const state = {
   venuesCloudReady: false,
   taxonomiesCloudReady: false,
   taskTaxonomyLinksCloudReady: false,
+  projectTaxonomyLinksCloudReady: false,
   goalLinksCloudReady: false,
   config: null,
   supabase: null,
@@ -936,6 +937,7 @@ function normalizeProject(project) {
     project_status_id: project.project_status_id || project.projectStatusId || project.status_id || projectStatusIdForName(project.status),
     venue_id: project.venue_id || project.venueId || "",
     project_year: normalizeProjectYear(project.project_year || project.projectYear || project.year),
+    taxonomy_node_ids: parseIds(project.taxonomy_node_ids || project.taxonomyNodeIds),
     status: project.status || "",
     start_date: project.start_date || project.startDate || "",
     end_date: project.end_date || project.endDate || legacyDate,
@@ -960,6 +962,15 @@ function normalizeProjectAssignment(assignment) {
 function normalizeTaskTaxonomyLink(link) {
   return {
     task_id: link.task_id || link.taskId || "",
+    taxonomy_node_id: link.taxonomy_node_id || link.taxonomyNodeId || "",
+    user_id: link.user_id || link.userId || state.user?.id || null,
+    created_at: link.created_at || nowIso()
+  };
+}
+
+function normalizeProjectTaxonomyLink(link) {
+  return {
+    project_id: link.project_id || link.projectId || "",
     taxonomy_node_id: link.taxonomy_node_id || link.taxonomyNodeId || "",
     user_id: link.user_id || link.userId || state.user?.id || null,
     created_at: link.created_at || nowIso()
@@ -1733,6 +1744,15 @@ function taskTaxonomyLinkPayload(link) {
   };
 }
 
+function projectTaxonomyLinkPayload(link) {
+  return {
+    project_id: link.project_id,
+    taxonomy_node_id: link.taxonomy_node_id,
+    user_id: state.user.id,
+    created_at: link.created_at || nowIso()
+  };
+}
+
 function privatePersonPayload(row) {
   return {
     person_id: row.person_id,
@@ -1753,6 +1773,7 @@ async function replaceCloudWithBackup(data) {
   const userFilter = `user_id=eq.${encodeURIComponent(state.user.id)}`;
   const deleteOrder = [
     "planner_person_private_attributes",
+    "planner_project_taxonomy_nodes",
     "planner_task_taxonomy_nodes",
     "planner_taxonomy_nodes",
     "planner_taxonomies",
@@ -1792,6 +1813,7 @@ async function replaceCloudWithBackup(data) {
   );
   await insertBackupRows("planner_goals", data.goals.map(withCurrentUser), "goals");
   await insertBackupRows("planner_projects", data.projects.map(projectPayload), "projects");
+  await insertBackupRows("planner_project_taxonomy_nodes", backupProjectTaxonomyLinks(data).map(projectTaxonomyLinkPayload), "project taxonomy links");
   await insertBackupRows("planner_people", data.people.map(personPayload), "people");
   await insertBackupRows("planner_ideas", data.ideas.map(ideaPayload), "ideas");
   await insertBackupRows("planner_tasks", data.tasks.map((task) => databasePayload({ ...task, user_id: state.user.id })), "tasks");
@@ -1828,6 +1850,22 @@ function backupTaskTaxonomyLinks(data) {
   return links.filter((link) => {
     const key = `${link.task_id}:${link.taxonomy_node_id}`;
     if (!link.task_id || !link.taxonomy_node_id || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function backupProjectTaxonomyLinks(data) {
+  const seen = new Set();
+  const links = [];
+  for (const project of data.projects) {
+    for (const taxonomyNodeId of parseIds(project.taxonomy_node_ids)) {
+      links.push({ project_id: project.id, taxonomy_node_id: taxonomyNodeId, created_at: nowIso() });
+    }
+  }
+  return links.filter((link) => {
+    const key = `${link.project_id}:${link.taxonomy_node_id}`;
+    if (!link.project_id || !link.taxonomy_node_id || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
@@ -2023,7 +2061,8 @@ async function loadTasksNow() {
       .eq("user_id", state.user.id)
       .order("created_at", { ascending: false });
     if (ideasError) throw ideasError;
-    const projects = await loadProjectsData();
+    const projectTaxonomyLinks = await loadProjectTaxonomyLinksData();
+    const projects = await loadProjectsData(projectTaxonomyLinks || []);
     const goalLinks = await loadGoalLinksData();
     const taxonomies = await loadTaxonomiesData();
     const taskTaxonomyLinks = await loadTaskTaxonomyLinksData();
@@ -2108,6 +2147,18 @@ function applyTaskTaxonomyLinksToTasks(tasks, links) {
   }));
 }
 
+function applyProjectTaxonomyLinksToProjects(projects, links) {
+  const idsByProject = new Map();
+  for (const link of links || []) {
+    if (!idsByProject.has(link.project_id)) idsByProject.set(link.project_id, []);
+    idsByProject.get(link.project_id).push(link.taxonomy_node_id);
+  }
+  return projects.map((project) => normalizeProject({
+    ...project,
+    taxonomy_node_ids: idsByProject.get(project.id) || project.taxonomy_node_ids || []
+  }));
+}
+
 async function loadTaskTaxonomyLinksData() {
   if (!isSupabaseReady()) return null;
   try {
@@ -2122,6 +2173,24 @@ async function loadTaskTaxonomyLinksData() {
     console.warn("Supabase task taxonomy links table unavailable; using local taxonomy links", error);
     state.taskTaxonomyLinksCloudReady = false;
     state.syncMessage = state.syncMessage || "Task taxonomy links are local until you run migration 019.";
+    return null;
+  }
+}
+
+async function loadProjectTaxonomyLinksData() {
+  if (!isSupabaseReady()) return null;
+  try {
+    const { data, error } = await state.supabase
+      .from("planner_project_taxonomy_nodes")
+      .select("*")
+      .eq("user_id", state.user.id);
+    if (error) throw error;
+    state.projectTaxonomyLinksCloudReady = true;
+    return (data || []).map(normalizeProjectTaxonomyLink);
+  } catch (error) {
+    console.warn("Supabase project taxonomy links table unavailable; using local taxonomy links", error);
+    state.projectTaxonomyLinksCloudReady = false;
+    state.syncMessage = state.syncMessage || "Project taxonomy links are local until you run migration 020.";
     return null;
   }
 }
@@ -2142,6 +2211,24 @@ async function syncTaskTaxonomyLinks(taskId, taxonomyNodeIds) {
     user_id: state.user.id
   }));
   await insertRowsDirect("planner_task_taxonomy_nodes", rows, null, "task taxonomy links");
+}
+
+async function syncProjectTaxonomyLinks(projectId, taxonomyNodeIds) {
+  const ids = parseIds(taxonomyNodeIds);
+  state.projects = state.projects.map((project) => (project.id === projectId ? normalizeProject({ ...project, taxonomy_node_ids: ids }) : project));
+  if (!isSupabaseReady()) return;
+  if (!state.projectTaxonomyLinksCloudReady) {
+    if (!ids.length) return;
+    throw new Error("Project taxonomy links were not saved to database: run migration 020.");
+  }
+  await deleteRowsDirect("planner_project_taxonomy_nodes", `project_id=eq.${encodeURIComponent(projectId)}`, null, "project taxonomy links");
+  if (!ids.length) return;
+  const rows = ids.map((taxonomyNodeId) => ({
+    project_id: projectId,
+    taxonomy_node_id: taxonomyNodeId,
+    user_id: state.user.id
+  }));
+  await insertRowsDirect("planner_project_taxonomy_nodes", rows, null, "project taxonomy links");
 }
 
 async function syncTaskGoalLinks(taskId, goalIds) {
@@ -2321,7 +2408,7 @@ async function persistGoal(goal, options = {}) {
   }
 }
 
-async function loadProjectsData() {
+async function loadProjectsData(projectTaxonomyLinks = []) {
   try {
     const [
       { data: projects, error: projectsError },
@@ -2392,7 +2479,7 @@ async function loadProjectsData() {
     state.roles = normalizedRoles.length ? normalizedRoles : state.roles;
     state.projectAssignments = assignments.map(normalizeProjectAssignment);
     saveNamedOptions();
-    return projects.map(normalizeProject);
+    return applyProjectTaxonomyLinksToProjects(projects.map(normalizeProject), projectTaxonomyLinks);
   } catch (error) {
     console.warn("Supabase projects table unavailable; using local projects", error);
     state.projectsCloudReady = false;
@@ -2402,7 +2489,13 @@ async function loadProjectsData() {
 }
 
 async function persistProject(project, options = {}) {
-  const normalized = normalizeProject({ ...project, user_id: state.user?.id || null, updated_at: nowIso() });
+  const previousProject = state.projects.find((item) => item.id === project.id);
+  const normalized = normalizeProject({
+    ...project,
+    taxonomy_node_ids: project.taxonomy_node_ids ?? project.taxonomyNodeIds ?? previousProject?.taxonomy_node_ids ?? [],
+    user_id: state.user?.id || null,
+    updated_at: nowIso()
+  });
   if (!normalized.name) return;
   const previousProjects = state.projects;
   if (!isSupabaseReady() && options.requireCloud) {
@@ -2452,8 +2545,11 @@ async function persistProject(project, options = {}) {
       const { project_year, ...fallbackPayload } = payload;
       data = await upsertRowDirect("planner_projects", fallbackPayload, null, "project");
     }
-    const saved = normalizeProject(data);
+    const saved = normalizeProject({ ...data, taxonomy_node_ids: normalized.taxonomy_node_ids });
     if (!yearSaved) saved.project_year = normalized.project_year;
+    if (options.syncTaxonomyLinks) {
+      await syncProjectTaxonomyLinks(saved.id, saved.taxonomy_node_ids);
+    }
     state.projects = state.projects.map((item) => (item.id === saved.id ? saved : item));
     state.syncMessage = yearSaved
       ? `Saved project to database at ${savedAtLabel()}.`
@@ -3335,7 +3431,10 @@ function fillTaxonomyPicker(picker, selected = []) {
   if (!picker) return;
   const ids = parseIds(selected);
   picker.innerHTML = `
-    <select class="taxonomy-add-select" aria-label="Add taxonomy node"></select>
+    <div class="taxonomy-add-row">
+      <select class="taxonomy-add-select" aria-label="Add taxonomy node"></select>
+      <button class="ghost-button taxonomy-add-button" type="button">Add</button>
+    </div>
     <div class="taxonomy-pills"></div>
   `;
   fillTaxonomyNodeOptions(picker.querySelector(".taxonomy-add-select"), ids);
@@ -3351,6 +3450,52 @@ function fillTaxonomyPicker(picker, selected = []) {
     pill.querySelector("input").value = item.id;
     pill.querySelector("span").textContent = item.label;
     pills.append(pill);
+  }
+}
+
+function taxonomyPickerContext(picker) {
+  const taskFocus = picker.closest("[data-task-focus-id]");
+  if (taskFocus) return { type: "task", id: taskFocus.dataset.taskFocusId };
+  if (picker === detail.taxonomyNodes && detail.id.value) return { type: "task", id: detail.id.value };
+  const projectCard = picker.closest("[data-project-id]");
+  if (projectCard) return { type: "project", id: projectCard.dataset.projectId };
+  return null;
+}
+
+async function saveTaxonomyPickerSelection(picker, nextIds) {
+  const context = taxonomyPickerContext(picker);
+  if (!context) return false;
+  const ids = parseIds(nextIds);
+  showSyncMessage("Saving taxonomy link...");
+  try {
+    if (context.type === "task") {
+      await patchTaskWithFeedback(context.id, { taxonomy_node_ids: ids }, { render: false });
+      if (state.syncError) {
+        renderSyncStatus();
+        return false;
+      }
+      fillTaxonomyPicker(picker, ids);
+      renderSyncStatus();
+      return true;
+    }
+    const project = state.projects.find((item) => item.id === context.id);
+    if (!project) return false;
+    const result = await persistProject(
+      { ...project, taxonomy_node_ids: ids },
+      { render: false, syncTaxonomyLinks: true, requireCloud: isSupabaseReady() }
+    );
+    if (state.syncError || (isSupabaseReady() && result?.savedToCloud === false)) {
+      renderSyncStatus();
+      return false;
+    }
+    fillTaxonomyPicker(picker, ids);
+    renderSyncStatus();
+    return true;
+  } catch (error) {
+    state.syncError = state.syncError || error.message || "Taxonomy link was not saved to database.";
+    state.syncMessage = "";
+    renderSyncStatus();
+    return false;
   }
 }
 
@@ -4437,6 +4582,9 @@ function renderFocusedProjectView() {
             <input name="endDate" type="date" aria-label="Project end date">
           </label>
         </div>
+        <div class="field-label project-taxonomy-field">Taxonomy
+          <div class="taxonomy-picker" role="group" aria-label="Project taxonomy"></div>
+        </div>
         <div class="project-people">
           <div class="project-people-head">
             <strong>People</strong>
@@ -4464,6 +4612,7 @@ function renderFocusedProjectView() {
   card.querySelector("[name='description']").value = project.description;
   card.querySelector("[name='startDate']").value = project.start_date || "";
   card.querySelector("[name='endDate']").value = project.end_date || "";
+  fillTaxonomyPicker(card.querySelector(".taxonomy-picker"), project.taxonomy_node_ids);
   normalizeDateRangeInputs(card);
   const count = state.tasks.filter((task) => task.project_id === project.id).length;
   card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
@@ -5922,6 +6071,9 @@ function renderProjectsView() {
           <input name="endDate" type="date" aria-label="Project end date">
         </label>
       </div>
+      <div class="field-label project-taxonomy-field">Taxonomy
+        <div class="taxonomy-picker" role="group" aria-label="Project taxonomy"></div>
+      </div>
       <div class="project-people">
         <div class="project-people-head">
           <strong>People</strong>
@@ -5948,6 +6100,7 @@ function renderProjectsView() {
     card.querySelector("[name='description']").value = project.description;
     card.querySelector("[name='startDate']").value = project.start_date || "";
     card.querySelector("[name='endDate']").value = project.end_date || "";
+    fillTaxonomyPicker(card.querySelector(".taxonomy-picker"), project.taxonomy_node_ids);
     normalizeDateRangeInputs(card);
     const count = state.tasks.filter((task) => task.project_id === project.id).length;
     card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
@@ -7428,10 +7581,17 @@ els.taskList.addEventListener("click", async (event) => {
     const ids = [...picker.querySelectorAll("[name='taxonomyNodeIds']")]
       .map((input) => input.value)
       .filter((id) => id !== removeTaxonomyButton.closest(".taxonomy-pill")?.querySelector("[name='taxonomyNodeIds']")?.value);
-    fillTaxonomyPicker(picker, ids);
-    const focusForm = picker.closest("[data-task-focus-id]");
-    if (focusForm) queueFocusedTaskAutosave(focusForm);
-    else if (picker === detail.taxonomyNodes) queueDetailAutosave();
+    await saveTaxonomyPickerSelection(picker, ids);
+    return;
+  }
+  const addTaxonomyButton = event.target.closest(".taxonomy-add-button");
+  if (addTaxonomyButton) {
+    const picker = addTaxonomyButton.closest(".taxonomy-picker");
+    const select = picker?.querySelector(".taxonomy-add-select");
+    const selected = [...picker.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value);
+    if (select?.value && !selected.includes(select.value)) {
+      await saveTaxonomyPickerSelection(picker, [...selected, select.value]);
+    }
     return;
   }
   const goalTaskLink = event.target.closest(".goal-task-link");
@@ -8008,6 +8168,7 @@ function updateTaxonomyFromInput(input) {
 }
 
 els.taskList.addEventListener("input", (event) => {
+  if (event.target.closest(".taxonomy-add-select")) return;
   const taskFocusForm = event.target.closest("[data-task-focus-id]");
   if (taskFocusForm) {
     queueFocusedTaskAutosave(taskFocusForm);
@@ -8058,6 +8219,7 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  if (event.target.closest(".taxonomy-add-select")) return;
   if (event.target.id === "restore-local-file") {
     restoreBackupFile(event.target.files?.[0], { toCloud: false });
     event.target.value = "";
@@ -8157,17 +8319,6 @@ els.taskList.addEventListener("change", (event) => {
     if (roleAdd.value && !selected.includes(roleAdd.value)) selected.push(roleAdd.value);
     fillRolePicker(picker, selected);
     if (row) autosaveProjectAssignmentRow(row);
-    return;
-  }
-  const taxonomyAdd = event.target.closest(".taxonomy-add-select");
-  if (taxonomyAdd) {
-    const picker = taxonomyAdd.closest(".taxonomy-picker");
-    const selected = [...picker.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value);
-    if (taxonomyAdd.value && !selected.includes(taxonomyAdd.value)) selected.push(taxonomyAdd.value);
-    fillTaxonomyPicker(picker, selected);
-    const focusForm = picker.closest("[data-task-focus-id]");
-    if (focusForm) queueFocusedTaskAutosave(focusForm);
-    else if (picker === detail.taxonomyNodes) queueDetailAutosave();
     return;
   }
   const ideaCard = event.target.closest("[data-idea-id]");
