@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.68";
+const APP_VERSION = "1.10.69";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -63,6 +63,14 @@ function loadProjectFilterSort() {
   }
 }
 
+function loadTaxonomies() {
+  try {
+    return JSON.parse(localStorage.getItem("planner-taxonomies") || "[]").map(normalizeTaxonomy);
+  } catch {
+    return [];
+  }
+}
+
 const state = {
   tasks: [],
   goals: [],
@@ -73,6 +81,7 @@ const state = {
   peopleLegacyPrivateRows: [],
   projectAssignments: [],
   goalLinks: [],
+  taxonomies: loadTaxonomies(),
   skills: loadNamedOptions("planner-skills", defaultSkills),
   ageCategories: loadNamedOptions("planner-age-categories", defaultAgeCategories),
   relationshipTypes: loadNamedOptions("planner-relationship-types", defaultRelationshipTypes),
@@ -208,6 +217,7 @@ const counts = {
   projectStatuses: document.querySelector("#count-project-statuses"),
   roles: document.querySelector("#count-roles"),
   venues: document.querySelector("#count-venues"),
+  taxonomies: document.querySelector("#count-taxonomies"),
   backup: document.querySelector("#count-backup"),
   home: document.querySelector("#count-home"),
   open: document.querySelector("#stat-open"),
@@ -328,7 +338,7 @@ function restoreCreationDraft(form) {
 }
 
 function closestCreationForm(target) {
-  return target.closest("#goal-form, #idea-form, #areas-settings-form, #person-form, #project-form, #named-settings-form");
+  return target.closest("#goal-form, #idea-form, #areas-settings-form, #person-form, #project-form, #named-settings-form, #taxonomy-form");
 }
 
 function normalizedNaturalKey(value) {
@@ -432,6 +442,7 @@ function validView(view) {
     "project-statuses",
     "roles",
     "venues",
+    "taxonomies",
     "backup",
     "focus-task",
     "focus-project",
@@ -964,6 +975,27 @@ function normalizeNamedOption(option, index = 0) {
   };
 }
 
+function normalizeTaxonomyNode(node, index = 0) {
+  return {
+    id: node.id || makeId(),
+    parent_id: node.parent_id || node.parentId || "",
+    name: node.name || "",
+    sort_order: Number(node.sort_order ?? node.sortOrder ?? index * 1000) || 0,
+    created_at: node.created_at || nowIso(),
+    updated_at: node.updated_at || nowIso()
+  };
+}
+
+function normalizeTaxonomy(taxonomy) {
+  return {
+    id: taxonomy.id || makeId(),
+    name: taxonomy.name || "",
+    nodes: (taxonomy.nodes || []).map(normalizeTaxonomyNode),
+    created_at: taxonomy.created_at || nowIso(),
+    updated_at: taxonomy.updated_at || nowIso()
+  };
+}
+
 function fixedOptionValue(value, options) {
   const match = options.find((option) => option.toLowerCase() === String(value || "").trim().toLowerCase());
   return match || "";
@@ -1292,6 +1324,7 @@ function loadLocal() {
   const rawProjectAssignments = localStorage.getItem("planner-project-assignments");
   const rawPeople = localStorage.getItem("planner-people");
   const rawPeoplePrivate = localStorage.getItem("planner-people-private");
+  const rawTaxonomies = localStorage.getItem("planner-taxonomies");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
   state.ideas = rawIdeas ? JSON.parse(rawIdeas).map(normalizeIdea) : [];
@@ -1299,6 +1332,7 @@ function loadLocal() {
   state.projectAssignments = rawProjectAssignments ? JSON.parse(rawProjectAssignments).map(normalizeProjectAssignment) : [];
   state.people = rawPeople ? JSON.parse(rawPeople).map(normalizePerson).map(publicPersonForStorage).map(normalizePerson) : [];
   state.peoplePrivateRows = rawPeoplePrivate ? JSON.parse(rawPeoplePrivate) : [];
+  state.taxonomies = rawTaxonomies ? JSON.parse(rawTaxonomies).map(normalizeTaxonomy) : [];
   state.syncError = "";
   state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
   saveLocal();
@@ -1312,6 +1346,7 @@ function saveLocal(options = {}) {
   localStorage.setItem("planner-project-assignments", JSON.stringify(state.projectAssignments));
   localStorage.setItem("planner-people", JSON.stringify(state.people.map(publicPersonForStorage)));
   localStorage.setItem("planner-people-private", JSON.stringify(state.peoplePrivateRows));
+  localStorage.setItem("planner-taxonomies", JSON.stringify(state.taxonomies));
   if (!options.silent) state.syncMessage = "Saved locally in this browser only.";
 }
 
@@ -1338,7 +1373,8 @@ function backupData() {
       project_types: state.projectTypes,
       project_statuses: state.projectStatuses,
       roles: state.roles,
-      venues: state.venues
+      venues: state.venues,
+      taxonomies: state.taxonomies
     }
   };
 }
@@ -1387,7 +1423,8 @@ function normalizeBackupData(fileData) {
     projectTypes: (data.project_types || data.projectTypes || defaultProjectTypes).map(normalizeNamedOption),
     projectStatuses: (data.project_statuses || data.projectStatuses || defaultProjectStatuses).map(normalizeNamedOption),
     roles: (data.roles?.length ? data.roles : defaultRoles).map(normalizeNamedOption),
-    venues: (data.venues?.length ? data.venues : defaultVenues).map(normalizeNamedOption)
+    venues: (data.venues?.length ? data.venues : defaultVenues).map(normalizeNamedOption),
+    taxonomies: (data.taxonomies || []).map(normalizeTaxonomy)
   };
 }
 
@@ -1408,9 +1445,61 @@ function applyBackupData(data) {
   state.projectStatuses = data.projectStatuses;
   state.roles = data.roles;
   state.venues = data.venues;
+  state.taxonomies = data.taxonomies;
   saveAreas();
   saveNamedOptions();
   saveLocal({ silent: true });
+}
+
+function saveTaxonomies(message = `Saved taxonomies locally at ${savedAtLabel()}.`) {
+  state.taxonomies = state.taxonomies.map(normalizeTaxonomy);
+  saveLocal({ silent: true });
+  state.syncError = "";
+  state.syncMessage = message;
+}
+
+function addTaxonomyNode(taxonomyId, parentId, name) {
+  const taxonomy = state.taxonomies.find((item) => item.id === taxonomyId);
+  const normalizedName = String(name || "").trim();
+  if (!taxonomy || !normalizedName) return false;
+  taxonomy.nodes.push(normalizeTaxonomyNode({
+    parent_id: parentId || "",
+    name: normalizedName,
+    sort_order: nextTaxonomyNodeSortOrder(taxonomy, parentId || "")
+  }));
+  taxonomy.updated_at = nowIso();
+  saveTaxonomies();
+  return true;
+}
+
+async function deleteTaxonomyNode(taxonomyId, nodeId) {
+  const taxonomy = state.taxonomies.find((item) => item.id === taxonomyId);
+  const node = taxonomy?.nodes.find((item) => item.id === nodeId);
+  if (!taxonomy || !node) return;
+  const descendantIds = taxonomyDescendantIds(taxonomy, nodeId);
+  const confirmed = await confirmAction(
+    `Remove "${node.name}"${descendantIds.length ? ` and ${descendantIds.length} child node${descendantIds.length === 1 ? "" : "s"}` : ""}?`,
+    { title: "Remove taxonomy node", acceptLabel: "Remove" }
+  );
+  if (!confirmed) return;
+  const removeIds = new Set([nodeId, ...descendantIds]);
+  taxonomy.nodes = taxonomy.nodes.filter((item) => !removeIds.has(item.id));
+  taxonomy.updated_at = nowIso();
+  saveTaxonomies();
+  render();
+}
+
+async function deleteTaxonomy(taxonomyId) {
+  const taxonomy = state.taxonomies.find((item) => item.id === taxonomyId);
+  if (!taxonomy) return;
+  const confirmed = await confirmAction(
+    `Delete taxonomy "${taxonomy.name}" and ${taxonomy.nodes.length} node${taxonomy.nodes.length === 1 ? "" : "s"}?`,
+    { title: "Delete taxonomy", acceptLabel: "Delete" }
+  );
+  if (!confirmed) return;
+  state.taxonomies = state.taxonomies.filter((item) => item.id !== taxonomyId);
+  saveTaxonomies();
+  render();
 }
 
 function withCurrentUser(row) {
@@ -2901,6 +2990,7 @@ function renderCounts() {
   counts.projectStatuses.textContent = state.projectStatuses.length;
   counts.roles.textContent = state.roles.length;
   counts.venues.textContent = state.venues.length;
+  counts.taxonomies.textContent = state.taxonomies.length;
   counts.backup.textContent = "JSON";
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
   counts.focus.textContent = state.tasks.filter((task) => task.status !== "done" && task.priority === "High").length;
@@ -3573,6 +3663,10 @@ function renderTasks() {
   }
   if (state.view === "venues") {
     renderNamedSettingsView("venues");
+    return;
+  }
+  if (state.view === "taxonomies") {
+    renderTaxonomiesView();
     return;
   }
   if (state.view === "backup") {
@@ -4410,6 +4504,128 @@ function renderNamedSettingsView(type) {
   }
 }
 
+function taxonomyChildMap(taxonomy) {
+  const children = new Map();
+  for (const node of taxonomy.nodes) {
+    const parentId = node.parent_id || "";
+    if (!children.has(parentId)) children.set(parentId, []);
+    children.get(parentId).push(node);
+  }
+  for (const nodes of children.values()) {
+    nodes.sort((a, b) => {
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      return sortByLabel(a.name, b.name);
+    });
+  }
+  return children;
+}
+
+function nextTaxonomyNodeSortOrder(taxonomy, parentId = "") {
+  const siblings = taxonomy.nodes.filter((node) => (node.parent_id || "") === (parentId || ""));
+  if (!siblings.length) return 1000;
+  return Math.max(...siblings.map((node) => Number(node.sort_order) || 0)) + 1000;
+}
+
+function taxonomyDescendantIds(taxonomy, nodeId) {
+  const children = taxonomyChildMap(taxonomy);
+  const ids = [];
+  const visit = (id) => {
+    for (const child of children.get(id) || []) {
+      ids.push(child.id);
+      visit(child.id);
+    }
+  };
+  visit(nodeId);
+  return ids;
+}
+
+function renderTaxonomyNode(taxonomy, node, depth, children) {
+  const row = document.createElement("div");
+  row.className = "taxonomy-node-row";
+  row.dataset.taxonomyId = taxonomy.id;
+  row.dataset.nodeId = node.id;
+  row.style.setProperty("--depth", depth);
+  row.innerHTML = `
+    <span class="taxonomy-branch" aria-hidden="true"></span>
+    <input class="taxonomy-node-input" type="text" aria-label="Taxonomy node name">
+    <input class="taxonomy-child-input" type="text" placeholder="Child node" aria-label="New child node">
+    <button class="ghost-button add-taxonomy-node-button" type="button">Add child</button>
+    <button class="danger-button delete-taxonomy-node-button" type="button">Remove</button>
+  `;
+  row.querySelector(".taxonomy-node-input").value = node.name;
+  const fragment = document.createDocumentFragment();
+  fragment.append(row);
+  for (const child of children.get(node.id) || []) {
+    fragment.append(renderTaxonomyNode(taxonomy, child, depth + 1, children));
+  }
+  return fragment;
+}
+
+function renderTaxonomiesView() {
+  els.taskList.innerHTML = `
+    <section class="creation-panel">
+      <div class="planning-section-head">
+        <h4>Add new Taxonomy</h4>
+      </div>
+      <form id="taxonomy-form" class="planning-form taxonomy-form">
+        <label class="field-label">Name
+          <input name="name" type="text" placeholder="Taxonomy name" required>
+        </label>
+        <button class="primary-button form-submit" type="submit">Add taxonomy</button>
+      </form>
+    </section>
+    <section class="directory-panel">
+      <div class="planning-section-head">
+        <h4>Taxonomies</h4>
+        <span>${state.taxonomies.length} ${state.taxonomies.length === 1 ? "taxonomy" : "taxonomies"}</span>
+      </div>
+      <div class="taxonomy-list"></div>
+    </section>
+  `;
+  restoreCreationDraft(els.taskList.querySelector("#taxonomy-form"));
+  const list = els.taskList.querySelector(".taxonomy-list");
+  if (!state.taxonomies.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No taxonomies yet.";
+    list.append(empty);
+    return;
+  }
+  for (const taxonomy of [...state.taxonomies].sort((a, b) => sortByLabel(a.name, b.name))) {
+    const card = document.createElement("article");
+    card.className = "taxonomy-card";
+    card.dataset.taxonomyId = taxonomy.id;
+    card.innerHTML = `
+      <div class="taxonomy-card-head">
+        <label class="field-label">Taxonomy
+          <input class="taxonomy-name-input" type="text" aria-label="Taxonomy name">
+        </label>
+        <div class="taxonomy-card-actions">
+          <button class="danger-button delete-taxonomy-button" type="button">Delete taxonomy</button>
+        </div>
+      </div>
+      <div class="taxonomy-root-add">
+        <input class="taxonomy-root-input" type="text" placeholder="Root node" aria-label="New root node">
+        <button class="ghost-button add-taxonomy-root-button" type="button">Add root</button>
+      </div>
+      <div class="taxonomy-tree"></div>
+    `;
+    card.querySelector(".taxonomy-name-input").value = taxonomy.name;
+    const tree = card.querySelector(".taxonomy-tree");
+    const children = taxonomyChildMap(taxonomy);
+    const roots = children.get("") || [];
+    if (!roots.length) {
+      const empty = document.createElement("div");
+      empty.className = "taxonomy-empty";
+      empty.textContent = "No nodes yet.";
+      tree.append(empty);
+    } else {
+      for (const root of roots) tree.append(renderTaxonomyNode(taxonomy, root, 0, children));
+    }
+    list.append(card);
+  }
+}
+
 function renderBackupView() {
   const totalItems = state.tasks.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
   els.taskList.innerHTML = `
@@ -4417,7 +4633,7 @@ function renderBackupView() {
       <article class="backup-card">
         <div>
           <h4>Download backup</h4>
-          <p>Export tasks, goals, projects, people, ideas, annotations, relationships, and encrypted private people rows into one JSON file.</p>
+          <p>Export tasks, goals, projects, people, ideas, annotations, taxonomies, relationships, and encrypted private people rows into one JSON file.</p>
         </div>
         <dl class="backup-stats">
           <div><dt>Tasks</dt><dd>${state.tasks.length}</dd></div>
@@ -4449,7 +4665,7 @@ function renderBackupView() {
     </section>
     <section class="directory-panel backup-note">
       <h4>Backup contents</h4>
-      <p>This backup currently contains ${totalItems} key objects plus annotations and relationship records. Private people fields stay hidden in the app and are exported only as encrypted payload rows when present.</p>
+      <p>This backup currently contains ${totalItems} key objects plus annotations, taxonomies, and relationship records. Private people fields stay hidden in the app and are exported only as encrypted payload rows when present.</p>
     </section>
   `;
 }
@@ -6286,7 +6502,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -6344,11 +6560,12 @@ function render() {
     "project-statuses": "Project Status",
     roles: "Roles",
     venues: "Venues",
+    taxonomies: "Taxonomies",
     backup: "Backup"
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -6608,6 +6825,36 @@ els.taskList.addEventListener("click", async (event) => {
     if (row) deleteNamedOption(row.dataset.optionType, row.dataset.optionId);
     return;
   }
+  const addTaxonomyRootButton = event.target.closest(".add-taxonomy-root-button");
+  if (addTaxonomyRootButton) {
+    const card = addTaxonomyRootButton.closest("[data-taxonomy-id]");
+    const input = card?.querySelector(".taxonomy-root-input");
+    if (card && addTaxonomyNode(card.dataset.taxonomyId, "", input?.value)) {
+      render();
+    }
+    return;
+  }
+  const addTaxonomyNodeButton = event.target.closest(".add-taxonomy-node-button");
+  if (addTaxonomyNodeButton) {
+    const row = addTaxonomyNodeButton.closest("[data-taxonomy-id][data-node-id]");
+    const input = row?.querySelector(".taxonomy-child-input");
+    if (row && addTaxonomyNode(row.dataset.taxonomyId, row.dataset.nodeId, input?.value)) {
+      render();
+    }
+    return;
+  }
+  const deleteTaxonomyNodeButton = event.target.closest(".delete-taxonomy-node-button");
+  if (deleteTaxonomyNodeButton) {
+    const row = deleteTaxonomyNodeButton.closest("[data-taxonomy-id][data-node-id]");
+    if (row) deleteTaxonomyNode(row.dataset.taxonomyId, row.dataset.nodeId);
+    return;
+  }
+  const deleteTaxonomyButton = event.target.closest(".delete-taxonomy-button");
+  if (deleteTaxonomyButton) {
+    const card = deleteTaxonomyButton.closest("[data-taxonomy-id]");
+    if (card) deleteTaxonomy(card.dataset.taxonomyId);
+    return;
+  }
   const projectViewModeButton = event.target.closest("[data-project-view-mode]");
   if (projectViewModeButton) {
     state.projectViewMode = projectViewModeButton.dataset.projectViewMode === "minimal" ? "minimal" : "full";
@@ -6859,8 +7106,9 @@ els.taskList.addEventListener("submit", async (event) => {
   const personForm = event.target.closest("#person-form");
   const projectForm = event.target.closest("#project-form");
   const namedSettingsForm = event.target.closest("#named-settings-form");
+  const taxonomyForm = event.target.closest("#taxonomy-form");
   const taskFocusForm = event.target.closest("[data-task-focus-id]");
-  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taskFocusForm) return;
+  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taxonomyForm && !taskFocusForm) return;
   event.preventDefault();
   const form = new FormData(event.target);
   if (taskFocusForm) {
@@ -7053,6 +7301,25 @@ els.taskList.addEventListener("submit", async (event) => {
     } finally {
       setFormSaving(event.target, false);
     }
+  } else if (taxonomyForm) {
+    setFormSaving(event.target, true);
+    try {
+      const latestForm = new FormData(event.target);
+      const name = latestForm.get("name").trim();
+      if (!name) return;
+      state.taxonomies.unshift(normalizeTaxonomy({ name }));
+      saveTaxonomies();
+      clearCreationDraft(event.target);
+      event.target.reset();
+      render();
+    } catch (error) {
+      saveCreationDraft(event.target);
+      state.syncError = error.message || "Taxonomy was not saved.";
+      state.syncMessage = "";
+      renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
+    }
   }
 });
 
@@ -7229,6 +7496,32 @@ function updateNamedOptionRow(row, shouldRender = false) {
   if (shouldRender) render();
 }
 
+function updateTaxonomyFromInput(input) {
+  const card = input.closest("[data-taxonomy-id]");
+  const taxonomy = state.taxonomies.find((item) => item.id === card?.dataset.taxonomyId);
+  if (!taxonomy) return false;
+  if (input.classList.contains("taxonomy-name-input")) {
+    const name = input.value.trim();
+    if (!name) return false;
+    taxonomy.name = name;
+    taxonomy.updated_at = nowIso();
+    saveTaxonomies();
+    return true;
+  }
+  if (input.classList.contains("taxonomy-node-input")) {
+    const row = input.closest("[data-node-id]");
+    const node = taxonomy.nodes.find((item) => item.id === row?.dataset.nodeId);
+    const name = input.value.trim();
+    if (!node || !name) return false;
+    node.name = name;
+    node.updated_at = nowIso();
+    taxonomy.updated_at = nowIso();
+    saveTaxonomies();
+    return true;
+  }
+  return false;
+}
+
 els.taskList.addEventListener("input", (event) => {
   const taskFocusForm = event.target.closest("[data-task-focus-id]");
   if (taskFocusForm) {
@@ -7244,6 +7537,7 @@ els.taskList.addEventListener("input", (event) => {
     saveCreationDraft(creationForm);
     return;
   }
+  if (event.target.closest(".taxonomy-card") && updateTaxonomyFromInput(event.target)) return;
   const goalCard = event.target.closest("[data-goal-id]");
   if (goalCard) {
     autosaveGoalCard(goalCard);

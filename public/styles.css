@@ -1371,6 +1371,76 @@ body.resizing .resize-handle::before {
   gap: var(--task-list-gap);
 }
 
+.taxonomy-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.taxonomy-list {
+  display: grid;
+  gap: var(--major-gap);
+}
+
+.taxonomy-card {
+  border: 1px solid var(--line);
+  border-left: 8px solid var(--blue);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: var(--task-list-gap);
+  padding: var(--task-list-pad);
+}
+
+.taxonomy-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ui-gap);
+  align-items: end;
+}
+
+.taxonomy-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.taxonomy-root-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ui-gap);
+  border-top: 1px solid var(--line);
+  padding-top: var(--task-list-gap);
+}
+
+.taxonomy-tree {
+  display: grid;
+  gap: 6px;
+}
+
+.taxonomy-node-row {
+  display: grid;
+  grid-template-columns: 18px minmax(160px, 0.9fr) minmax(160px, 1fr) auto auto;
+  gap: var(--ui-gap);
+  align-items: center;
+  margin-left: calc(var(--depth) * 24px);
+}
+
+.taxonomy-branch {
+  width: 18px;
+  height: 1px;
+  background: var(--line);
+}
+
+.taxonomy-node-input {
+  font-weight: 800;
+}
+
+.taxonomy-empty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: var(--task-list-pad);
+}
+
 .goal-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
@@ -3483,6 +3553,16 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
+  .taxonomy-node-row {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .taxonomy-node-row .taxonomy-child-input,
+  .taxonomy-node-row .add-taxonomy-node-button,
+  .taxonomy-node-row .delete-taxonomy-node-button {
+    grid-column: 2;
+  }
+
   .resize-handle {
     display: none;
   }
@@ -3561,6 +3641,9 @@ dialog::backdrop {
   .person-project-add,
   .person-project-row,
   .role-picker,
+  .taxonomy-form,
+  .taxonomy-card-head,
+  .taxonomy-root-add,
   .named-settings-form {
     grid-template-columns: 1fr;
   }
