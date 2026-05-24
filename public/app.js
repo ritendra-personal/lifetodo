@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.69";
+const APP_VERSION = "1.10.70";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -117,6 +117,7 @@ const state = {
   privateTableReady: false,
   projectsCloudReady: false,
   venuesCloudReady: false,
+  taxonomiesCloudReady: false,
   goalLinksCloudReady: false,
   config: null,
   supabase: null,
@@ -978,6 +979,8 @@ function normalizeNamedOption(option, index = 0) {
 function normalizeTaxonomyNode(node, index = 0) {
   return {
     id: node.id || makeId(),
+    taxonomy_id: node.taxonomy_id || node.taxonomyId || "",
+    user_id: node.user_id || node.userId || state.user?.id || null,
     parent_id: node.parent_id || node.parentId || "",
     name: node.name || "",
     sort_order: Number(node.sort_order ?? node.sortOrder ?? index * 1000) || 0,
@@ -987,10 +990,12 @@ function normalizeTaxonomyNode(node, index = 0) {
 }
 
 function normalizeTaxonomy(taxonomy) {
+  const id = taxonomy.id || makeId();
   return {
-    id: taxonomy.id || makeId(),
+    id,
+    user_id: taxonomy.user_id || taxonomy.userId || state.user?.id || null,
     name: taxonomy.name || "",
-    nodes: (taxonomy.nodes || []).map(normalizeTaxonomyNode),
+    nodes: (taxonomy.nodes || []).map((node, index) => normalizeTaxonomyNode({ ...node, taxonomy_id: node.taxonomy_id || node.taxonomyId || id }, index)),
     created_at: taxonomy.created_at || nowIso(),
     updated_at: taxonomy.updated_at || nowIso()
   };
@@ -1458,17 +1463,140 @@ function saveTaxonomies(message = `Saved taxonomies locally at ${savedAtLabel()}
   state.syncMessage = message;
 }
 
+function taxonomyPayload(taxonomy) {
+  return {
+    id: taxonomy.id,
+    user_id: state.user.id,
+    name: taxonomy.name,
+    created_at: taxonomy.created_at,
+    updated_at: taxonomy.updated_at || nowIso()
+  };
+}
+
+function taxonomyNodePayload(taxonomyId, node) {
+  return {
+    id: node.id,
+    taxonomy_id: taxonomyId,
+    user_id: state.user.id,
+    parent_id: node.parent_id || null,
+    name: node.name,
+    sort_order: node.sort_order || 0,
+    created_at: node.created_at,
+    updated_at: node.updated_at || nowIso()
+  };
+}
+
+async function loadTaxonomiesData() {
+  if (!isSupabaseReady()) return null;
+  try {
+    const [
+      { data: taxonomies, error: taxonomiesError },
+      { data: nodes, error: nodesError }
+    ] = await Promise.all([
+      state.supabase
+        .from("planner_taxonomies")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("created_at", { ascending: true }),
+      state.supabase
+        .from("planner_taxonomy_nodes")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("sort_order", { ascending: true })
+    ]);
+    if (taxonomiesError || nodesError) throw taxonomiesError || nodesError;
+    state.taxonomiesCloudReady = true;
+    const nodesByTaxonomy = new Map();
+    for (const node of nodes || []) {
+      if (!nodesByTaxonomy.has(node.taxonomy_id)) nodesByTaxonomy.set(node.taxonomy_id, []);
+      nodesByTaxonomy.get(node.taxonomy_id).push(node);
+    }
+    return (taxonomies || []).map((taxonomy) => normalizeTaxonomy({
+      ...taxonomy,
+      nodes: nodesByTaxonomy.get(taxonomy.id) || []
+    }));
+  } catch (error) {
+    state.taxonomiesCloudReady = false;
+    state.syncMessage = state.syncMessage || "Taxonomies are local until you run migration 018.";
+    console.warn("Supabase taxonomies unavailable; keeping taxonomies local", error);
+    return null;
+  }
+}
+
+async function persistTaxonomy(taxonomy, options = {}) {
+  const normalized = normalizeTaxonomy({ ...taxonomy, user_id: state.user?.id || null, updated_at: nowIso() });
+  const exists = state.taxonomies.some((item) => item.id === normalized.id);
+  state.taxonomies = exists
+    ? state.taxonomies.map((item) => (item.id === normalized.id ? normalized : item))
+    : [normalized, ...state.taxonomies];
+  saveTaxonomies(options.message || `Saved taxonomy locally at ${savedAtLabel()}.`);
+  if (!isSupabaseReady() || !state.taxonomiesCloudReady) {
+    if (options.requireCloud) throw new Error("Taxonomy was not saved to database: taxonomies table is not ready.");
+    if (options.render !== false) render();
+    return normalized;
+  }
+  const saved = await upsertRowDirect("planner_taxonomies", taxonomyPayload(normalized), null, "taxonomy");
+  const savedTaxonomy = normalizeTaxonomy({ ...saved, nodes: normalized.nodes });
+  state.taxonomies = state.taxonomies.map((item) => (item.id === savedTaxonomy.id ? savedTaxonomy : item));
+  saveTaxonomies(`Saved taxonomy to database at ${savedAtLabel()}.`);
+  if (options.render !== false) render();
+  return savedTaxonomy;
+}
+
+async function persistTaxonomyNode(taxonomyId, node, options = {}) {
+  const taxonomy = state.taxonomies.find((item) => item.id === taxonomyId);
+  if (!taxonomy) return null;
+  const normalized = normalizeTaxonomyNode({ ...node, taxonomy_id: taxonomyId, user_id: state.user?.id || null, updated_at: nowIso() });
+  taxonomy.nodes = taxonomy.nodes.some((item) => item.id === normalized.id)
+    ? taxonomy.nodes.map((item) => (item.id === normalized.id ? normalized : item))
+    : [...taxonomy.nodes, normalized];
+  taxonomy.updated_at = nowIso();
+  saveTaxonomies(options.message || `Saved taxonomy node locally at ${savedAtLabel()}.`);
+  if (!isSupabaseReady() || !state.taxonomiesCloudReady) {
+    if (options.requireCloud) throw new Error("Taxonomy node was not saved to database: taxonomies table is not ready.");
+    if (options.render !== false) render();
+    return normalized;
+  }
+  const saved = await upsertRowDirect("planner_taxonomy_nodes", taxonomyNodePayload(taxonomyId, normalized), null, "taxonomy node");
+  const savedNode = normalizeTaxonomyNode(saved);
+  taxonomy.nodes = taxonomy.nodes.map((item) => (item.id === savedNode.id ? savedNode : item));
+  await upsertRowDirect("planner_taxonomies", taxonomyPayload(taxonomy), null, "taxonomy");
+  saveTaxonomies(`Saved taxonomy node to database at ${savedAtLabel()}.`);
+  if (options.render !== false) render();
+  return savedNode;
+}
+
+async function persistTaxonomyTree(taxonomy, options = {}) {
+  const savedTaxonomy = await persistTaxonomy(taxonomy, { ...options, render: false });
+  if (isSupabaseReady() && state.taxonomiesCloudReady) {
+    await insertBackupRows(
+      "planner_taxonomy_nodes",
+      savedTaxonomy.nodes.map((node) => taxonomyNodePayload(savedTaxonomy.id, node)),
+      "taxonomy nodes"
+    );
+  }
+  if (options.render !== false) render();
+  return savedTaxonomy;
+}
+
 function addTaxonomyNode(taxonomyId, parentId, name) {
   const taxonomy = state.taxonomies.find((item) => item.id === taxonomyId);
   const normalizedName = String(name || "").trim();
   if (!taxonomy || !normalizedName) return false;
-  taxonomy.nodes.push(normalizeTaxonomyNode({
+  const node = normalizeTaxonomyNode({
+    taxonomy_id: taxonomy.id,
     parent_id: parentId || "",
     name: normalizedName,
     sort_order: nextTaxonomyNodeSortOrder(taxonomy, parentId || "")
-  }));
+  });
+  taxonomy.nodes.push(node);
   taxonomy.updated_at = nowIso();
   saveTaxonomies();
+  persistTaxonomyNode(taxonomy.id, node, { render: false }).catch((error) => {
+    state.syncError = `Taxonomy node was not saved to database: ${error.message}`;
+    state.syncMessage = "";
+    renderSyncStatus();
+  });
   return true;
 }
 
@@ -1486,6 +1614,10 @@ async function deleteTaxonomyNode(taxonomyId, nodeId) {
   taxonomy.nodes = taxonomy.nodes.filter((item) => !removeIds.has(item.id));
   taxonomy.updated_at = nowIso();
   saveTaxonomies();
+  if (isSupabaseReady() && state.taxonomiesCloudReady) {
+    await deleteRowsDirect("planner_taxonomy_nodes", `id=in.(${[...removeIds].map((item) => encodeURIComponent(item)).join(",")})`, null, "taxonomy nodes");
+    await upsertRowDirect("planner_taxonomies", taxonomyPayload(taxonomy), null, "taxonomy");
+  }
   render();
 }
 
@@ -1499,6 +1631,10 @@ async function deleteTaxonomy(taxonomyId) {
   if (!confirmed) return;
   state.taxonomies = state.taxonomies.filter((item) => item.id !== taxonomyId);
   saveTaxonomies();
+  if (isSupabaseReady() && state.taxonomiesCloudReady) {
+    await deleteRowsDirect("planner_taxonomy_nodes", `taxonomy_id=eq.${encodeURIComponent(taxonomyId)}`, null, "taxonomy nodes");
+    await deleteRowDirect("planner_taxonomies", taxonomyId, null, "taxonomy");
+  }
   render();
 }
 
@@ -1583,6 +1719,8 @@ async function replaceCloudWithBackup(data) {
   const userFilter = `user_id=eq.${encodeURIComponent(state.user.id)}`;
   const deleteOrder = [
     "planner_person_private_attributes",
+    "planner_taxonomy_nodes",
+    "planner_taxonomies",
     "planner_project_people",
     "planner_task_goal_links",
     "planner_tasks",
@@ -1611,6 +1749,12 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_project_statuses", optionRows(data.projectStatuses), "project statuses");
   await insertBackupRows("planner_roles", optionRows(data.roles), "roles");
   await insertBackupRows("planner_venues", optionRows(data.venues), "venues");
+  await insertBackupRows("planner_taxonomies", data.taxonomies.map(taxonomyPayload), "taxonomies");
+  await insertBackupRows(
+    "planner_taxonomy_nodes",
+    data.taxonomies.flatMap((taxonomy) => taxonomy.nodes.map((node) => taxonomyNodePayload(taxonomy.id, node))),
+    "taxonomy nodes"
+  );
   await insertBackupRows("planner_goals", data.goals.map(withCurrentUser), "goals");
   await insertBackupRows("planner_projects", data.projects.map(projectPayload), "projects");
   await insertBackupRows("planner_people", data.people.map(personPayload), "people");
@@ -1829,6 +1973,7 @@ async function loadTasksNow() {
     if (ideasError) throw ideasError;
     const projects = await loadProjectsData();
     const goalLinks = await loadGoalLinksData();
+    const taxonomies = await loadTaxonomiesData();
     let areas = [];
     const { data: areaRows, error: areasError } = await state.supabase
       .from("planner_areas")
@@ -1870,6 +2015,7 @@ async function loadTasksNow() {
       }
       saveNamedOptions();
     }
+    if (taxonomies) state.taxonomies = taxonomies;
     state.syncMessage = state.syncMessage || plannerLoadSummary();
     render();
   } catch (error) {
@@ -7303,18 +7449,18 @@ els.taskList.addEventListener("submit", async (event) => {
     }
   } else if (taxonomyForm) {
     setFormSaving(event.target, true);
+    showSyncMessage("Saving taxonomy...");
     try {
       const latestForm = new FormData(event.target);
       const name = latestForm.get("name").trim();
       if (!name) return;
-      state.taxonomies.unshift(normalizeTaxonomy({ name }));
-      saveTaxonomies();
+      await persistTaxonomy(normalizeTaxonomy({ name }), { requireCloud: true, render: false });
       clearCreationDraft(event.target);
       event.target.reset();
       render();
     } catch (error) {
       saveCreationDraft(event.target);
-      state.syncError = error.message || "Taxonomy was not saved.";
+      state.syncError = state.syncError || error.message || "Taxonomy was not saved to database.";
       state.syncMessage = "";
       renderSyncStatus();
     } finally {
@@ -7506,6 +7652,10 @@ function updateTaxonomyFromInput(input) {
     taxonomy.name = name;
     taxonomy.updated_at = nowIso();
     saveTaxonomies();
+    queueAutosave(`taxonomy:${taxonomy.id}`, async () => {
+      await persistTaxonomy(taxonomy, { render: false });
+      renderSyncStatus();
+    });
     return true;
   }
   if (input.classList.contains("taxonomy-node-input")) {
@@ -7517,6 +7667,10 @@ function updateTaxonomyFromInput(input) {
     node.updated_at = nowIso();
     taxonomy.updated_at = nowIso();
     saveTaxonomies();
+    queueAutosave(`taxonomy-node:${node.id}`, async () => {
+      await persistTaxonomyNode(taxonomy.id, node, { render: false });
+      renderSyncStatus();
+    });
     return true;
   }
   return false;

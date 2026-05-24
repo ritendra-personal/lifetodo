@@ -163,6 +163,26 @@ create table if not exists planner_venues (
   unique (user_id, name)
 );
 
+create table if not exists planner_taxonomies (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
+create table if not exists planner_taxonomy_nodes (
+  id uuid primary key default gen_random_uuid(),
+  taxonomy_id uuid not null references planner_taxonomies(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  parent_id uuid,
+  name text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists planner_projects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -333,6 +353,8 @@ alter table planner_project_types enable row level security;
 alter table planner_project_statuses enable row level security;
 alter table planner_roles enable row level security;
 alter table planner_venues enable row level security;
+alter table planner_taxonomies enable row level security;
+alter table planner_taxonomy_nodes enable row level security;
 alter table planner_age_categories enable row level security;
 alter table planner_projects enable row level security;
 alter table planner_project_people enable row level security;
@@ -356,6 +378,11 @@ create index if not exists planner_roles_user_id_idx on planner_roles(user_id);
 create index if not exists planner_roles_sort_order_idx on planner_roles(sort_order);
 create index if not exists planner_venues_user_id_idx on planner_venues(user_id);
 create index if not exists planner_venues_sort_order_idx on planner_venues(sort_order);
+create index if not exists planner_taxonomies_user_id_idx on planner_taxonomies(user_id);
+create index if not exists planner_taxonomy_nodes_user_id_idx on planner_taxonomy_nodes(user_id);
+create index if not exists planner_taxonomy_nodes_taxonomy_id_idx on planner_taxonomy_nodes(taxonomy_id);
+create index if not exists planner_taxonomy_nodes_parent_id_idx on planner_taxonomy_nodes(parent_id);
+create index if not exists planner_taxonomy_nodes_sort_order_idx on planner_taxonomy_nodes(sort_order);
 create index if not exists planner_age_categories_user_id_idx on planner_age_categories(user_id);
 create index if not exists planner_age_categories_sort_order_idx on planner_age_categories(sort_order);
 create index if not exists planner_projects_user_id_idx on planner_projects(user_id);
@@ -406,6 +433,8 @@ drop policy if exists "planner_project_types_all_for_authenticated_user" on plan
 drop policy if exists "planner_project_statuses_all_for_authenticated_user" on planner_project_statuses;
 drop policy if exists "planner_roles_all_for_authenticated_user" on planner_roles;
 drop policy if exists "planner_venues_all_for_authenticated_user" on planner_venues;
+drop policy if exists "planner_taxonomies_all_for_authenticated_user" on planner_taxonomies;
+drop policy if exists "planner_taxonomy_nodes_all_for_authenticated_user" on planner_taxonomy_nodes;
 drop policy if exists "planner_age_categories_all_for_authenticated_user" on planner_age_categories;
 drop policy if exists "planner_projects_all_for_authenticated_user" on planner_projects;
 drop policy if exists "planner_project_people_all_for_authenticated_user" on planner_project_people;
@@ -448,6 +477,18 @@ with check ((select auth.uid()) = user_id);
 
 create policy "planner_venues_all_for_authenticated_user"
 on planner_venues for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_taxonomies_all_for_authenticated_user"
+on planner_taxonomies for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "planner_taxonomy_nodes_all_for_authenticated_user"
+on planner_taxonomy_nodes for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
