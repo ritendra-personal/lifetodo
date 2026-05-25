@@ -14,6 +14,8 @@
   --hover-line: #8ccfca;
   --hover-shadow: 0 10px 24px rgba(31, 36, 48, 0.1);
   --focus-ring: 0 0 0 3px rgba(14, 124, 116, 0.18);
+  --sidebar-width: 248px;
+  --status-bar-gap: 96px;
 }
 
 * {
@@ -349,6 +351,7 @@ button:focus-visible,
 
 .workspace {
   padding: var(--page-pad);
+  padding-bottom: calc(var(--page-pad) + var(--status-bar-gap));
   min-width: 0;
 }
 
@@ -549,19 +552,24 @@ textarea:focus {
 
 .sync-status,
 .sync-error {
+  position: fixed;
+  left: calc(var(--sidebar-width) + var(--page-pad));
+  right: var(--page-pad);
+  bottom: var(--page-pad);
+  z-index: 90;
   border: 1px solid #f2b8ad;
   border-radius: 8px;
   background: #fff0ed;
   color: #7a271a;
   padding: 12px 14px;
-  margin-bottom: 16px;
+  margin: 0;
+  max-height: min(34vh, 220px);
+  overflow: auto;
   overflow-wrap: anywhere;
+  box-shadow: 0 14px 34px rgba(31, 36, 48, 0.16);
 }
 
 .sync-error {
-  position: sticky;
-  top: 0;
-  z-index: 30;
   border: 3px solid #d92d20;
   background: #fff1f0;
   color: #7a271a;
@@ -3726,6 +3734,10 @@ dialog::backdrop {
 }
 
 @media (max-width: 1000px) {
+  :root {
+    --sidebar-width: 0px;
+  }
+
   .shell {
     grid-template-columns: 1fr;
   }

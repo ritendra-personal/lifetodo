@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.77";
+const APP_VERSION = "1.10.78";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -6107,9 +6107,6 @@ function renderProjectsView() {
           <input name="endDate" type="date" aria-label="Project end date">
         </label>
       </div>
-      <div class="field-label project-taxonomy-field">Taxonomy
-        <div class="taxonomy-picker" role="group" aria-label="Project taxonomy"></div>
-      </div>
       <div class="project-people">
         <div class="project-people-head">
           <strong>People</strong>
@@ -6136,7 +6133,6 @@ function renderProjectsView() {
     card.querySelector("[name='description']").value = project.description;
     card.querySelector("[name='startDate']").value = project.start_date || "";
     card.querySelector("[name='endDate']").value = project.end_date || "";
-    fillTaxonomyPicker(card.querySelector(".taxonomy-picker"), project.taxonomy_node_ids);
     normalizeDateRangeInputs(card);
     const count = state.tasks.filter((task) => task.project_id === project.id).length;
     card.querySelector(".project-task-count").textContent = `${count} task${count === 1 ? "" : "s"}`;
