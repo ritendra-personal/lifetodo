@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.73";
+const APP_VERSION = "1.10.74";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -186,7 +186,6 @@ const detail = {
   parent: document.querySelector("#detail-parent"),
   goal: document.querySelector("#detail-goal"),
   project: document.querySelector("#detail-project"),
-  dependencies: document.querySelector("#detail-dependencies"),
   taxonomyNodes: document.querySelector("#detail-taxonomy-nodes"),
   tags: document.querySelector("#detail-tags"),
   area: document.querySelector("#detail-area"),
@@ -678,7 +677,7 @@ function areaByName(name) {
 }
 
 function areaNameFor(item) {
-  return areaById(item.area_id)?.name || item.area || "Life";
+  return areaById(item.area_id)?.name || (item.area ?? "Life");
 }
 
 function areaIdForName(name) {
@@ -1061,7 +1060,7 @@ function normalizePerson(person) {
 
 function normalizeTask(task) {
   const order = Number(task.sort_order ?? task.sortOrder);
-  const areaName = task.area || "Life";
+  const areaName = task.area ?? "Life";
   const goalIds = parseIds(task.goal_ids || task.goalIds || task.goal_id || task.goalId);
   return {
     id: task.id || makeId(),
@@ -1103,7 +1102,7 @@ function databasePayload(task) {
     due_date: task.due_date || null,
     tags: parseTags(task.tags),
     area_id: task.area_id || areaIdForName(task.area) || null,
-    area: areaNameFor(task),
+    area: task.area_id ? areaNameFor(task) : (task.area ?? ""),
     priority: task.priority,
     status: task.status,
     energy: task.energy,
@@ -1127,7 +1126,7 @@ function databasePatchPayload(changes) {
   if ("project_id" in payload) payload.project_id = payload.project_id || null;
   if ("due_date" in payload) payload.due_date = payload.due_date || null;
   if ("area_id" in payload) payload.area_id = payload.area_id || null;
-  if ("area" in payload) payload.area = areaNameFor(payload);
+  if ("area" in payload) payload.area = payload.area_id ? areaNameFor(payload) : (payload.area ?? "");
   if ("tags" in payload) payload.tags = parseTags(payload.tags);
   if ("dependency_ids" in payload) payload.dependency_ids = parseIds(payload.dependency_ids);
   if ("sort_order" in payload) payload.sort_order = Number(payload.sort_order) || 0;
@@ -1979,13 +1978,17 @@ function fillDependencySelect(select, selected = [], excludeId = "") {
 
 function fillAreaSelect(select, selected = "") {
   select.innerHTML = "";
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "No area";
+  select.append(emptyOption);
   for (const area of sortedByName(state.areas)) {
     const option = document.createElement("option");
     option.value = area.id;
     option.textContent = area.name;
     select.append(option);
   }
-  select.value = selected || state.areas[0]?.id || "";
+  select.value = selected || "";
 }
 
 function seedTasks() {
@@ -4041,7 +4044,6 @@ function renderParentControls() {
     fillParentSelect(detail.parent, task?.parent_id || "", state.selectedId);
     fillGoalSelect(detail.goal, task?.goal_id || "");
     fillProjectSelect(detail.project, task?.project_id || "");
-    fillDependencySelect(detail.dependencies, task?.dependency_ids || [], state.selectedId);
     fillTaxonomyPicker(detail.taxonomyNodes, task?.taxonomy_node_ids || []);
   }
 }
@@ -4315,6 +4317,27 @@ function focusObject(type, id, returnView = state.view) {
   render();
 }
 
+async function createSubtaskAndFocus(parent, returnView = state.view) {
+  if (!parent) return;
+  const task = normalizeTask({
+    title: `Subtask of ${parent.title}`,
+    parent_id: parent.id,
+    goal_id: parent.goal_id,
+    goal_ids: goalIdsForTask(parent),
+    project_id: parent.project_id,
+    area_id: "",
+    area: "",
+    priority: parent.priority,
+    due_date: parent.due_date,
+    tags: parent.tags,
+    energy: parent.energy,
+    sort_order: nextSortOrder(parent.id)
+  });
+  await persistTask(task);
+  if (state.syncError) return;
+  focusObject("task", task.id, returnView);
+}
+
 function leaveFocusView() {
   const returnView = state.focusedReturnView || "home";
   state.focusedId = "";
@@ -4384,9 +4407,6 @@ function renderFocusedTaskView() {
           <input name="tags" type="text" placeholder="comma separated tags">
         </label>
       </div>
-      <label class="field-label">Depends on
-        <select name="dependencies" multiple size="5"></select>
-      </label>
       <div class="field-label">Taxonomy
         <div class="taxonomy-picker" role="group" aria-label="Task taxonomy"></div>
       </div>
@@ -4411,7 +4431,6 @@ function renderFocusedTaskView() {
   form.querySelector("[name='dueDate']").value = task.due_date || "";
   form.querySelector("[name='energy']").value = task.energy;
   form.querySelector("[name='tags']").value = task.tags.join(", ");
-  fillDependencySelect(form.querySelector("[name='dependencies']"), task.dependency_ids, task.id);
   fillTaxonomyPicker(form.querySelector(".taxonomy-picker"), task.taxonomy_node_ids);
 }
 
@@ -7312,7 +7331,7 @@ els.taskForm.addEventListener("submit", async (event) => {
       goal_ids: parseIds(form.get("goalId") || ""),
       project_id: form.get("projectId") || "",
       area_id: form.get("area") || null,
-      area: areaById(form.get("area"))?.name || "Life",
+      area: areaById(form.get("area"))?.name || "",
       priority: form.get("priority"),
       due_date: form.get("dueDate") || defaultDueDateForView(),
       tags: parseTags(form.get("tags")),
@@ -7323,7 +7342,7 @@ els.taskForm.addEventListener("submit", async (event) => {
     await persistTask(task);
     if (state.syncError) return;
     els.taskForm.reset();
-    els.area.value = areaIdForName("Life") || state.areas[0]?.id || "";
+    els.area.value = "";
     document.querySelector("#priority").value = "Medium";
     document.querySelector("#parent-id").value = "";
     document.querySelector("#goal-id").value = "";
@@ -7688,25 +7707,7 @@ els.taskList.addEventListener("click", async (event) => {
   if (focusSubtaskButton) {
     const form = focusSubtaskButton.closest("[data-task-focus-id]");
     const parent = state.tasks.find((item) => item.id === form?.dataset.taskFocusId);
-    if (parent) {
-      const task = normalizeTask({
-        title: `Subtask of ${parent.title}`,
-        parent_id: parent.id,
-        goal_id: parent.goal_id,
-        goal_ids: goalIdsForTask(parent),
-        project_id: parent.project_id,
-        area_id: parent.area_id || areaIdForName(parent.area),
-        area: areaNameFor(parent),
-        priority: parent.priority,
-        due_date: parent.due_date,
-        tags: parent.tags,
-        energy: parent.energy,
-        sort_order: nextSortOrder(parent.id)
-      });
-      state.focusedId = task.id;
-      state.selectedId = task.id;
-      persistTask(task);
-    }
+    await createSubtaskAndFocus(parent, state.focusedReturnView || "tasks");
     return;
   }
   const focusDeleteTaskButton = event.target.closest(".focus-delete-task-button");
@@ -8526,6 +8527,8 @@ els.tagFilters.addEventListener("click", (event) => {
 });
 
 function detailPayload() {
+  const current = state.tasks.find((task) => task.id === detail.id.value);
+  const areaId = detail.area.value || "";
   return {
     title: detail.title.value.trim(),
     notes: detail.notes.value.trim(),
@@ -8533,11 +8536,11 @@ function detailPayload() {
     goal_id: detail.goal.value || null,
     goal_ids: parseIds(detail.goal.value || ""),
     project_id: detail.project.value || null,
-    dependency_ids: [...detail.dependencies.selectedOptions].map((option) => option.value),
+    dependency_ids: current?.dependency_ids || [],
     taxonomy_node_ids: [...detail.taxonomyNodes.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value),
     tags: parseTags(detail.tags.value),
-    area_id: detail.area.value || null,
-    area: areaById(detail.area.value)?.name || "Life",
+    area_id: areaId || null,
+    area: areaById(areaId)?.name || "",
     priority: detail.priority.value,
     due_date: detail.due.value || null,
     energy: detail.energy.value
@@ -8545,6 +8548,8 @@ function detailPayload() {
 }
 
 function focusedTaskPayload(form) {
+  const current = state.tasks.find((task) => task.id === form.dataset.taskFocusId);
+  const areaId = form.querySelector("[name='area']").value || "";
   return {
     title: form.querySelector("[name='title']").value.trim(),
     notes: form.querySelector("[name='notes']").value.trim(),
@@ -8552,11 +8557,11 @@ function focusedTaskPayload(form) {
     goal_id: form.querySelector("[name='goalId']").value || null,
     goal_ids: parseIds(form.querySelector("[name='goalId']").value || ""),
     project_id: form.querySelector("[name='projectId']").value || null,
-    dependency_ids: [...form.querySelector("[name='dependencies']").selectedOptions].map((option) => option.value),
+    dependency_ids: current?.dependency_ids || [],
     taxonomy_node_ids: [...form.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value),
     tags: parseTags(form.querySelector("[name='tags']").value),
-    area_id: form.querySelector("[name='area']").value || null,
-    area: areaById(form.querySelector("[name='area']").value)?.name || "Life",
+    area_id: areaId || null,
+    area: areaById(areaId)?.name || "",
     priority: form.querySelector("[name='priority']").value,
     due_date: form.querySelector("[name='dueDate']").value || null,
     energy: form.querySelector("[name='energy']").value
@@ -8612,22 +8617,7 @@ els.expandTaskButton?.addEventListener("click", () => {
 els.subtaskButton.addEventListener("click", async () => {
   const parent = state.tasks.find((item) => item.id === state.selectedId);
   if (!parent) return;
-  const task = normalizeTask({
-    title: `Subtask of ${parent.title}`,
-    parent_id: parent.id,
-    goal_id: parent.goal_id,
-    goal_ids: goalIdsForTask(parent),
-    project_id: parent.project_id,
-    area_id: parent.area_id || areaIdForName(parent.area),
-    area: areaNameFor(parent),
-    priority: parent.priority,
-    due_date: parent.due_date,
-    tags: parent.tags,
-    energy: parent.energy,
-    sort_order: nextSortOrder(parent.id)
-  });
-  state.selectedId = task.id;
-  await persistTask(task);
+  await createSubtaskAndFocus(parent, state.view || "tasks");
 });
 
 els.deleteButton.addEventListener("click", async () => {
