@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.75";
+const APP_VERSION = "1.10.77";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -138,6 +138,7 @@ const els = {
   appVersion: document.querySelector("#app-version"),
   todayLabel: document.querySelector("#today-label"),
   viewTitle: document.querySelector("#view-title"),
+  viewSubtitle: document.querySelector("#view-subtitle"),
   boardTitle: document.querySelector("#board-title"),
   syncStatus: document.querySelector("#sync-status"),
   syncError: document.querySelector("#sync-error"),
@@ -928,7 +929,7 @@ function normalizeGoal(goal) {
 }
 
 function normalizeIdea(idea) {
-  const areaName = idea.area || "Life";
+  const areaName = idea.area ?? "";
   return {
     id: idea.id || makeId(),
     user_id: idea.user_id || idea.userId || state.user?.id || null,
@@ -3992,6 +3993,10 @@ function projectTypeName(project) {
   return state.projectTypes.find((type) => type.id === project.project_type_id)?.name || "";
 }
 
+function projectNameForId(id) {
+  return state.projects.find((project) => project.id === id)?.name || "";
+}
+
 function venueName(project) {
   return state.venues.find((venue) => venue.id === project.venue_id)?.name || "";
 }
@@ -4239,29 +4244,35 @@ function renderTask(task, depth, childCount) {
         </div>
         <button class="ghost-button task-focus-button" type="button">Open</button>
       </div>
-      <div class="meta">
-        <span class="pill area"></span>
-        <span class="pill ${task.priority.toLowerCase()}"></span>
-        <span class="pill"></span>
-        <span class="pill"></span>
-        ${childCount ? '<span class="pill branch-pill"></span>' : ""}
-      </div>
+      <div class="meta"></div>
       ${task.tags.length ? '<div class="task-tags"></div>' : ""}
     `;
 
     button.querySelector(".task-title-text").textContent = task.title;
     const notes = button.querySelector(".task-notes");
     if (notes) notes.textContent = task.notes;
-    const pills = button.querySelectorAll(".pill");
-    pills[0].textContent = areaNameFor(task);
-    pills[0].style.borderLeft = `4px solid ${color}`;
-    pills[0].style.background = areaTintFor(task);
+    const meta = button.querySelector(".meta");
+    const addPill = (text, className = "") => {
+      if (!text) return null;
+      const pill = document.createElement("span");
+      pill.className = `pill ${className}`.trim();
+      pill.textContent = text;
+      meta.append(pill);
+      return pill;
+    };
+    const areaPill = addPill(areaNameFor(task), "area");
+    if (areaPill) {
+      areaPill.style.borderLeft = `4px solid ${color}`;
+      areaPill.style.background = areaTintFor(task);
+    }
     button.style.borderLeft = `6px solid ${color}`;
     button.style.background = `linear-gradient(90deg, ${areaTintFor(task)}, #fff 42%)`;
-    pills[1].textContent = task.priority;
-    pills[2].textContent = formatDate(task.due_date);
-    pills[3].textContent = `${task.energy} energy`;
-    if (childCount) pills[4].textContent = `${childCount} subtask${childCount === 1 ? "" : "s"}`;
+    addPill(task.priority, task.priority.toLowerCase());
+    addPill(formatDate(task.due_date));
+    addPill(projectNameForId(task.project_id), "project-pill");
+    for (const taxonomy of selectedTaxonomyLabels(task.taxonomy_node_ids)) {
+      addPill(taxonomy.label, "taxonomy-pill-meta");
+    }
     const tagContainer = button.querySelector(".task-tags");
     if (tagContainer) {
       for (const tag of task.tags) {
@@ -4515,13 +4526,7 @@ function renderFocusedIdeaView() {
   card.querySelector("[name='text']").value = idea.text;
   card.querySelector(".idea-created-stamp").textContent = formatTimestamp(idea.created_at);
   const select = card.querySelector("select");
-  for (const area of sortedByName(state.areas)) {
-    const option = document.createElement("option");
-    option.value = area.id;
-    option.textContent = area.name;
-    select.append(option);
-  }
-  select.value = idea.area_id || areaIdForName(idea.area);
+  fillAreaSelect(select, idea.area_id || areaIdForName(idea.area));
 }
 
 function renderFocusedPersonView() {
@@ -4908,12 +4913,7 @@ function renderIdeasView() {
     </section>
   `;
   const areaSelect = els.taskList.querySelector("select[name='area']");
-  for (const area of sortedByName(state.areas)) {
-    const option = document.createElement("option");
-    option.value = area.id;
-    option.textContent = area.name;
-    areaSelect.append(option);
-  }
+  fillAreaSelect(areaSelect, "");
   restoreCreationDraft(els.taskList.querySelector("#idea-form"));
   const list = els.taskList.querySelector(".planning-list");
   if (!state.ideas.length) {
@@ -4941,13 +4941,7 @@ function renderIdeasView() {
     card.querySelector("[name='text']").value = idea.text;
     card.querySelector(".idea-created-stamp").textContent = formatTimestamp(idea.created_at);
     const select = card.querySelector("select");
-    for (const area of sortedByName(state.areas)) {
-      const option = document.createElement("option");
-      option.value = area.id;
-      option.textContent = area.name;
-      select.append(option);
-    }
-    select.value = idea.area_id || areaIdForName(idea.area);
+    fillAreaSelect(select, idea.area_id || areaIdForName(idea.area));
     list.append(card);
   }
 }
@@ -7218,6 +7212,13 @@ function render() {
     taxonomies: "Taxonomies",
     backup: "Backup"
   };
+  const keyObjectSubtitles = {
+    tasks: "Actions we need to take to move toward Goals and finish Projects.",
+    goals: "Long term goals an objectives we want to move towards.",
+    projects: "Concrete, time-sensitive outcomes or artifacts driven by execution of tasks.",
+    people: "Humans associated with each project, and also tasks.",
+    ideas: "In-progress thoughts and ideas Areas of Life."
+  };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   const isFocusView = focusViews.includes(state.view);
   const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "backup", ...focusViews].includes(state.view);
@@ -7231,6 +7232,8 @@ function render() {
   els.entryPanel.classList.toggle("hidden", state.view === "graph" || state.view === "timeline" || state.view === "tasks-by-taxonomy" || isPlanningView);
   els.todayLabel.textContent = label;
   els.viewTitle.textContent = titles[state.view] || "Planner";
+  els.viewSubtitle.textContent = keyObjectSubtitles[state.view] || "";
+  els.viewSubtitle.classList.toggle("hidden", !keyObjectSubtitles[state.view]);
   els.boardTitle.textContent = state.view === "graph" ? "Task Graph" : state.view === "timeline" ? "Task timeline" : titles[state.view] || "Planner";
   els.storageStatus.textContent = isSupabaseReady() ? state.user.email : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
@@ -7271,10 +7274,11 @@ function render() {
   syncBrowserHistory();
 }
 
-function toggleTaskStatus(id) {
+async function toggleTaskStatus(id) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
   const done = task.status !== "done";
+  if (done && !(await confirmAction(`Mark "${task.title}" as done?`, { title: "Confirm done", acceptLabel: "Mark done" }))) return;
   return patchTaskWithFeedback(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
 }
 
@@ -7705,7 +7709,7 @@ els.taskList.addEventListener("click", async (event) => {
   const focusToggleTaskButton = event.target.closest(".focus-toggle-task-button");
   if (focusToggleTaskButton) {
     const form = focusToggleTaskButton.closest("[data-task-focus-id]");
-    if (form) toggleTaskStatus(form.dataset.taskFocusId);
+    if (form) await toggleTaskStatus(form.dataset.taskFocusId);
     return;
   }
   const focusSubtaskButton = event.target.closest(".focus-subtask-button");
@@ -7732,7 +7736,7 @@ els.taskList.addEventListener("click", async (event) => {
     const item = check.closest(".task-item");
     if (item) {
       event.stopPropagation();
-      toggleTaskStatus(item.dataset.id);
+      await toggleTaskStatus(item.dataset.id);
     }
     return;
   }
@@ -7789,7 +7793,7 @@ els.taskList.addEventListener("submit", async (event) => {
       await persistIdea({
         text: latestForm.get("text").trim(),
         area_id: latestForm.get("area") || null,
-        area: areaById(latestForm.get("area"))?.name || "Life"
+        area: areaById(latestForm.get("area"))?.name || ""
       }, { requireCloud: true, render: false });
       clearCreationDraft(event.target);
       event.target.reset();
@@ -8023,7 +8027,7 @@ function autosaveIdeaCard(card) {
         id: idea.id,
         text,
         area_id: card.querySelector("[name='area']").value || null,
-        area: areaById(card.querySelector("[name='area']").value)?.name || "Life",
+        area: areaById(card.querySelector("[name='area']").value)?.name || "",
         created_at: idea.created_at
       },
       { render: false }
@@ -8613,10 +8617,7 @@ els.areaList.addEventListener("input", (event) => {
 });
 
 els.completeButton.addEventListener("click", async () => {
-  const task = state.tasks.find((item) => item.id === state.selectedId);
-  if (!task) return;
-  const done = task.status !== "done";
-  await patchTaskWithFeedback(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
+  await toggleTaskStatus(state.selectedId);
 });
 
 els.expandTaskButton?.addEventListener("click", () => {
