@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.74";
+const APP_VERSION = "1.10.75";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -312,6 +312,29 @@ function saveCreationDraft(form) {
 function clearCreationDraft(form) {
   const key = creationDraftKey(form);
   if (key) localStorage.removeItem(key);
+}
+
+async function handleTaxonomyPickerClick(event) {
+  const removeTaxonomyButton = event.target.closest(".taxonomy-remove-button");
+  if (removeTaxonomyButton) {
+    const picker = removeTaxonomyButton.closest(".taxonomy-picker");
+    const ids = [...picker.querySelectorAll("[name='taxonomyNodeIds']")]
+      .map((input) => input.value)
+      .filter((id) => id !== removeTaxonomyButton.closest(".taxonomy-pill")?.querySelector("[name='taxonomyNodeIds']")?.value);
+    await saveTaxonomyPickerSelection(picker, ids);
+    return true;
+  }
+  const addTaxonomyButton = event.target.closest(".taxonomy-add-button");
+  if (addTaxonomyButton) {
+    const picker = addTaxonomyButton.closest(".taxonomy-picker");
+    const select = picker?.querySelector(".taxonomy-add-select");
+    const selected = [...picker.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value);
+    if (select?.value && !selected.includes(select.value)) {
+      await saveTaxonomyPickerSelection(picker, [...selected, select.value]);
+    }
+    return true;
+  }
+  return false;
 }
 
 function restoreCreationDraft(form) {
@@ -7594,25 +7617,7 @@ els.taskList.addEventListener("click", async (event) => {
     }
     return;
   }
-  const removeTaxonomyButton = event.target.closest(".taxonomy-remove-button");
-  if (removeTaxonomyButton) {
-    const picker = removeTaxonomyButton.closest(".taxonomy-picker");
-    const ids = [...picker.querySelectorAll("[name='taxonomyNodeIds']")]
-      .map((input) => input.value)
-      .filter((id) => id !== removeTaxonomyButton.closest(".taxonomy-pill")?.querySelector("[name='taxonomyNodeIds']")?.value);
-    await saveTaxonomyPickerSelection(picker, ids);
-    return;
-  }
-  const addTaxonomyButton = event.target.closest(".taxonomy-add-button");
-  if (addTaxonomyButton) {
-    const picker = addTaxonomyButton.closest(".taxonomy-picker");
-    const select = picker?.querySelector(".taxonomy-add-select");
-    const selected = [...picker.querySelectorAll("[name='taxonomyNodeIds']")].map((input) => input.value);
-    if (select?.value && !selected.includes(select.value)) {
-      await saveTaxonomyPickerSelection(picker, [...selected, select.value]);
-    }
-    return;
-  }
+  if (await handleTaxonomyPickerClick(event)) return;
   const goalTaskLink = event.target.closest(".goal-task-link");
   if (goalTaskLink) {
     focusObject("task", goalTaskLink.dataset.taskId, state.view);
@@ -8573,7 +8578,8 @@ function queueFocusedTaskAutosave(form) {
   queueAutosave(`task:${form.dataset.taskFocusId}`, () => patchTask(form.dataset.taskFocusId, focusedTaskPayload(form), { render: false }));
 }
 
-function queueDetailAutosave() {
+function queueDetailAutosave(event) {
+  if (event?.target?.closest?.(".taxonomy-add-select")) return;
   if (!detail.id.value || !detail.title.value.trim()) return;
   queueAutosave(`task:${detail.id.value}`, () => patchTask(detail.id.value, detailPayload(), { render: false }));
 }
@@ -8581,6 +8587,10 @@ function queueDetailAutosave() {
 els.detailForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await patchTask(detail.id.value, detailPayload());
+});
+
+els.detailForm.addEventListener("click", async (event) => {
+  await handleTaxonomyPickerClick(event);
 });
 
 els.detailForm.addEventListener("input", queueDetailAutosave);
