@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.80";
+const APP_VERSION = "1.10.81";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5369,6 +5369,10 @@ function renderProjectTasksView() {
         <span class="project-task-drop-hint">Drop tasks here</span>
       </div>
       <div class="project-task-group-list"></div>
+      <form class="project-task-quick-add" data-project-task-create-project-id="${project.id}">
+        <input name="title" type="text" placeholder="Add task to ${project.name}" aria-label="New task for ${project.name}" required>
+        <button class="primary-button" type="submit">Add</button>
+      </form>
     `;
     const title = section.querySelector(".project-task-group-title");
     title.textContent = project.name;
@@ -7971,10 +7975,29 @@ els.taskList.addEventListener("submit", async (event) => {
   const namedSettingsForm = event.target.closest("#named-settings-form");
   const taxonomyForm = event.target.closest("#taxonomy-form");
   const taskFocusForm = event.target.closest("[data-task-focus-id]");
-  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taxonomyForm && !taskFocusForm) return;
+  const projectTaskQuickAdd = event.target.closest("[data-project-task-create-project-id]");
+  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taxonomyForm && !taskFocusForm && !projectTaskQuickAdd) return;
   event.preventDefault();
   const form = new FormData(event.target);
-  if (taskFocusForm) {
+  if (projectTaskQuickAdd) {
+    const title = form.get("title").trim();
+    if (!title) return;
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving task...");
+    try {
+      await persistTask(normalizeTask({
+        title,
+        project_id: event.target.dataset.projectTaskCreateProjectId || "",
+        area_id: "",
+        area: "",
+        priority: "Medium",
+        energy: "Medium",
+        sort_order: nextSortOrder("")
+      }));
+    } finally {
+      setFormSaving(event.target, false);
+    }
+  } else if (taskFocusForm) {
     await patchTask(taskFocusForm.dataset.taskFocusId, focusedTaskPayload(taskFocusForm));
   } else if (goalForm) {
     setFormSaving(event.target, true);

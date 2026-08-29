@@ -1508,6 +1508,19 @@ body.resizing .resize-handle::before {
   min-height: 36px;
 }
 
+.project-task-quick-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--task-list-gap);
+  margin-top: var(--task-list-gap);
+  padding-top: var(--task-list-gap);
+  border-top: 1px solid var(--line);
+}
+
+.project-task-quick-add input {
+  min-width: 0;
+}
+
 .project-task-item {
   margin-left: calc(min(var(--depth), 5) * 18px);
 }
@@ -4048,6 +4061,10 @@ dialog::backdrop {
 
   .project-tasks-count {
     flex-basis: 100%;
+  }
+
+  .project-task-quick-add {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
 
