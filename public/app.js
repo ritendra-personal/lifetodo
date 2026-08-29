@@ -5285,7 +5285,10 @@ function makeProjectTaskRow(task, depth = 0) {
 }
 
 function appendProjectTaskBranch(container, task, children, depth = 0) {
-  if (!projectTaskMatches(task)) return false;
+  const childMatches = state.projectTaskHierarchy && (children.get(task.id) || []).some((child) => (
+    projectTaskMatches(child) || appendProjectTaskBranchMatches(child, children)
+  ));
+  if (!projectTaskMatches(task) && !childMatches) return false;
   const row = makeProjectTaskRow(task, depth);
   container.append(row);
   if (state.projectTaskHierarchy) {
@@ -5296,6 +5299,11 @@ function appendProjectTaskBranch(container, task, children, depth = 0) {
   return true;
 }
 
+function appendProjectTaskBranchMatches(task, children) {
+  return (children.get(task.id) || []).some((child) => (
+    projectTaskMatches(child) || appendProjectTaskBranchMatches(child, children)
+  ));
+}
 function renderProjectTasksView() {
   const children = childMap();
   const groups = new Map();
