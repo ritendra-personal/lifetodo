@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.94";
+const APP_VERSION = "1.10.95";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5741,8 +5741,8 @@ function renderCalendarTimeline() {
   const densityRow = density.map((count) => `<span class="calendar-density-cell" style="--density:${count / maxDensity}" title="${count} scheduled item${count === 1 ? "" : "s"}"></span>`).join("");
   const laneMarkup = ["project", "event", "task"].filter((kind) => state.calendarLayers[`${kind}s`]).map((kind) => {
     const laneRows = rows.filter((row) => row.kind === kind);
-    const bars = laneRows.map((row, index) => `<button type="button" class="calendar-timeline-${kind}" data-${kind}-id="${row.id}" style="left:${(row.from / months.length) * 100}%;width:${((row.to - row.from + 1) / months.length) * 100}%;top:${index % 2 ? 22 : 8}px" title="${row.title}">${row.title}</button>`).join("");
-    return `<div class="calendar-timeline-lane" style="width:${months.length * columnWidth}px"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
+    const bars = laneRows.map((row, index) => `<button type="button" class="calendar-timeline-${kind}" data-${kind}-id="${row.id}" style="left:${(row.from / buckets.length) * 100}%;width:${((row.to - row.from + 1) / buckets.length) * 100}%;top:${index % 2 ? 22 : 8}px" title="${row.title}">${row.title}</button>`).join("");
+    return `<div class="calendar-timeline-lane" style="width:${buckets.length * columnWidth}px"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
   }).join("");
   const scales = ["year", "quarter", "month", "biweekly", "weekly", "daily"];
   const scaleIndex = scales.indexOf(scale);
