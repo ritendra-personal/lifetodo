@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.81";
+const APP_VERSION = "1.10.82";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -74,6 +74,7 @@ function loadTaxonomies() {
 
 const state = {
   tasks: [],
+  events: [],
   goals: [],
   ideas: [],
   projects: [],
@@ -96,6 +97,8 @@ const state = {
   projectTaskStatus: ["all", "open", "done"].includes(localStorage.getItem("project-task-status")) ? localStorage.getItem("project-task-status") : "open",
   projectTaskHierarchy: localStorage.getItem("project-task-hierarchy") !== "false",
   projectTaskFilter: localStorage.getItem("project-task-filter") || "",
+  calendarMode: ["month", "week"].includes(localStorage.getItem("calendar-mode")) ? localStorage.getItem("calendar-mode") : "month",
+  calendarCursor: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   selectedId: null,
   focusedId: "",
   focusedReturnView: "home",
@@ -120,6 +123,7 @@ const state = {
   privateKeyLabel: "",
   privateTableReady: false,
   projectsCloudReady: false,
+  eventsCloudReady: false,
   venuesCloudReady: false,
   taxonomiesCloudReady: false,
   taskTaxonomyLinksCloudReady: false,
@@ -209,6 +213,8 @@ const counts = {
   goalAssignments: document.querySelector("#count-goal-assignments"),
   peopleProjects: document.querySelector("#count-people-projects"),
   tasksByTaxonomy: document.querySelector("#count-tasks-by-taxonomy"),
+  events: document.querySelector("#count-events"),
+  calendar: document.querySelector("#count-calendar"),
   projectTasks: document.querySelector("#count-project-tasks"),
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
@@ -469,6 +475,8 @@ function validView(view) {
     "timeline",
     "tasks-by-taxonomy",
     "project-tasks",
+    "events",
+    "calendar",
     "areas",
     "skills",
     "age-categories",
@@ -483,7 +491,8 @@ function validView(view) {
     "focus-project",
     "focus-goal",
     "focus-person",
-    "focus-idea"
+    "focus-idea",
+    "focus-event"
   ]);
   if (["today", "upcoming", "backlog", "done"].includes(view)) return "tasks";
   return views.has(view) ? view : "home";
@@ -585,6 +594,7 @@ function pluralCount(count, singular, plural = `${singular}s`) {
 function plannerLoadSummary() {
   return `Loaded ${[
     pluralCount(state.tasks.length, "task"),
+    pluralCount(state.events.length, "event"),
     pluralCount(state.projects.length, "project"),
     pluralCount(state.people.length, "person", "people"),
     pluralCount(state.ideas.length, "idea"),
@@ -945,6 +955,71 @@ function normalizeIdea(idea) {
     created_at: idea.created_at || nowIso(),
     updated_at: idea.updated_at || nowIso()
   };
+}
+
+function normalizeEvent(event) {
+  return {
+    id: event.id || makeId(),
+    user_id: event.user_id || event.userId || state.user?.id || null,
+    title: event.title || "",
+    notes: event.notes || "",
+    start_at: event.start_at || event.startAt || "",
+    end_at: event.end_at || event.endAt || event.start_at || event.startAt || "",
+    all_day: Boolean(event.all_day ?? event.allDay),
+    location: event.location || "",
+    meeting_url: event.meeting_url || event.meetingUrl || "",
+    area_id: event.area_id || event.areaId || "",
+    project_id: event.project_id || event.projectId || "",
+    status: event.status || "scheduled",
+    created_at: event.created_at || nowIso(),
+    updated_at: event.updated_at || nowIso()
+  };
+}
+
+function eventPayload(event) {
+  return {
+    id: event.id,
+    user_id: state.user.id,
+    title: event.title,
+    notes: event.notes || "",
+    start_at: event.start_at || null,
+    end_at: event.end_at || event.start_at || null,
+    all_day: Boolean(event.all_day),
+    location: event.location || "",
+    meeting_url: event.meeting_url || null,
+    area_id: event.area_id || null,
+    project_id: event.project_id || null,
+    status: event.status || "scheduled",
+    created_at: event.created_at,
+    updated_at: event.updated_at || nowIso()
+  };
+}
+
+function localDateTimeValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function eventDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date;
+}
+
+function eventRangeLabel(event, options = {}) {
+  const start = eventDateTime(event.start_at);
+  const end = eventDateTime(event.end_at);
+  if (!start) return "No date";
+  const dateOptions = { month: "short", day: "numeric", year: "numeric" };
+  const timeOptions = { hour: "numeric", minute: "2-digit" };
+  if (event.all_day) return new Intl.DateTimeFormat(undefined, dateOptions).format(start);
+  const date = new Intl.DateTimeFormat(undefined, dateOptions).format(start);
+  const startTime = new Intl.DateTimeFormat(undefined, timeOptions).format(start);
+  const endTime = end ? new Intl.DateTimeFormat(undefined, timeOptions).format(end) : "";
+  return `${date} · ${startTime}${endTime ? `–${endTime}` : ""}`;
 }
 
 function normalizeProjectYear(value) {
@@ -1367,6 +1442,8 @@ async function signOut() {
   state.privateKey = null;
   state.privatePassphrase = "";
   state.tasks = [];
+  state.events = [];
+  state.eventsCloudReady = false;
   state.selectedId = null;
   loadLocal();
 }
@@ -1388,6 +1465,7 @@ async function claimLegacyTasks() {
 
 function loadLocal() {
   const raw = localStorage.getItem("planner-tasks");
+  const rawEvents = localStorage.getItem("planner-events");
   const rawGoals = localStorage.getItem("planner-goals");
   const rawIdeas = localStorage.getItem("planner-ideas");
   const rawProjects = localStorage.getItem("planner-projects");
@@ -1396,6 +1474,7 @@ function loadLocal() {
   const rawPeoplePrivate = localStorage.getItem("planner-people-private");
   const rawTaxonomies = localStorage.getItem("planner-taxonomies");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
+  state.events = rawEvents ? JSON.parse(rawEvents).map(normalizeEvent) : [];
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
   state.ideas = rawIdeas ? JSON.parse(rawIdeas).map(normalizeIdea) : [];
   state.projects = rawProjects ? JSON.parse(rawProjects).map(normalizeProject) : [];
@@ -1410,6 +1489,7 @@ function loadLocal() {
 
 function saveLocal(options = {}) {
   localStorage.setItem("planner-tasks", JSON.stringify(state.tasks));
+  localStorage.setItem("planner-events", JSON.stringify(state.events));
   localStorage.setItem("planner-goals", JSON.stringify(state.goals));
   localStorage.setItem("planner-ideas", JSON.stringify(state.ideas));
   localStorage.setItem("planner-projects", JSON.stringify(state.projects));
@@ -1429,6 +1509,7 @@ function backupData() {
     user_email: state.user?.email || "",
     data: {
       tasks: state.tasks,
+      events: state.events,
       goals: state.goals,
       ideas: state.ideas,
       projects: state.projects,
@@ -1474,6 +1555,7 @@ function normalizeBackupData(fileData) {
   if (!data || typeof data !== "object") throw new Error("This does not look like a Seven Lives backup file.");
   return {
     tasks: ensureSortOrders((data.tasks || []).map(normalizeTask)),
+    events: (data.events || []).map(normalizeEvent),
     goals: (data.goals || []).map(normalizeGoal),
     ideas: (data.ideas || []).map(normalizeIdea),
     projects: (data.projects || []).map(normalizeProject),
@@ -1500,6 +1582,7 @@ function normalizeBackupData(fileData) {
 
 function applyBackupData(data) {
   state.tasks = data.tasks;
+  state.events = data.events;
   state.goals = data.goals;
   state.ideas = data.ideas;
   state.projects = data.projects;
@@ -1813,6 +1896,7 @@ async function replaceCloudWithBackup(data) {
   await refreshSupabaseSession("restore", { force: true });
   const userFilter = `user_id=eq.${encodeURIComponent(state.user.id)}`;
   const deleteOrder = [
+    "planner_events",
     "planner_person_private_attributes",
     "planner_project_taxonomy_nodes",
     "planner_task_taxonomy_nodes",
@@ -1858,6 +1942,7 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_people", data.people.map(personPayload), "people");
   await insertBackupRows("planner_ideas", data.ideas.map(ideaPayload), "ideas");
   await insertBackupRows("planner_tasks", data.tasks.map((task) => databasePayload({ ...task, user_id: state.user.id })), "tasks");
+  await insertBackupRows("planner_events", data.events.map(eventPayload), "events");
   await insertBackupRows("planner_task_goal_links", backupGoalLinks(data).map(taskGoalLinkPayload), "goal links");
   await insertBackupRows("planner_task_taxonomy_nodes", backupTaskTaxonomyLinks(data).map(taskTaxonomyLinkPayload), "task taxonomy links");
   await insertBackupRows("planner_project_people", data.projectAssignments.map(projectAssignmentPayload), "project people");
@@ -2106,6 +2191,21 @@ async function loadTasksNow() {
       .eq("user_id", state.user.id)
       .order("created_at", { ascending: false });
     if (ideasError) throw ideasError;
+    let events = null;
+    try {
+      const { data: eventRows, error: eventsError } = await state.supabase
+        .from("planner_events")
+        .select("*")
+        .eq("user_id", state.user.id)
+        .order("start_at", { ascending: true });
+      if (eventsError) throw eventsError;
+      events = eventRows.map(normalizeEvent);
+      state.eventsCloudReady = true;
+    } catch (error) {
+      state.eventsCloudReady = false;
+      state.syncMessage = state.syncMessage || "Events are local until you run migration 022.";
+      console.warn("Supabase events unavailable; keeping events local", error);
+    }
     const projectTaxonomyLinks = await loadProjectTaxonomyLinksData();
     const projects = await loadProjectsData(projectTaxonomyLinks || []);
     const goalLinks = await loadGoalLinksData();
@@ -2136,6 +2236,7 @@ async function loadTasksNow() {
     state.tasks = ensureSortOrders(applyTaskTaxonomyLinksToTasks(applyGoalLinksToTasks(rows.map(normalizeTask), goalLinks || []), taskTaxonomyLinks || []));
     state.goals = goals.map(normalizeGoal);
     state.ideas = ideas.map(normalizeIdea);
+    if (events) state.events = events;
     if (projects) state.projects = projects;
     if (goalLinks) {
       state.goalLinks = goalLinks;
@@ -2333,6 +2434,82 @@ async function persistTask(task) {
     state.syncMessage = "";
     render();
     console.error("Supabase save failed", error);
+  }
+}
+
+async function persistEvent(event, options = {}) {
+  const normalized = normalizeEvent({ ...event, user_id: state.user?.id || null, updated_at: nowIso() });
+  const index = state.events.findIndex((item) => item.id === normalized.id);
+  const previous = state.events;
+  state.events = index >= 0
+    ? state.events.map((item) => (item.id === normalized.id ? normalized : item))
+    : [normalized, ...state.events];
+  saveLocal({ silent: true });
+  if (!isSupabaseReady()) {
+    state.syncMessage = `Saved event locally at ${savedAtLabel()}.`;
+    if (options.render !== false) render();
+    return normalized;
+  }
+  if (!state.eventsCloudReady) {
+    state.events = previous;
+    saveLocal({ silent: true });
+    state.syncError = "Event was not saved to database: run migration 022_events.sql, then press Sync.";
+    state.syncMessage = "";
+    if (options.render !== false) render();
+    if (options.requireCloud !== false) throw new Error(state.syncError);
+    return null;
+  }
+  try {
+    const saved = await withSlowOperationNotice(
+      () => upsertRowDirect("planner_events", eventPayload(normalized), null, "event"),
+      8000,
+      "Event save is taking longer than usual. Still waiting for the database..."
+    );
+    const savedEvent = normalizeEvent(saved);
+    state.events = state.events.map((item) => (item.id === savedEvent.id ? savedEvent : item));
+    state.syncError = "";
+    state.syncMessage = `Saved event to database at ${savedAtLabel()}.`;
+    if (options.render !== false) render();
+    return savedEvent;
+  } catch (error) {
+    state.events = previous;
+    saveLocal({ silent: true });
+    state.syncError = `Event was not saved to database: ${error.message}`;
+    state.syncMessage = "";
+    if (options.render !== false) render();
+    if (options.requireCloud !== false) throw new Error(state.syncError);
+    return null;
+  }
+}
+
+async function deleteEvent(id) {
+  const event = state.events.find((item) => item.id === id);
+  if (!event) return;
+  if (!(await confirmAction(`Delete "${event.title}"? This cannot be undone.`))) return;
+  const previous = state.events;
+  state.events = state.events.filter((item) => item.id !== id);
+  saveLocal({ silent: true });
+  if (!isSupabaseReady()) {
+    state.syncMessage = `Deleted event locally at ${savedAtLabel()}.`;
+    render();
+    return;
+  }
+  try {
+    if (!state.eventsCloudReady) throw new Error("Events table is not ready. Run migration 022_events.sql.");
+    await withSlowOperationNotice(
+      () => deleteRowDirect("planner_events", id, null, "event"),
+      8000,
+      "Event delete is taking longer than usual. Still waiting for the database..."
+    );
+    state.syncError = "";
+    state.syncMessage = `Deleted event at ${savedAtLabel()}.`;
+    render();
+  } catch (error) {
+    state.events = previous;
+    saveLocal({ silent: true });
+    state.syncError = `Event was not deleted from database: ${error.message}`;
+    state.syncMessage = "";
+    render();
   }
 }
 
@@ -3367,7 +3544,7 @@ function renderCounts() {
   for (const task of state.tasks) bucketCounts[taskBucket(task)] += 1;
 
   counts.tasks.textContent = state.tasks.length;
-  counts.home.textContent = state.tasks.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
+  counts.home.textContent = state.tasks.length + state.events.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
   counts.today.textContent = bucketCounts.today;
   counts.upcoming.textContent = bucketCounts.upcoming;
   counts.backlog.textContent = bucketCounts.backlog;
@@ -3376,6 +3553,8 @@ function renderCounts() {
   counts.goalAssignments.textContent = state.tasks.filter((task) => !task.parent_id && task.status !== "done").length;
   counts.peopleProjects.textContent = state.projectAssignments.length;
   counts.tasksByTaxonomy.textContent = state.tasks.filter((task) => parseIds(task.taxonomy_node_ids).length).length;
+  counts.events.textContent = state.events.length;
+  counts.calendar.textContent = state.events.length;
   counts.projectTasks.textContent = state.tasks.filter((task) => task.project_id).length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
@@ -4136,6 +4315,10 @@ function renderTasks() {
     renderFocusedIdeaView();
     return;
   }
+  if (state.view === "focus-event") {
+    renderFocusedEventView();
+    return;
+  }
   if (state.view === "tasks") {
     renderTaskListView();
     return;
@@ -4234,6 +4417,14 @@ function renderTasks() {
   }
   if (state.view === "tasks-by-taxonomy") {
     renderTasksByTaxonomyView();
+    return;
+  }
+  if (state.view === "events") {
+    renderEventsView();
+    return;
+  }
+  if (state.view === "calendar") {
+    renderCalendarView();
     return;
   }
   if (state.view === "project-tasks") {
@@ -5391,6 +5582,209 @@ function renderProjectTasksView() {
   }
   const allVisible = groupsContainer.querySelectorAll(".project-task-item").length;
   els.taskList.querySelector(".project-tasks-count").textContent = `${allVisible} visible ${allVisible === 1 ? "task" : "tasks"}`;
+}
+
+function eventDateKey(value) {
+  const date = eventDateTime(value);
+  if (!date) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function localDateKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function eventSort(a, b) {
+  return (a.start_at || "9999").localeCompare(b.start_at || "9999") || a.title.localeCompare(b.title);
+}
+
+function eventsOverlap(first, second) {
+  const firstStart = eventDateTime(first.start_at)?.getTime();
+  const firstEnd = eventDateTime(first.end_at || first.start_at)?.getTime();
+  const secondStart = eventDateTime(second.start_at)?.getTime();
+  const secondEnd = eventDateTime(second.end_at || second.start_at)?.getTime();
+  if (![firstStart, firstEnd, secondStart, secondEnd].every(Number.isFinite)) return false;
+  return firstStart < secondEnd && secondStart < firstEnd;
+}
+
+function hasEventConflict(events) {
+  return events.some((event, index) => events.slice(index + 1).some((other) => eventsOverlap(event, other)));
+}
+
+function fillEventSelects(root, event = {}) {
+  const area = root.querySelector("[name='areaId']");
+  const project = root.querySelector("[name='projectId']");
+  if (area) fillAreaSelect(area, event.area_id || "", "No area");
+  if (project) fillProjectSelect(project, event.project_id || "", "No project");
+}
+
+function eventFormMarkup(event = {}) {
+  return `
+    <label class="field-label">Title
+      <input name="title" type="text" placeholder="Event title" required>
+    </label>
+    <label class="field-label">Start
+      <input name="startAt" type="datetime-local" required>
+    </label>
+    <label class="field-label">End
+      <input name="endAt" type="datetime-local" required>
+    </label>
+    <label class="field-label event-all-day-field">All day
+      <input name="allDay" type="checkbox">
+    </label>
+    <label class="field-label">Area
+      <select name="areaId"></select>
+    </label>
+    <label class="field-label">Project
+      <select name="projectId"></select>
+    </label>
+    <label class="field-label event-description-field">Notes
+      <input name="notes" type="text" placeholder="Notes">
+    </label>
+    <label class="field-label">Location
+      <input name="location" type="text" placeholder="Location">
+    </label>
+    <label class="field-label">Meeting link
+      <input name="meetingUrl" type="url" placeholder="https://...">
+    </label>
+    <label class="field-label">Status
+      <select name="status">
+        <option value="scheduled">Scheduled</option>
+        <option value="completed">Completed</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </label>
+  `;
+}
+
+function populateEventForm(form, event) {
+  form.querySelector("[name='title']").value = event.title || "";
+  form.querySelector("[name='startAt']").value = localDateTimeValue(event.start_at);
+  form.querySelector("[name='endAt']").value = localDateTimeValue(event.end_at || event.start_at);
+  form.querySelector("[name='allDay']").checked = Boolean(event.all_day);
+  form.querySelector("[name='notes']").value = event.notes || "";
+  form.querySelector("[name='location']").value = event.location || "";
+  form.querySelector("[name='meetingUrl']").value = event.meeting_url || "";
+  form.querySelector("[name='status']").value = event.status || "scheduled";
+  fillEventSelects(form, event);
+}
+
+function eventFromForm(form, existing = {}) {
+  const value = (name) => form.querySelector(`[name='${name}']`)?.value || "";
+  const start = value("startAt");
+  const end = value("endAt") || start;
+  const startDate = start ? new Date(start) : null;
+  const endDate = end ? new Date(end) : null;
+  const normalizedEnd = startDate && endDate && endDate < startDate ? start : end;
+  return normalizeEvent({
+    ...existing,
+    title: value("title").trim(),
+    start_at: startDate ? startDate.toISOString() : "",
+    end_at: normalizedEnd ? new Date(normalizedEnd).toISOString() : "",
+    all_day: Boolean(form.querySelector("[name='allDay']")?.checked),
+    notes: value("notes").trim(),
+    location: value("location").trim(),
+    meeting_url: value("meetingUrl").trim(),
+    area_id: value("areaId"),
+    project_id: value("projectId"),
+    status: value("status") || "scheduled"
+  });
+}
+
+function renderEventsView() {
+  els.taskList.innerHTML = `
+    <section class="creation-panel">
+      <div class="planning-section-head"><h4>Add new Event</h4></div>
+      <form id="event-form" class="planning-form event-form">${eventFormMarkup()}<button class="primary-button form-submit" type="submit">Add event</button></form>
+    </section>
+    <section class="directory-panel">
+      <div class="planning-section-head"><h4>Events</h4><span>${pluralCount(state.events.length, "event")}</span></div>
+      <div class="event-list"></div>
+    </section>
+  `;
+  const form = els.taskList.querySelector("#event-form");
+  fillEventSelects(form);
+  const now = new Date();
+  const start = new Date(now.getTime() + 60 * 60 * 1000);
+  start.setMinutes(0, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  form.querySelector("[name='startAt']").value = localDateTimeValue(start.toISOString());
+  form.querySelector("[name='endAt']").value = localDateTimeValue(end.toISOString());
+  const list = els.taskList.querySelector(".event-list");
+  for (const event of [...state.events].sort(eventSort)) {
+    const card = document.createElement("article");
+    card.className = `event-card ${event.status === "cancelled" ? "event-cancelled" : ""}`;
+    card.dataset.eventId = event.id;
+    card.innerHTML = `
+      <button class="event-title-button" type="button"><strong></strong><small></small></button>
+      <span class="event-location"></span>
+      <span class="event-project"></span>
+      <div class="event-actions"><button class="ghost-button event-open-button" type="button">Open</button><button class="danger-button event-delete-button" type="button">Delete</button></div>
+    `;
+    card.querySelector("strong").textContent = event.title;
+    card.querySelector("small").textContent = eventRangeLabel(event);
+    card.querySelector(".event-location").textContent = [event.location, projectNameForId(event.project_id)].filter(Boolean).join(" · ");
+    list.append(card);
+  }
+  if (!state.events.length) list.innerHTML = '<div class="empty-state">No events yet.</div>';
+}
+
+function renderFocusedEventView() {
+  const event = state.events.find((item) => item.id === state.focusedId);
+  if (!event) return renderFocusedEmpty("Event");
+  els.taskList.innerHTML = `
+    <section class="focus-editor event-focus-editor">
+      <div class="focus-editor-head"><button class="ghost-button focus-back-button" type="button">Back</button><span>Event</span></div>
+      <form class="focus-event-form" data-event-focus-id="${event.id}">${eventFormMarkup()}<div class="detail-actions"><button class="danger-button focus-delete-event-button" type="button">Delete</button></div></form>
+    </section>
+  `;
+  populateEventForm(els.taskList.querySelector(".focus-event-form"), event);
+}
+
+function calendarPeriodLabel(date, mode) {
+  return new Intl.DateTimeFormat(undefined, mode === "month" ? { month: "long", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function renderCalendarView() {
+  const mode = state.calendarMode;
+  const cursor = new Date(state.calendarCursor);
+  const start = mode === "month"
+    ? new Date(cursor.getFullYear(), cursor.getMonth(), 1 - new Date(cursor.getFullYear(), cursor.getMonth(), 1).getDay())
+    : new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - cursor.getDay());
+  const dayCount = mode === "month" ? 42 : 7;
+  const days = Array.from({ length: dayCount }, (_, index) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + index));
+  const today = localDateKey(new Date());
+  els.taskList.innerHTML = `
+    <section class="calendar-view">
+      <div class="calendar-toolbar"><button class="ghost-button calendar-nav" data-calendar-dir="-1" type="button">‹</button><button class="ghost-button calendar-today" type="button">Today</button><strong>${calendarPeriodLabel(cursor, mode)}</strong><button class="ghost-button calendar-nav" data-calendar-dir="1" type="button">›</button><div class="view-mode-toggle"><button type="button" data-calendar-mode="month" class="${mode === "month" ? "active" : ""}">Month</button><button type="button" data-calendar-mode="week" class="${mode === "week" ? "active" : ""}">Week</button></div></div>
+      <div class="calendar-weekdays">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => `<span>${day}</span>`).join("")}</div>
+      <div class="calendar-grid ${mode === "week" ? "calendar-week" : ""}"></div>
+    </section>
+  `;
+  const grid = els.taskList.querySelector(".calendar-grid");
+  for (const day of days) {
+    const key = localDateKey(day);
+    const cell = document.createElement("div");
+    cell.className = `calendar-day ${key === today ? "today" : ""} ${day.getMonth() !== cursor.getMonth() && mode === "month" ? "outside-month" : ""}`;
+    cell.innerHTML = `<strong>${day.getDate()}</strong><div class="calendar-events"></div>`;
+    const events = state.events.filter((event) => eventDateKey(event.start_at) === key).sort(eventSort);
+    for (const event of events) {
+      const chip = document.createElement("button");
+      const conflicts = events.some((other) => other.id !== event.id && eventsOverlap(event, other));
+      chip.className = `calendar-event ${conflicts ? "calendar-event-conflict" : ""} ${event.status === "cancelled" ? "event-cancelled" : ""}`;
+      chip.type = "button";
+      chip.dataset.eventId = event.id;
+      chip.title = eventRangeLabel(event);
+      chip.textContent = event.all_day ? event.title : `${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(eventDateTime(event.start_at))} ${event.title}`;
+      chip.style.borderLeftColor = areaColorFor({ area_id: event.area_id });
+      cell.querySelector(".calendar-events").append(chip);
+    }
+    if (hasEventConflict(events)) cell.classList.add("has-conflict");
+    grid.append(cell);
+  }
 }
 
 function renderTaxonomiesView() {
@@ -7350,7 +7744,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -7398,6 +7792,8 @@ function render() {
     timeline: "Timeline",
     "tasks-by-taxonomy": "Tasks by Taxonomy",
     "project-tasks": "Project Tasks",
+    events: "Events",
+    calendar: "Calendar",
     "focus-task": "Task",
     "focus-project": "Project",
     "focus-goal": "Goal",
@@ -7421,9 +7817,9 @@ function render() {
     people: "Humans associated with each project, and also tasks.",
     ideas: "In-progress thoughts and ideas Areas of Life."
   };
-  const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
+  const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -7617,6 +8013,45 @@ els.taskList.addEventListener("click", async (event) => {
   const projectTask = event.target.closest(".project-task-item");
   if (projectTask && !event.target.closest(".check")) {
     focusObject("task", projectTask.dataset.projectTaskId, "project-tasks");
+    return;
+  }
+  const eventDeleteButton = event.target.closest(".event-delete-button, .focus-delete-event-button");
+  if (eventDeleteButton) {
+    const card = eventDeleteButton.closest("[data-event-id]");
+    const id = card?.dataset.eventId || eventDeleteButton.closest("[data-event-focus-id]")?.dataset.eventFocusId;
+    if (id) deleteEvent(id).then(() => {
+      if (state.view === "focus-event" && !state.events.some((item) => item.id === id)) leaveFocusView();
+    });
+    return;
+  }
+  const eventOpenButton = event.target.closest(".event-open-button, .event-title-button, .calendar-event");
+  if (eventOpenButton) {
+    const card = eventOpenButton.closest("[data-event-id]");
+    const id = card?.dataset.eventId || eventOpenButton.dataset.eventId;
+    if (id) focusObject("event", id, state.view);
+    return;
+  }
+  const calendarNav = event.target.closest("[data-calendar-dir]");
+  if (calendarNav) {
+    const amount = Number(calendarNav.dataset.calendarDir) || 0;
+    state.calendarCursor = state.calendarMode === "month"
+      ? new Date(state.calendarCursor.getFullYear(), state.calendarCursor.getMonth() + amount, 1)
+      : new Date(state.calendarCursor.getFullYear(), state.calendarCursor.getMonth(), state.calendarCursor.getDate() + amount * 7);
+    renderTasks();
+    return;
+  }
+  const calendarToday = event.target.closest(".calendar-today");
+  if (calendarToday) {
+    const now = new Date();
+    state.calendarCursor = state.calendarMode === "month" ? new Date(now.getFullYear(), now.getMonth(), 1) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    renderTasks();
+    return;
+  }
+  const calendarMode = event.target.closest("[data-calendar-mode]");
+  if (calendarMode) {
+    state.calendarMode = calendarMode.dataset.calendarMode === "week" ? "week" : "month";
+    localStorage.setItem("calendar-mode", state.calendarMode);
+    renderTasks();
     return;
   }
   const downloadBackupButton = event.target.closest("#download-backup-button");
@@ -7975,11 +8410,22 @@ els.taskList.addEventListener("submit", async (event) => {
   const namedSettingsForm = event.target.closest("#named-settings-form");
   const taxonomyForm = event.target.closest("#taxonomy-form");
   const taskFocusForm = event.target.closest("[data-task-focus-id]");
+  const eventForm = event.target.closest("#event-form");
+  const eventFocusForm = event.target.closest("[data-event-focus-id]");
   const projectTaskQuickAdd = event.target.closest("[data-project-task-create-project-id]");
-  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taxonomyForm && !taskFocusForm && !projectTaskQuickAdd) return;
+  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taxonomyForm && !taskFocusForm && !projectTaskQuickAdd && !eventForm && !eventFocusForm) return;
   event.preventDefault();
   const form = new FormData(event.target);
-  if (projectTaskQuickAdd) {
+  if (eventForm || eventFocusForm) {
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving event...");
+    try {
+      const existing = eventFocusForm ? state.events.find((item) => item.id === eventFocusForm.dataset.eventFocusId) || {} : {};
+      await persistEvent(eventFromForm(event.target, existing), { requireCloud: true });
+    } finally {
+      setFormSaving(event.target, false);
+    }
+  } else if (projectTaskQuickAdd) {
     const title = form.get("title").trim();
     if (!title) return;
     setFormSaving(event.target, true);
@@ -8420,6 +8866,11 @@ function updateTaxonomyFromInput(input) {
 
 els.taskList.addEventListener("input", (event) => {
   if (event.target.closest(".taxonomy-add-select")) return;
+  const eventFocusForm = event.target.closest("[data-event-focus-id]");
+  if (eventFocusForm) {
+    queueFocusedEventAutosave(eventFocusForm);
+    return;
+  }
   const taskFocusForm = event.target.closest("[data-task-focus-id]");
   if (taskFocusForm) {
     queueFocusedTaskAutosave(taskFocusForm);
@@ -8471,6 +8922,11 @@ els.taskList.addEventListener("input", (event) => {
 
 els.taskList.addEventListener("change", (event) => {
   if (event.target.closest(".taxonomy-add-select")) return;
+  const eventFocusForm = event.target.closest("[data-event-focus-id]");
+  if (eventFocusForm) {
+    queueFocusedEventAutosave(eventFocusForm);
+    return;
+  }
   if (event.target.id === "restore-local-file") {
     restoreBackupFile(event.target.files?.[0], { toCloud: false });
     event.target.value = "";
@@ -8858,6 +9314,11 @@ function focusedTaskPayload(form) {
 function queueFocusedTaskAutosave(form) {
   if (!form?.dataset.taskFocusId || !form.querySelector("[name='title']").value.trim()) return;
   queueAutosave(`task:${form.dataset.taskFocusId}`, () => patchTask(form.dataset.taskFocusId, focusedTaskPayload(form), { render: false }));
+}
+
+function queueFocusedEventAutosave(form) {
+  if (!form?.dataset.eventFocusId || !form.querySelector("[name='title']").value.trim()) return;
+  queueAutosave(`event:${form.dataset.eventFocusId}`, () => persistEvent(eventFromForm(form, state.events.find((item) => item.id === form.dataset.eventFocusId) || {}), { render: false, requireCloud: true }));
 }
 
 function queueDetailAutosave(event) {
