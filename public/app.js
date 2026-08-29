@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.79";
+const APP_VERSION = "1.10.80";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -93,6 +93,9 @@ const state = {
   selectedAssignmentTaskId: "",
   selectedAssignmentPersonId: "",
   assignmentSelectedOnly: localStorage.getItem("assignment-selected-only") === "true",
+  projectTaskStatus: ["all", "open", "done"].includes(localStorage.getItem("project-task-status")) ? localStorage.getItem("project-task-status") : "open",
+  projectTaskHierarchy: localStorage.getItem("project-task-hierarchy") !== "false",
+  projectTaskFilter: localStorage.getItem("project-task-filter") || "",
   selectedId: null,
   focusedId: "",
   focusedReturnView: "home",
@@ -206,6 +209,7 @@ const counts = {
   goalAssignments: document.querySelector("#count-goal-assignments"),
   peopleProjects: document.querySelector("#count-people-projects"),
   tasksByTaxonomy: document.querySelector("#count-tasks-by-taxonomy"),
+  projectTasks: document.querySelector("#count-project-tasks"),
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
   peopleCharts: document.querySelector("#count-people-charts"),
@@ -464,6 +468,7 @@ function validView(view) {
     "graph",
     "timeline",
     "tasks-by-taxonomy",
+    "project-tasks",
     "areas",
     "skills",
     "age-categories",
@@ -3371,6 +3376,7 @@ function renderCounts() {
   counts.goalAssignments.textContent = state.tasks.filter((task) => !task.parent_id && task.status !== "done").length;
   counts.peopleProjects.textContent = state.projectAssignments.length;
   counts.tasksByTaxonomy.textContent = state.tasks.filter((task) => parseIds(task.taxonomy_node_ids).length).length;
+  counts.projectTasks.textContent = state.tasks.filter((task) => task.project_id).length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
   counts.peopleCharts.textContent = state.people.length;
@@ -4228,6 +4234,10 @@ function renderTasks() {
   }
   if (state.view === "tasks-by-taxonomy") {
     renderTasksByTaxonomyView();
+    return;
+  }
+  if (state.view === "project-tasks") {
+    renderProjectTasksView();
     return;
   }
 
@@ -5237,6 +5247,138 @@ function renderTasksByTaxonomyView() {
     view.append(card);
   }
   els.taskList.append(view);
+}
+
+function projectTaskMatches(task) {
+  if (state.projectTaskStatus === "open" && task.status === "done") return false;
+  if (state.projectTaskStatus === "done" && task.status !== "done") return false;
+  const search = state.search.trim().toLowerCase();
+  if (!search) return true;
+  return `${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")}`.toLowerCase().includes(search);
+}
+
+function makeProjectTaskRow(task, depth = 0) {
+  const row = document.createElement("div");
+  row.className = `task-item project-task-item ${task.status === "done" ? "done" : ""}`;
+  row.dataset.id = task.id;
+  row.dataset.projectTaskId = task.id;
+  row.draggable = true;
+  row.style.setProperty("--depth", state.projectTaskHierarchy ? depth : 0);
+  row.innerHTML = `
+    <div class="task-line">
+      <button class="check" type="button" aria-label="${task.status === "done" ? "Reopen task" : "Mark task done"}"></button>
+      <div class="project-task-copy">
+        <strong class="task-title-text"></strong>
+        <span class="project-task-meta"></span>
+      </div>
+      <button class="ghost-button task-focus-button" type="button">Open</button>
+    </div>
+  `;
+  row.querySelector(".task-title-text").textContent = task.title;
+  row.querySelector(".project-task-meta").textContent = [
+    areaNameFor(task),
+    formatDate(task.due_date),
+    task.priority
+  ].filter(Boolean).join(" · ");
+  row.style.borderLeftColor = areaColorFor(task);
+  return row;
+}
+
+function appendProjectTaskBranch(container, task, children, depth = 0) {
+  if (!projectTaskMatches(task)) return false;
+  const row = makeProjectTaskRow(task, depth);
+  container.append(row);
+  if (state.projectTaskHierarchy) {
+    for (const child of sortedSiblings(children.get(task.id) || [])) {
+      appendProjectTaskBranch(container, child, children, depth + 1);
+    }
+  }
+  return true;
+}
+
+function renderProjectTasksView() {
+  const children = childMap();
+  const groups = new Map();
+  for (const task of state.tasks) {
+    const key = task.project_id || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(task);
+  }
+  const projectOptions = sortedByName(state.projects);
+  const filteredProjects = state.projectTaskFilter
+    ? projectOptions.filter((project) => project.id === state.projectTaskFilter)
+    : projectOptions;
+  els.taskList.innerHTML = `
+    <div class="project-tasks-view">
+      <div class="project-tasks-toolbar">
+        <span class="project-tasks-count"></span>
+        <label class="compact-select-label">Project
+          <select name="projectTaskFilter" aria-label="Filter project tasks by project"></select>
+        </label>
+        <label class="compact-select-label">Status
+          <select name="projectTaskStatus" aria-label="Filter project tasks by status">
+            <option value="open">Open</option>
+            <option value="all">All</option>
+            <option value="done">Done</option>
+          </select>
+        </label>
+        <label class="toggle project-tasks-hierarchy-toggle">
+          <input name="projectTaskHierarchy" type="checkbox" ${state.projectTaskHierarchy ? "checked" : ""}>
+          <span>Show hierarchy</span>
+        </label>
+      </div>
+      <div class="project-tasks-groups"></div>
+    </div>
+  `;
+  const filter = els.taskList.querySelector("[name='projectTaskFilter']");
+  filter.innerHTML = '<option value="">All projects</option>';
+  for (const project of projectOptions) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name || "Untitled project";
+    filter.append(option);
+  }
+  filter.value = state.projectTaskFilter;
+  els.taskList.querySelector("[name='projectTaskStatus']").value = state.projectTaskStatus;
+  const groupsContainer = els.taskList.querySelector(".project-tasks-groups");
+  const selectedGroups = [
+    ...(state.projectTaskFilter ? filteredProjects : filteredProjects),
+    ...(state.projectTaskFilter ? [] : [{ id: "", name: "Unassigned" }])
+  ];
+  for (const project of selectedGroups) {
+    const tasks = groups.get(project.id) || [];
+    const roots = tasks.filter((task) => !task.parent_id || !tasks.some((item) => item.id === task.parent_id));
+    const section = document.createElement("section");
+    section.className = "project-task-group";
+    section.dataset.projectTaskProjectId = project.id;
+    if (project.id) applyProjectStatusTone(section, projectStatusName(project));
+    section.innerHTML = `
+      <div class="project-task-group-head">
+        <div>
+          <button class="project-task-group-title" type="button" data-project-id="${project.id}"></button>
+          <span class="project-task-group-count"></span>
+        </div>
+        <span class="project-task-drop-hint">Drop tasks here</span>
+      </div>
+      <div class="project-task-group-list"></div>
+    `;
+    const title = section.querySelector(".project-task-group-title");
+    title.textContent = project.name;
+    if (!project.id) title.disabled = true;
+    const list = section.querySelector(".project-task-group-list");
+    for (const root of sortedSiblings(roots)) {
+      appendProjectTaskBranch(list, root, children);
+    }
+    const visibleCount = list.querySelectorAll(".project-task-item").length;
+    section.querySelector(".project-task-group-count").textContent = `${visibleCount} ${visibleCount === 1 ? "task" : "tasks"}`;
+    if (!visibleCount) {
+      section.classList.add("empty-project-task-group");
+      list.innerHTML = `<p class="project-task-empty">${tasks.length ? "No tasks match this filter." : "No tasks assigned."}</p>`;
+    }
+    groupsContainer.append(section);
+  }
+  const allVisible = groupsContainer.querySelectorAll(".project-task-item").length;
+  els.taskList.querySelector(".project-tasks-count").textContent = `${allVisible} visible ${allVisible === 1 ? "task" : "tasks"}`;
 }
 
 function renderTaxonomiesView() {
@@ -7196,7 +7338,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -7243,6 +7385,7 @@ function render() {
     graph: "Task Graph",
     timeline: "Timeline",
     "tasks-by-taxonomy": "Tasks by Taxonomy",
+    "project-tasks": "Project Tasks",
     "focus-task": "Task",
     "focus-project": "Project",
     "focus-goal": "Goal",
@@ -7268,7 +7411,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -7392,6 +7535,13 @@ async function reorderTask(draggedId, targetId, placement) {
   await persistReorder(changed);
 }
 
+async function moveProjectTask(draggedId, projectId) {
+  if (!draggedId) return;
+  const task = state.tasks.find((item) => item.id === draggedId);
+  if (!task || (task.project_id || "") === projectId) return;
+  await patchTaskWithFeedback(draggedId, { project_id: projectId || null });
+}
+
 els.taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   setFormSaving(els.taskForm, true);
@@ -7445,6 +7595,16 @@ els.taskList.addEventListener("click", async (event) => {
   const homeTaskButton = event.target.closest("[data-home-task-id]");
   if (homeTaskButton) {
     focusObject("task", homeTaskButton.dataset.homeTaskId, state.view);
+    return;
+  }
+  const projectTaskGroupTitle = event.target.closest(".project-task-group-title");
+  if (projectTaskGroupTitle && projectTaskGroupTitle.dataset.projectId) {
+    focusObject("project", projectTaskGroupTitle.dataset.projectId, "project-tasks");
+    return;
+  }
+  const projectTask = event.target.closest(".project-task-item");
+  if (projectTask && !event.target.closest(".check")) {
+    focusObject("task", projectTask.dataset.projectTaskId, "project-tasks");
     return;
   }
   const downloadBackupButton = event.target.closest("#download-backup-button");
@@ -8311,6 +8471,27 @@ els.taskList.addEventListener("change", (event) => {
     scheduleAssignmentLines();
     return;
   }
+  const projectTaskFilter = event.target.closest("[name='projectTaskFilter']");
+  if (projectTaskFilter) {
+    state.projectTaskFilter = projectTaskFilter.value;
+    localStorage.setItem("project-task-filter", state.projectTaskFilter);
+    renderTasks();
+    return;
+  }
+  const projectTaskStatus = event.target.closest("[name='projectTaskStatus']");
+  if (projectTaskStatus) {
+    state.projectTaskStatus = projectTaskStatus.value;
+    localStorage.setItem("project-task-status", state.projectTaskStatus);
+    renderTasks();
+    return;
+  }
+  const projectTaskHierarchy = event.target.closest("[name='projectTaskHierarchy']");
+  if (projectTaskHierarchy) {
+    state.projectTaskHierarchy = projectTaskHierarchy.checked;
+    localStorage.setItem("project-task-hierarchy", String(state.projectTaskHierarchy));
+    renderTasks();
+    return;
+  }
   const assignmentPersonFilter = event.target.closest("[name='assignmentPersonFilter']");
   if (assignmentPersonFilter) {
     sessionStorage.setItem("people-project-person-filter", assignmentPersonFilter.value || "");
@@ -8474,6 +8655,12 @@ els.taskList.addEventListener("dragstart", (event) => {
 });
 
 els.taskList.addEventListener("dragover", (event) => {
+  const projectGroup = event.target.closest(".project-task-group");
+  if (projectGroup && state.view === "project-tasks") {
+    event.preventDefault();
+    projectGroup.classList.add("drag-over-project");
+    return;
+  }
   const item = event.target.closest(".task-item");
   if (!item || item.dataset.id === state.draggingId) return;
   event.preventDefault();
@@ -8484,12 +8671,21 @@ els.taskList.addEventListener("dragover", (event) => {
 });
 
 els.taskList.addEventListener("dragleave", (event) => {
+  const projectGroup = event.target.closest(".project-task-group");
+  projectGroup?.classList.remove("drag-over-project");
   const item = event.target.closest(".task-item");
   if (!item) return;
   item.classList.remove("drag-over-before", "drag-over-after");
 });
 
 els.taskList.addEventListener("drop", async (event) => {
+  const projectGroup = event.target.closest(".project-task-group");
+  if (projectGroup && state.view === "project-tasks") {
+    event.preventDefault();
+    projectGroup.classList.remove("drag-over-project");
+    await moveProjectTask(state.draggingId || event.dataTransfer.getData("text/plain"), projectGroup.dataset.projectTaskProjectId || "");
+    return;
+  }
   const item = event.target.closest(".task-item");
   if (!item) return;
   event.preventDefault();
@@ -8503,7 +8699,7 @@ els.taskList.addEventListener("drop", async (event) => {
 
 els.taskList.addEventListener("dragend", () => {
   state.draggingId = null;
-  document.querySelectorAll(".dragging, .drag-over-before, .drag-over-after").forEach((node) => {
+  document.querySelectorAll(".dragging, .drag-over-before, .drag-over-after, .drag-over-project").forEach((node) => {
     node.classList.remove("dragging", "drag-over-before", "drag-over-after");
   });
 });
