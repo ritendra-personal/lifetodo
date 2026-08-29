@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.95";
+const APP_VERSION = "1.10.96";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5715,6 +5715,14 @@ function renderCalendarTimeline() {
   const columnWidth = scale === "daily" ? 58 : scale === "weekly" ? 72 : scale === "biweekly" ? 86 : 108;
   const gridStyle = `grid-template-columns: repeat(${buckets.length}, ${columnWidth}px);`;
   const monthLabels = buckets.map((bucket) => `<span>${bucket.label}</span>`).join("");
+  const yearSegments = [];
+  buckets.forEach((bucket, index) => {
+    const year = bucket.start.getFullYear();
+    const previous = yearSegments.at(-1);
+    if (previous?.year === year) previous.to = index;
+    else yearSegments.push({ year, from: index, to: index });
+  });
+  const yearLabels = yearSegments.map((segment) => `<span style="grid-column:${segment.from + 1} / ${segment.to + 2}">${segment.year}</span>`).join("");
   const rows = [];
   const addRow = (kind, id, title, start, end = start) => {
     const startDate = calendarTimelineValueDate(start);
@@ -5741,12 +5749,19 @@ function renderCalendarTimeline() {
   const densityRow = density.map((count) => `<span class="calendar-density-cell" style="--density:${count / maxDensity}" title="${count} scheduled item${count === 1 ? "" : "s"}"></span>`).join("");
   const laneMarkup = ["project", "event", "task"].filter((kind) => state.calendarLayers[`${kind}s`]).map((kind) => {
     const laneRows = rows.filter((row) => row.kind === kind);
-    const bars = laneRows.map((row, index) => `<button type="button" class="calendar-timeline-${kind}" data-${kind}-id="${row.id}" style="left:${(row.from / buckets.length) * 100}%;width:${((row.to - row.from + 1) / buckets.length) * 100}%;top:${index % 2 ? 22 : 8}px" title="${row.title}">${row.title}</button>`).join("");
-    return `<div class="calendar-timeline-lane" style="width:${buckets.length * columnWidth}px"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
+    const levels = [];
+    for (const row of laneRows.sort((a, b) => a.from - b.from || a.to - b.to)) {
+      let level = levels.findIndex((lastTo) => lastTo < row.from);
+      if (level < 0) level = levels.length;
+      levels[level] = row.to;
+      row.level = level;
+    }
+    const bars = laneRows.map((row) => `<button type="button" class="calendar-timeline-${kind}" data-${kind}-id="${row.id}" style="left:${(row.from / buckets.length) * 100}%;width:${((row.to - row.from + 1) / buckets.length) * 100}%;top:${8 + row.level * 25}px" title="${row.title}">${row.title}</button>`).join("");
+    return `<div class="calendar-timeline-lane" style="width:${buckets.length * columnWidth}px;height:${Math.max(42, 16 + levels.length * 25)}px"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
   }).join("");
   const scales = ["year", "quarter", "month", "biweekly", "weekly", "daily"];
   const scaleIndex = scales.indexOf(scale);
-  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><div class="calendar-timeline-controls"><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="-1" type="button" ${scaleIndex === 0 ? "disabled" : ""}>-</button><span>${scale[0].toUpperCase() + scale.slice(1)}</span><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="1" type="button" ${scaleIndex === scales.length - 1 ? "disabled" : ""}>+</button><span>${buckets.length} ${scale === "year" ? "years" : scale === "quarter" ? "quarters" : scale === "month" ? "months" : "periods"}</span></div></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${laneMarkup}</div></div></section>`;
+  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><div class="calendar-timeline-controls"><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="-1" type="button" ${scaleIndex === 0 ? "disabled" : ""}>-</button><span>${scale[0].toUpperCase() + scale.slice(1)}</span><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="1" type="button" ${scaleIndex === scales.length - 1 ? "disabled" : ""}>+</button><span>${buckets.length} ${scale === "year" ? "years" : scale === "quarter" ? "quarters" : scale === "month" ? "months" : "periods"}</span></div></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-years" style="${gridStyle}">${yearLabels}</div><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${laneMarkup}</div></div></section>`;
 }
 
 function eventOccursOnDay(event, day) {

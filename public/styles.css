@@ -1908,6 +1908,22 @@ body.resizing .resize-handle::before {
   text-align: center;
 }
 
+.calendar-timeline-years {
+  display: grid;
+  min-width: max-content;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.calendar-timeline-years span {
+  padding: 7px 6px 4px;
+  border-right: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: left;
+}
+
 .calendar-density-row {
   height: 18px;
   border-bottom: 1px solid var(--line);
