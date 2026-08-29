@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.96";
+const APP_VERSION = "1.10.97";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5701,7 +5701,7 @@ function calendarTimelineBuckets(scale) {
     step = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
     label = (date) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
   }
-  while (cursor <= max && buckets.length < 240) {
+  while (cursor <= max && buckets.length < 5000) {
     const next = step(cursor);
     buckets.push({ start: new Date(cursor), end: new Date(next.getTime() - 1), label: label(cursor) });
     cursor = next;
