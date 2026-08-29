@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.83";
+const APP_VERSION = "1.10.84";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5670,9 +5670,22 @@ function eventFormMarkup(event = {}) {
 
 function populateEventForm(form, event) {
   form.querySelector("[name='title']").value = event.title || "";
-  form.querySelector("[name='startAt']").value = localDateTimeValue(event.start_at);
-  form.querySelector("[name='endAt']").value = localDateTimeValue(event.end_at || event.start_at);
   form.querySelector("[name='allDay']").checked = Boolean(event.all_day);
+  const startInput = form.querySelector("[name='startAt']");
+  const endInput = form.querySelector("[name='endAt']");
+  const startDate = eventDateTime(event.start_at);
+  const endDate = eventDateTime(event.end_at || event.start_at);
+  if (event.all_day) {
+    startInput.type = "date";
+    endInput.type = "date";
+    startInput.value = startDate ? localDateKey(startDate) : "";
+    endInput.value = endDate ? localDateKey(new Date(endDate.getTime() - 24 * 60 * 60 * 1000)) : "";
+  } else {
+    startInput.type = "datetime-local";
+    endInput.type = "datetime-local";
+    startInput.value = localDateTimeValue(event.start_at);
+    endInput.value = localDateTimeValue(event.end_at || event.start_at);
+  }
   syncEventAllDayInputs(form);
   form.querySelector("[name='notes']").value = event.notes || "";
   form.querySelector("[name='meetingUrl']").value = event.meeting_url || "";
@@ -5723,6 +5736,26 @@ function syncEventAllDayInputs(form) {
     }
   }
   form.classList.toggle("event-all-day", allDay);
+}
+
+function anchorEventEndToStart(form) {
+  const startInput = form.querySelector("[name='startAt']");
+  const endInput = form.querySelector("[name='endAt']");
+  if (!startInput?.value || !endInput) return;
+  if (allDayValue(form)) {
+    endInput.value = startInput.value;
+    return;
+  }
+  const start = new Date(startInput.value);
+  const end = endInput.value ? new Date(endInput.value) : null;
+  if (!end || Number.isNaN(end.getTime()) || end < start) {
+    const next = new Date(start.getTime() + 60 * 60 * 1000);
+    endInput.value = localDateTimeValue(next.toISOString());
+  }
+}
+
+function allDayValue(form) {
+  return Boolean(form.querySelector("[name='allDay']")?.checked);
 }
 
 function renderEventsView() {
@@ -8899,6 +8932,7 @@ els.taskList.addEventListener("input", (event) => {
   if (event.target.closest(".taxonomy-add-select")) return;
   const eventFocusForm = event.target.closest("[data-event-focus-id]");
   if (eventFocusForm) {
+    if (event.target.name === "startAt") anchorEventEndToStart(eventFocusForm);
     queueFocusedEventAutosave(eventFocusForm);
     return;
   }
@@ -8955,11 +8989,13 @@ els.taskList.addEventListener("change", (event) => {
   if (event.target.closest(".taxonomy-add-select")) return;
   const eventFocusForm = event.target.closest("[data-event-focus-id]");
   if (eventFocusForm) {
+    if (event.target.name === "startAt") anchorEventEndToStart(eventFocusForm);
     if (event.target.name === "allDay") syncEventAllDayInputs(eventFocusForm);
     queueFocusedEventAutosave(eventFocusForm);
     return;
   }
   const eventForm = event.target.closest("#event-form");
+  if (eventForm && event.target.name === "startAt") anchorEventEndToStart(eventForm);
   if (eventForm && event.target.name === "allDay") syncEventAllDayInputs(eventForm);
   if (event.target.id === "restore-local-file") {
     restoreBackupFile(event.target.files?.[0], { toCloud: false });
