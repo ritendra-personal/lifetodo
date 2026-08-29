@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.82";
+const APP_VERSION = "1.10.83";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -966,6 +966,7 @@ function normalizeEvent(event) {
     start_at: event.start_at || event.startAt || "",
     end_at: event.end_at || event.endAt || event.start_at || event.startAt || "",
     all_day: Boolean(event.all_day ?? event.allDay),
+    venue_id: event.venue_id || event.venueId || "",
     location: event.location || "",
     meeting_url: event.meeting_url || event.meetingUrl || "",
     area_id: event.area_id || event.areaId || "",
@@ -986,6 +987,7 @@ function eventPayload(event) {
     end_at: event.end_at || event.start_at || null,
     all_day: Boolean(event.all_day),
     location: event.location || "",
+    venue_id: event.venue_id || null,
     meeting_url: event.meeting_url || null,
     area_id: event.area_id || null,
     project_id: event.project_id || null,
@@ -4219,6 +4221,10 @@ function venueName(project) {
   return state.venues.find((venue) => venue.id === project.venue_id)?.name || "";
 }
 
+function venueNameForId(id) {
+  return state.venues.find((venue) => venue.id === id)?.name || "";
+}
+
 function renderTagFilters() {
   const tags = [...new Set(state.tasks.flatMap((task) => task.tags))].sort((a, b) => a.localeCompare(b));
   els.tagFilters.innerHTML = "";
@@ -5617,8 +5623,10 @@ function hasEventConflict(events) {
 function fillEventSelects(root, event = {}) {
   const area = root.querySelector("[name='areaId']");
   const project = root.querySelector("[name='projectId']");
+  const venue = root.querySelector("[name='venueId']");
   if (area) fillAreaSelect(area, event.area_id || "", "No area");
   if (project) fillProjectSelect(project, event.project_id || "", "No project");
+  if (venue) fillVenueSelect(venue, event.venue_id || "");
 }
 
 function eventFormMarkup(event = {}) {
@@ -5644,8 +5652,8 @@ function eventFormMarkup(event = {}) {
     <label class="field-label event-description-field">Notes
       <input name="notes" type="text" placeholder="Notes">
     </label>
-    <label class="field-label">Location
-      <input name="location" type="text" placeholder="Location">
+    <label class="field-label">Venue
+      <select name="venueId"></select>
     </label>
     <label class="field-label">Meeting link
       <input name="meetingUrl" type="url" placeholder="https://...">
@@ -5665,8 +5673,8 @@ function populateEventForm(form, event) {
   form.querySelector("[name='startAt']").value = localDateTimeValue(event.start_at);
   form.querySelector("[name='endAt']").value = localDateTimeValue(event.end_at || event.start_at);
   form.querySelector("[name='allDay']").checked = Boolean(event.all_day);
+  syncEventAllDayInputs(form);
   form.querySelector("[name='notes']").value = event.notes || "";
-  form.querySelector("[name='location']").value = event.location || "";
   form.querySelector("[name='meetingUrl']").value = event.meeting_url || "";
   form.querySelector("[name='status']").value = event.status || "scheduled";
   fillEventSelects(form, event);
@@ -5674,24 +5682,47 @@ function populateEventForm(form, event) {
 
 function eventFromForm(form, existing = {}) {
   const value = (name) => form.querySelector(`[name='${name}']`)?.value || "";
+  const allDay = Boolean(form.querySelector("[name='allDay']")?.checked);
   const start = value("startAt");
   const end = value("endAt") || start;
-  const startDate = start ? new Date(start) : null;
-  const endDate = end ? new Date(end) : null;
+  const startDate = start ? new Date(allDay ? `${start}T00:00` : start) : null;
+  const endDate = end ? new Date(allDay ? `${end}T00:00` : end) : null;
   const normalizedEnd = startDate && endDate && endDate < startDate ? start : end;
+  const allDayEnd = allDay && endDate ? new Date(endDate) : null;
+  if (allDayEnd) {
+    if (startDate && allDayEnd < startDate) allDayEnd.setTime(startDate.getTime());
+    allDayEnd.setDate(allDayEnd.getDate() + 1);
+  }
   return normalizeEvent({
     ...existing,
     title: value("title").trim(),
     start_at: startDate ? startDate.toISOString() : "",
-    end_at: normalizedEnd ? new Date(normalizedEnd).toISOString() : "",
-    all_day: Boolean(form.querySelector("[name='allDay']")?.checked),
+    end_at: allDayEnd ? allDayEnd.toISOString() : (normalizedEnd ? new Date(normalizedEnd).toISOString() : ""),
+    all_day: allDay,
     notes: value("notes").trim(),
-    location: value("location").trim(),
+    venue_id: value("venueId"),
+    location: existing.location || "",
     meeting_url: value("meetingUrl").trim(),
     area_id: value("areaId"),
     project_id: value("projectId"),
     status: value("status") || "scheduled"
   });
+}
+
+function syncEventAllDayInputs(form) {
+  const allDay = Boolean(form.querySelector("[name='allDay']")?.checked);
+  for (const name of ["startAt", "endAt"]) {
+    const input = form.querySelector(`[name='${name}']`);
+    if (!input) continue;
+    if (allDay && input.type !== "date") {
+      input.value = input.value ? input.value.slice(0, 10) : "";
+      input.type = "date";
+    } else if (!allDay && input.type !== "datetime-local") {
+      input.value = input.value ? `${input.value}T00:00` : "";
+      input.type = "datetime-local";
+    }
+  }
+  form.classList.toggle("event-all-day", allDay);
 }
 
 function renderEventsView() {
@@ -5726,7 +5757,7 @@ function renderEventsView() {
     `;
     card.querySelector("strong").textContent = event.title;
     card.querySelector("small").textContent = eventRangeLabel(event);
-    card.querySelector(".event-location").textContent = [event.location, projectNameForId(event.project_id)].filter(Boolean).join(" · ");
+    card.querySelector(".event-location").textContent = [venueNameForId(event.venue_id) || event.location, projectNameForId(event.project_id)].filter(Boolean).join(" · ");
     list.append(card);
   }
   if (!state.events.length) list.innerHTML = '<div class="empty-state">No events yet.</div>';
@@ -8924,9 +8955,12 @@ els.taskList.addEventListener("change", (event) => {
   if (event.target.closest(".taxonomy-add-select")) return;
   const eventFocusForm = event.target.closest("[data-event-focus-id]");
   if (eventFocusForm) {
+    if (event.target.name === "allDay") syncEventAllDayInputs(eventFocusForm);
     queueFocusedEventAutosave(eventFocusForm);
     return;
   }
+  const eventForm = event.target.closest("#event-form");
+  if (eventForm && event.target.name === "allDay") syncEventAllDayInputs(eventForm);
   if (event.target.id === "restore-local-file") {
     restoreBackupFile(event.target.files?.[0], { toCloud: false });
     event.target.value = "";

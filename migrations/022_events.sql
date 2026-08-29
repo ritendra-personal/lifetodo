@@ -10,6 +10,7 @@ create table if not exists planner_events (
   meeting_url text,
   area_id uuid references planner_areas(id) on delete set null,
   project_id uuid references planner_projects(id) on delete set null,
+  venue_id uuid references planner_venues(id) on delete set null,
   status text not null default 'scheduled',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
