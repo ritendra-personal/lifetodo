@@ -1837,6 +1837,126 @@ body.resizing .resize-handle::before {
   outline: 1px dashed #d85c4b;
 }
 
+.calendar-timeline {
+  margin-top: var(--section-gap);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.calendar-timeline-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--ui-gap);
+  padding: var(--task-list-pad);
+  border-bottom: 1px solid var(--line);
+}
+
+.calendar-timeline-head h3,
+.calendar-timeline-head p {
+  margin: 0;
+}
+
+.calendar-timeline-head p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.calendar-timeline-head > span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.calendar-timeline-scroll {
+  overflow-x: auto;
+  padding: 0 var(--task-list-pad) var(--task-list-pad);
+}
+
+.calendar-timeline-months,
+.calendar-density-row,
+.calendar-timeline-lane {
+  display: grid;
+  min-width: max-content;
+}
+
+.calendar-timeline-months span {
+  padding: 9px 6px 5px;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.calendar-density-row {
+  height: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.calendar-density-cell {
+  margin: 3px 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--teal) calc(18% + var(--density) * 65%), #edf3f4);
+}
+
+.calendar-timeline-lane {
+  position: relative;
+  grid-auto-rows: 30px;
+  align-items: center;
+  border-bottom: 1px solid #eef1f4;
+  background-image: linear-gradient(to right, transparent calc(100% - 1px), #eef1f4 calc(100% - 1px));
+  background-size: 84px 100%;
+}
+
+.calendar-timeline-label {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  z-index: 0;
+  padding-left: 5px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+
+.calendar-timeline-lane button {
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  margin: 3px 4px;
+  border: 0;
+  border-left: 4px solid var(--teal);
+  border-radius: 4px;
+  padding: 3px 6px;
+  background: #eaf4f3;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-timeline-lane button:hover {
+  background: var(--hover-surface);
+  box-shadow: var(--hover-shadow);
+}
+
+.calendar-timeline-event {
+  border-left-color: #5c8fc8 !important;
+  background: #eef4fb !important;
+}
+
+.calendar-timeline-task {
+  border-left-style: dotted !important;
+  background: #f7f8fa !important;
+}
+
 .project-task-drop-hint {
   opacity: 0;
   white-space: nowrap;

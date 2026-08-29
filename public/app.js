@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.88";
+const APP_VERSION = "1.10.89";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5635,6 +5635,58 @@ function eventOutsideProject(event, day) {
   return Boolean(project && !projectOccursOnDay(project, day));
 }
 
+function calendarMonthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function calendarMonthDate(value) {
+  const text = String(value || "");
+  const date = value instanceof Date ? value : new Date(text.includes("T") ? text : `${text}T00:00`);
+  return Number.isNaN(date.getTime()) ? null : new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function calendarTimelineMonthRange() {
+  const now = new Date();
+  const dates = [new Date(now.getFullYear(), now.getMonth(), 1)];
+  for (const project of state.projects) {
+    if (projectTimelineStart(project)) dates.push(calendarMonthDate(projectTimelineStart(project)), calendarMonthDate(projectTimelineEnd(project)));
+  }
+  for (const event of state.events) {
+    dates.push(calendarMonthDate(event.start_at), calendarMonthDate(event.end_at || event.start_at));
+  }
+  for (const task of state.tasks) if (task.due_date) dates.push(calendarMonthDate(task.due_date));
+  const validDates = dates.filter(Boolean).sort((a, b) => a - b);
+  const first = new Date(validDates[0].getFullYear(), validDates[0].getMonth() - 1, 1);
+  const last = new Date(validDates.at(-1).getFullYear(), validDates.at(-1).getMonth() + 2, 1);
+  const months = [];
+  for (const cursor = new Date(first); cursor < last && months.length < 48; cursor.setMonth(cursor.getMonth() + 1)) months.push(new Date(cursor));
+  return months;
+}
+
+function renderCalendarTimeline() {
+  const months = calendarTimelineMonthRange();
+  const monthIndex = new Map(months.map((month, index) => [calendarMonthKey(month), index]));
+  const gridStyle = `grid-template-columns: repeat(${months.length}, minmax(84px, 1fr));`;
+  const monthLabels = months.map((month) => `<span>${new Intl.DateTimeFormat(undefined, { month: "short", year: "2-digit" }).format(month)}</span>`).join("");
+  const rows = [];
+  const addRow = (kind, id, title, start, end = start) => {
+    const from = monthIndex.get(calendarMonthKey(calendarMonthDate(start)));
+    const to = monthIndex.get(calendarMonthKey(calendarMonthDate(end)));
+    if (from === undefined || to === undefined) return;
+    rows.push({ kind, id, title, from, to });
+  };
+  if (state.calendarLayers.projects) for (const project of state.projects) addRow("project", project.id, project.name, projectTimelineStart(project), projectTimelineEnd(project));
+  if (state.calendarLayers.events) for (const event of state.events) addRow("event", event.id, event.title, event.start_at, event.end_at || event.start_at);
+  if (state.calendarLayers.tasks) for (const task of state.tasks) if (task.due_date) addRow("task", task.id, task.title, task.due_date);
+  const density = months.map((month) => {
+    const key = calendarMonthKey(month);
+    return rows.filter((row) => row.from <= monthIndex.get(key) && row.to >= monthIndex.get(key)).length;
+  });
+  const maxDensity = Math.max(1, ...density);
+  const densityRow = density.map((count) => `<span class="calendar-density-cell" style="--density:${count / maxDensity}" title="${count} scheduled item${count === 1 ? "" : "s"}"></span>`).join("");
+  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><span>${months.length} months</span></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${rows.map((row) => `<div class="calendar-timeline-lane" style="${gridStyle}"><span class="calendar-timeline-label">${row.kind}</span><button type="button" class="calendar-timeline-${row.kind}" data-${row.kind}-id="${row.id}" style="grid-column:${row.from + 1} / ${row.to + 2}" title="${row.title}">${row.title}</button></div>`).join("")}</div></div></section>`;
+}
+
 function eventOccursOnDay(event, day) {
   const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
   const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
@@ -5940,6 +5992,7 @@ function renderCalendarView() {
     if (hasEventConflict(events)) cell.classList.add("has-conflict");
     grid.append(cell);
   }
+  els.taskList.insertAdjacentHTML("beforeend", renderCalendarTimeline());
 }
 
 function renderTaxonomiesView() {
@@ -8201,17 +8254,17 @@ els.taskList.addEventListener("click", async (event) => {
     renderTasks();
     return;
   }
-  const calendarProject = event.target.closest(".calendar-project");
+  const calendarProject = event.target.closest(".calendar-project, .calendar-timeline-project");
   if (calendarProject) {
     focusObject("project", calendarProject.dataset.projectId, "calendar");
     return;
   }
-  const calendarTask = event.target.closest(".calendar-task");
+  const calendarTask = event.target.closest(".calendar-task, .calendar-timeline-task");
   if (calendarTask) {
     focusObject("task", calendarTask.dataset.taskId, "calendar");
     return;
   }
-  const eventOpenButton = event.target.closest(".event-open-button, .event-title-button, .calendar-event");
+  const eventOpenButton = event.target.closest(".event-open-button, .event-title-button, .calendar-event, .calendar-timeline-event");
   if (eventOpenButton) {
     const card = eventOpenButton.closest("[data-event-id]");
     const id = card?.dataset.eventId || eventOpenButton.dataset.eventId;
