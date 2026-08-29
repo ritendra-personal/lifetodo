@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.87";
+const APP_VERSION = "1.10.88";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -98,6 +98,7 @@ const state = {
   projectTaskHierarchy: localStorage.getItem("project-task-hierarchy") !== "false",
   projectTaskFilter: localStorage.getItem("project-task-filter") || "",
   calendarMode: ["month", "week"].includes(localStorage.getItem("calendar-mode")) ? localStorage.getItem("calendar-mode") : "month",
+  calendarLayers: JSON.parse(localStorage.getItem("calendar-layers") || "null") || { projects: true, events: true, tasks: true },
   calendarCursor: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   selectedId: null,
   focusedId: "",
@@ -5620,6 +5621,20 @@ function hasEventConflict(events) {
   return events.some((event, index) => events.slice(index + 1).some((other) => eventsOverlap(event, other)));
 }
 
+function projectOccursOnDay(project, day) {
+  const start = projectTimelineStart(project);
+  const end = projectTimelineEnd(project);
+  if (!start || !end) return false;
+  const key = localDateKey(day);
+  return key >= start && key <= end;
+}
+
+function eventOutsideProject(event, day) {
+  if (!event.project_id) return false;
+  const project = state.projects.find((item) => item.id === event.project_id);
+  return Boolean(project && !projectOccursOnDay(project, day));
+}
+
 function eventOccursOnDay(event, day) {
   const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
   const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
@@ -5875,7 +5890,7 @@ function renderCalendarView() {
   const today = localDateKey(new Date());
   els.taskList.innerHTML = `
     <section class="calendar-view">
-      <div class="calendar-toolbar"><button class="ghost-button calendar-nav" data-calendar-dir="-1" type="button">‹</button><button class="ghost-button calendar-today" type="button">Today</button><strong>${calendarPeriodLabel(cursor, mode)}</strong><button class="ghost-button calendar-nav" data-calendar-dir="1" type="button">›</button><div class="view-mode-toggle"><button type="button" data-calendar-mode="month" class="${mode === "month" ? "active" : ""}">Month</button><button type="button" data-calendar-mode="week" class="${mode === "week" ? "active" : ""}">Week</button></div></div>
+      <div class="calendar-toolbar"><button class="ghost-button calendar-nav" data-calendar-dir="-1" type="button">‹</button><button class="ghost-button calendar-today" type="button">Today</button><strong>${calendarPeriodLabel(cursor, mode)}</strong><button class="ghost-button calendar-nav" data-calendar-dir="1" type="button">›</button><div class="view-mode-toggle"><button type="button" data-calendar-mode="month" class="${mode === "month" ? "active" : ""}">Month</button><button type="button" data-calendar-mode="week" class="${mode === "week" ? "active" : ""}">Week</button></div><div class="calendar-layers">${[["projects", "Projects"], ["events", "Events"], ["tasks", "Tasks"]].map(([layer, label]) => `<label><input type="checkbox" data-calendar-layer="${layer}" ${state.calendarLayers[layer] ? "checked" : ""}>${label}</label>`).join("")}<button type="button" data-calendar-layer="all">All</button></div></div>
       <div class="calendar-weekdays">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => `<span>${day}</span>`).join("")}</div>
       <div class="calendar-grid ${mode === "week" ? "calendar-week" : ""}"></div>
     </section>
@@ -5885,18 +5900,42 @@ function renderCalendarView() {
     const key = localDateKey(day);
     const cell = document.createElement("div");
     cell.className = `calendar-day ${key === today ? "today" : ""} ${day.getMonth() !== cursor.getMonth() && mode === "month" ? "outside-month" : ""}`;
-    cell.innerHTML = `<strong>${day.getDate()}</strong><div class="calendar-events"></div>`;
-    const events = state.events.filter((event) => eventOccursOnDay(event, day)).sort(eventSort);
+    cell.innerHTML = `<strong>${day.getDate()}</strong><div class="calendar-projects"></div><div class="calendar-events"></div><div class="calendar-tasks"></div>`;
+    const projects = state.calendarLayers.projects ? state.projects.filter((project) => projectOccursOnDay(project, day)).sort((a, b) => a.name.localeCompare(b.name)) : [];
+    for (const project of projects) {
+      const chip = document.createElement("button");
+      chip.className = "calendar-project";
+      chip.type = "button";
+      chip.dataset.projectId = project.id;
+      chip.title = `${project.name}: ${formatDate(projectTimelineStart(project))} - ${formatDate(projectTimelineEnd(project))}`;
+      chip.textContent = project.name;
+      applyProjectStatusTone(chip, projectStatusName(project));
+      cell.querySelector(".calendar-projects").append(chip);
+    }
+    const events = state.calendarLayers.events ? state.events.filter((event) => eventOccursOnDay(event, day)).sort(eventSort) : [];
     for (const event of events) {
       const chip = document.createElement("button");
       const conflicts = events.some((other) => other.id !== event.id && eventsOverlap(event, other));
-      chip.className = `calendar-event ${conflicts ? "calendar-event-conflict" : ""} ${event.status === "cancelled" ? "event-cancelled" : ""}`;
+      const outsideProject = eventOutsideProject(event, day);
+      chip.className = `calendar-event ${conflicts ? "calendar-event-conflict" : ""} ${outsideProject ? "calendar-event-outside-project" : ""} ${event.status === "cancelled" ? "event-cancelled" : ""}`;
       chip.type = "button";
       chip.dataset.eventId = event.id;
-      chip.title = eventRangeLabel(event);
+      chip.title = `${eventRangeLabel(event)}${outsideProject ? " · Outside linked project dates" : ""}`;
       chip.textContent = event.all_day ? event.title : `${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(eventDateTime(event.start_at))} ${event.title}`;
       chip.style.borderLeftColor = areaColorFor({ area_id: event.area_id });
       cell.querySelector(".calendar-events").append(chip);
+    }
+    if (state.calendarLayers.tasks) {
+      for (const task of state.tasks.filter((item) => item.due_date === key).sort((a, b) => a.title.localeCompare(b.title))) {
+        const chip = document.createElement("button");
+        chip.className = `calendar-task ${task.status === "done" ? "calendar-task-done" : ""}`;
+        chip.type = "button";
+        chip.dataset.taskId = task.id;
+        chip.title = task.title;
+        chip.textContent = task.title;
+        chip.style.borderLeftColor = areaColorFor(task);
+        cell.querySelector(".calendar-tasks").append(chip);
+      }
     }
     if (hasEventConflict(events)) cell.classList.add("has-conflict");
     grid.append(cell);
@@ -8149,6 +8188,27 @@ els.taskList.addEventListener("click", async (event) => {
     if (id) deleteEvent(id).then(() => {
       if (state.view === "focus-event" && !state.events.some((item) => item.id === id)) leaveFocusView();
     });
+    return;
+  }
+  const calendarLayer = event.target.closest("[data-calendar-layer]");
+  if (calendarLayer) {
+    if (calendarLayer.dataset.calendarLayer === "all") {
+      state.calendarLayers = { projects: true, events: true, tasks: true };
+    } else {
+      state.calendarLayers[calendarLayer.dataset.calendarLayer] = calendarLayer.checked;
+    }
+    localStorage.setItem("calendar-layers", JSON.stringify(state.calendarLayers));
+    renderTasks();
+    return;
+  }
+  const calendarProject = event.target.closest(".calendar-project");
+  if (calendarProject) {
+    focusObject("project", calendarProject.dataset.projectId, "calendar");
+    return;
+  }
+  const calendarTask = event.target.closest(".calendar-task");
+  if (calendarTask) {
+    focusObject("task", calendarTask.dataset.taskId, "calendar");
     return;
   }
   const eventOpenButton = event.target.closest(".event-open-button, .event-title-button, .calendar-event");

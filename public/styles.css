@@ -1663,6 +1663,32 @@ body.resizing .resize-handle::before {
   margin-left: var(--ui-gap);
 }
 
+.calendar-layers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: var(--ui-gap);
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.calendar-layers label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.calendar-layers button {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 7px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: inherit;
+}
+
 .calendar-nav {
   width: 34px;
   padding: 0;
@@ -1738,6 +1764,48 @@ body.resizing .resize-handle::before {
   gap: 4px;
 }
 
+.calendar-projects,
+.calendar-tasks {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.calendar-project,
+.calendar-task {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-left: 4px solid var(--teal);
+  border-radius: 3px;
+  padding: 3px 5px;
+  background: #eef2f5;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-project:hover,
+.calendar-task:hover {
+  background: var(--hover-surface);
+  box-shadow: var(--hover-shadow);
+}
+
+.calendar-task {
+  border-left-style: dotted;
+  background: #f8fafc;
+  font-weight: 650;
+}
+
+.calendar-task-done {
+  opacity: 0.42;
+  text-decoration: line-through;
+}
+
 .calendar-event {
   min-width: 0;
   overflow: hidden;
@@ -1763,6 +1831,10 @@ body.resizing .resize-handle::before {
 
 .calendar-event-conflict {
   box-shadow: inset 3px 0 0 #d85c4b;
+}
+
+.calendar-event-outside-project {
+  outline: 1px dashed #d85c4b;
 }
 
 .project-task-drop-hint {
@@ -4364,6 +4436,12 @@ dialog::backdrop {
 
   .calendar-toolbar {
     flex-wrap: wrap;
+  }
+
+  .calendar-layers {
+    flex-basis: 100%;
+    justify-content: center;
+    margin-left: 0;
   }
 
   .calendar-toolbar strong {
