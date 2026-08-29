@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.93";
+const APP_VERSION = "1.10.94";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -100,6 +100,7 @@ const state = {
   calendarMode: ["month", "week"].includes(localStorage.getItem("calendar-mode")) ? localStorage.getItem("calendar-mode") : "month",
   calendarLayers: JSON.parse(localStorage.getItem("calendar-layers") || "null") || { projects: true, events: true, tasks: true },
   calendarTimelineZoom: Number(localStorage.getItem("calendar-timeline-zoom") || 84),
+  calendarTimelineScale: ["year", "quarter", "month", "biweekly", "weekly", "daily"].includes(localStorage.getItem("calendar-timeline-scale")) ? localStorage.getItem("calendar-timeline-scale") : "month",
   calendarCursor: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   selectedId: null,
   focusedId: "",
@@ -5662,28 +5663,79 @@ function calendarTimelineMonthRange() {
   return months;
 }
 
+function calendarTimelineValueDate(value) {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : new Date(value);
+  const text = String(value || "");
+  const date = new Date(text.includes("T") ? text : `${text}T00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function calendarTimelineBuckets(scale) {
+  const dates = [new Date()];
+  for (const project of state.projects) dates.push(calendarTimelineValueDate(projectTimelineStart(project)), calendarTimelineValueDate(projectTimelineEnd(project)));
+  for (const event of state.events) dates.push(calendarTimelineValueDate(event.start_at), calendarTimelineValueDate(event.end_at || event.start_at));
+  for (const task of state.tasks) dates.push(calendarTimelineValueDate(task.due_date));
+  const valid = dates.filter(Boolean).sort((a, b) => a - b);
+  const min = valid[0];
+  const max = valid.at(-1);
+  const buckets = [];
+  let cursor;
+  let step;
+  let label;
+  if (scale === "year") {
+    cursor = new Date(min.getFullYear(), 0, 1);
+    step = (date) => new Date(date.getFullYear() + 1, 0, 1);
+    label = (date) => String(date.getFullYear());
+  } else if (scale === "quarter") {
+    cursor = new Date(min.getFullYear(), Math.floor(min.getMonth() / 3) * 3, 1);
+    step = (date) => new Date(date.getFullYear(), date.getMonth() + 3, 1);
+    label = (date) => `Q${Math.floor(date.getMonth() / 3) + 1} '${String(date.getFullYear()).slice(-2)}`;
+  } else if (scale === "month") {
+    cursor = new Date(min.getFullYear(), min.getMonth(), 1);
+    step = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 1);
+    label = (date) => new Intl.DateTimeFormat(undefined, { month: "short", year: "2-digit" }).format(date);
+  } else {
+    const days = scale === "daily" ? 1 : scale === "weekly" ? 7 : 14;
+    cursor = new Date(min.getFullYear(), min.getMonth(), min.getDate());
+    if (scale === "weekly") cursor.setDate(cursor.getDate() - cursor.getDay());
+    step = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+    label = (date) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+  }
+  while (cursor <= max && buckets.length < 240) {
+    const next = step(cursor);
+    buckets.push({ start: new Date(cursor), end: new Date(next.getTime() - 1), label: label(cursor) });
+    cursor = next;
+  }
+  return buckets;
+}
+
 function renderCalendarTimeline() {
-  const months = calendarTimelineMonthRange();
-  const monthIndex = new Map(months.map((month, index) => [calendarMonthKey(month), index]));
-  const columnWidth = Math.max(56, Math.min(260, state.calendarTimelineZoom || 84));
-  const gridStyle = `grid-template-columns: repeat(${months.length}, ${columnWidth}px);`;
-  const monthLabels = months.map((month) => `<span>${new Intl.DateTimeFormat(undefined, { month: "short", year: "2-digit" }).format(month)}</span>`).join("");
+  const scale = state.calendarTimelineScale || "month";
+  const buckets = calendarTimelineBuckets(scale);
+  const columnWidth = scale === "daily" ? 58 : scale === "weekly" ? 72 : scale === "biweekly" ? 86 : 108;
+  const gridStyle = `grid-template-columns: repeat(${buckets.length}, ${columnWidth}px);`;
+  const monthLabels = buckets.map((bucket) => `<span>${bucket.label}</span>`).join("");
   const rows = [];
   const addRow = (kind, id, title, start, end = start) => {
-    const startMonth = calendarMonthDate(start);
-    const endMonth = calendarMonthDate(end);
-    if (!startMonth || !endMonth) return;
-    const from = monthIndex.get(calendarMonthKey(startMonth));
-    const to = monthIndex.get(calendarMonthKey(endMonth));
-    if (from === undefined || to === undefined) return;
+    const startDate = calendarTimelineValueDate(start);
+    const endDate = calendarTimelineValueDate(end) || startDate;
+    if (!startDate || !endDate) return;
+    const from = buckets.findIndex((bucket) => bucket.end >= startDate);
+    let to = -1;
+    for (let index = buckets.length - 1; index >= 0; index -= 1) {
+      if (buckets[index].start <= endDate) {
+        to = index;
+        break;
+      }
+    }
+    if (from < 0 || to < 0 || to < from) return;
     rows.push({ kind, id, title, from, to });
   };
   if (state.calendarLayers.projects) for (const project of state.projects) addRow("project", project.id, project.name, projectTimelineStart(project), projectTimelineEnd(project));
   if (state.calendarLayers.events) for (const event of state.events) addRow("event", event.id, event.title, event.start_at, event.end_at || event.start_at);
   if (state.calendarLayers.tasks) for (const task of state.tasks) if (task.due_date) addRow("task", task.id, task.title, task.due_date);
-  const density = months.map((month) => {
-    const key = calendarMonthKey(month);
-    return rows.filter((row) => row.from <= monthIndex.get(key) && row.to >= monthIndex.get(key)).length;
+  const density = buckets.map((_, index) => {
+    return rows.filter((row) => row.from <= index && row.to >= index).length;
   });
   const maxDensity = Math.max(1, ...density);
   const densityRow = density.map((count) => `<span class="calendar-density-cell" style="--density:${count / maxDensity}" title="${count} scheduled item${count === 1 ? "" : "s"}"></span>`).join("");
@@ -5692,8 +5744,9 @@ function renderCalendarTimeline() {
     const bars = laneRows.map((row, index) => `<button type="button" class="calendar-timeline-${kind}" data-${kind}-id="${row.id}" style="left:${(row.from / months.length) * 100}%;width:${((row.to - row.from + 1) / months.length) * 100}%;top:${index % 2 ? 22 : 8}px" title="${row.title}">${row.title}</button>`).join("");
     return `<div class="calendar-timeline-lane" style="width:${months.length * columnWidth}px"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
   }).join("");
-  const zoomLabel = columnWidth <= 64 ? "Compact" : columnWidth <= 100 ? "Balanced" : columnWidth <= 160 ? "Detailed" : "Wide";
-  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><div class="calendar-timeline-controls"><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="-1" type="button" ${columnWidth <= 56 ? "disabled" : ""}>-</button><span>${zoomLabel}</span><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="1" type="button" ${columnWidth >= 260 ? "disabled" : ""}>+</button><span>${months.length} months</span></div></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${laneMarkup}</div></div></section>`;
+  const scales = ["year", "quarter", "month", "biweekly", "weekly", "daily"];
+  const scaleIndex = scales.indexOf(scale);
+  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><div class="calendar-timeline-controls"><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="-1" type="button" ${scaleIndex === 0 ? "disabled" : ""}>-</button><span>${scale[0].toUpperCase() + scale.slice(1)}</span><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="1" type="button" ${scaleIndex === scales.length - 1 ? "disabled" : ""}>+</button><span>${buckets.length} ${scale === "year" ? "years" : scale === "quarter" ? "quarters" : scale === "month" ? "months" : "periods"}</span></div></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${laneMarkup}</div></div></section>`;
 }
 
 function eventOccursOnDay(event, day) {
@@ -8305,11 +8358,11 @@ els.taskList.addEventListener("click", async (event) => {
   }
   const calendarTimelineZoom = event.target.closest("[data-calendar-timeline-zoom]");
   if (calendarTimelineZoom) {
-    const levels = [56, 72, 84, 112, 144, 180, 220, 260];
-    const current = levels.reduce((best, level, index) => Math.abs(level - state.calendarTimelineZoom) < Math.abs(levels[best] - state.calendarTimelineZoom) ? index : best, 0);
+    const levels = ["year", "quarter", "month", "biweekly", "weekly", "daily"];
+    const current = Math.max(0, levels.indexOf(state.calendarTimelineScale));
     const next = Math.max(0, Math.min(levels.length - 1, current + Number(calendarTimelineZoom.dataset.calendarTimelineZoom)));
-    state.calendarTimelineZoom = levels[next];
-    localStorage.setItem("calendar-timeline-zoom", String(state.calendarTimelineZoom));
+    state.calendarTimelineScale = levels[next];
+    localStorage.setItem("calendar-timeline-scale", state.calendarTimelineScale);
     renderTasks();
     return;
   }
