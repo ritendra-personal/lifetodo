@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.91";
+const APP_VERSION = "1.10.92";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5685,7 +5685,12 @@ function renderCalendarTimeline() {
   });
   const maxDensity = Math.max(1, ...density);
   const densityRow = density.map((count) => `<span class="calendar-density-cell" style="--density:${count / maxDensity}" title="${count} scheduled item${count === 1 ? "" : "s"}"></span>`).join("");
-  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><span>${months.length} months</span></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${rows.map((row) => `<div class="calendar-timeline-lane" style="${gridStyle}"><span class="calendar-timeline-label">${row.kind}</span><button type="button" class="calendar-timeline-${row.kind}" data-${row.kind}-id="${row.id}" style="grid-column:${row.from + 1} / ${row.to + 2}" title="${row.title}">${row.title}</button></div>`).join("")}</div></div></section>`;
+  const laneMarkup = ["project", "event", "task"].filter((kind) => state.calendarLayers[`${kind}s`]).map((kind) => {
+    const laneRows = rows.filter((row) => row.kind === kind);
+    const bars = laneRows.map((row, index) => `<button type="button" class="calendar-timeline-${kind}" data-${kind}-id="${row.id}" style="left:${(row.from / months.length) * 100}%;width:${((row.to - row.from + 1) / months.length) * 100}%;top:${index % 2 ? 22 : 8}px" title="${row.title}">${row.title}</button>`).join("");
+    return `<div class="calendar-timeline-lane"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
+  }).join("");
+  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><span>${months.length} months</span></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${laneMarkup}</div></div></section>`;
 }
 
 function eventOccursOnDay(event, day) {
