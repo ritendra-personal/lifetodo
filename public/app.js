@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.85";
+const APP_VERSION = "1.10.86";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -105,6 +105,7 @@ const state = {
   view: "home",
   taskFilter: ["today", "upcoming", "backlog", "done"].includes(localStorage.getItem("task-filter")) ? localStorage.getItem("task-filter") : "today",
   search: "",
+  searchReturnView: "home",
   tagFilter: "",
   sort: "manual",
   peopleSort: loadPeopleSort(),
@@ -492,7 +493,8 @@ function validView(view) {
     "focus-goal",
     "focus-person",
     "focus-idea",
-    "focus-event"
+    "focus-event",
+    "search"
   ]);
   if (["today", "upcoming", "backlog", "done"].includes(view)) return "tasks";
   return views.has(view) ? view : "home";
@@ -4225,6 +4227,14 @@ function venueNameForId(id) {
   return state.venues.find((venue) => venue.id === id)?.name || "";
 }
 
+function skillNameForId(id) {
+  return state.skills.find((skill) => skill.id === id)?.name || "";
+}
+
+function relationshipName(person) {
+  return relationshipNameForId(person.relationship_id);
+}
+
 function renderTagFilters() {
   const tags = [...new Set(state.tasks.flatMap((task) => task.tags))].sort((a, b) => a.localeCompare(b));
   els.tagFilters.innerHTML = "";
@@ -4323,6 +4333,10 @@ function renderTasks() {
   }
   if (state.view === "focus-event") {
     renderFocusedEventView();
+    return;
+  }
+  if (state.view === "search") {
+    renderSearchView();
     return;
   }
   if (state.view === "tasks") {
@@ -5804,6 +5818,48 @@ function renderEventsView() {
     list.append(card);
   }
   if (!state.events.length) list.innerHTML = '<div class="empty-state">No events yet.</div>';
+}
+
+function renderSearchView() {
+  const query = state.search.trim().toLowerCase();
+  const results = [];
+  const add = (type, id, title, meta, haystack, view = "") => {
+    if (haystack.toLowerCase().includes(query)) results.push({ type, id, title, meta, view });
+  };
+  for (const task of state.tasks) add("Task", task.id, task.title, [areaNameFor(task), projectNameForId(task.project_id)].filter(Boolean).join(" · "), `${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")} ${projectNameForId(task.project_id)}`);
+  for (const goal of state.goals) add("Goal", goal.id, goal.name, goal.description, `${goal.name} ${goal.description}`);
+  for (const project of state.projects) add("Project", project.id, project.name, [projectTypeName(project), projectStatusName(project), venueName(project)].filter(Boolean).join(" · "), `${project.name} ${project.description} ${projectTypeName(project)} ${projectStatusName(project)} ${venueName(project)}`);
+  for (const person of state.people) add("Person", person.id, personFullName(person), [person.skill_ids.map(skillNameForId).join(", "), relationshipNameForId(person.relationship_type_id)].filter(Boolean).join(" · "), `${personFullName(person)} ${person.skill_ids.map(skillNameForId).join(" ")} ${relationshipNameForId(person.relationship_type_id)}`);
+  for (const idea of state.ideas) add("Idea", idea.id, idea.text, areaNameFor(idea), `${idea.text} ${areaNameFor(idea)}`);
+  for (const event of state.events) add("Event", event.id, event.title, eventRangeLabel(event), `${event.title} ${event.notes} ${venueNameForId(event.venue_id)} ${event.location} ${projectNameForId(event.project_id)}`);
+  for (const area of state.areas) add("Area", area.id, area.name, "Settings", area.name, "areas");
+  for (const skill of state.skills) add("Skill", skill.id, skill.name, "Settings", skill.name, "skills");
+  for (const relationship of state.relationshipTypes) add("Relationship", relationship.id, relationship.name, "Settings", relationship.name, "relationships");
+  for (const role of state.roles) add("Role", role.id, role.name, "Settings", role.name, "roles");
+  for (const venue of state.venues) add("Venue", venue.id, venue.name, "Settings", venue.name, "venues");
+  for (const taxonomy of state.taxonomies) {
+    add("Taxonomy", taxonomy.id, taxonomy.name, "Annotations", taxonomy.name, "taxonomies");
+    for (const node of taxonomy.nodes) add("Taxonomy node", taxonomy.id, node.name, taxonomy.name, `${node.name} ${taxonomy.name}`, "taxonomies");
+  }
+  els.taskList.innerHTML = `<section class="directory-panel search-results-panel"><div class="planning-section-head"><h4>Search results</h4><span>${pluralCount(results.length, "result")}</span></div><div class="search-results"></div></section>`;
+  const container = els.taskList.querySelector(".search-results");
+  if (!results.length) {
+    container.innerHTML = `<div class="empty-state">No matches for “${query}”.</div>`;
+    return;
+  }
+  for (const result of results.sort((a, b) => a.title.localeCompare(b.title))) {
+    const button = document.createElement("button");
+    button.className = "search-result";
+    button.type = "button";
+    button.dataset.searchType = result.type;
+    button.dataset.searchId = result.id;
+    button.dataset.searchView = result.view;
+    button.innerHTML = "<strong></strong><span></span><small></small>";
+    button.querySelector("strong").textContent = result.title || "Untitled";
+    button.querySelector("span").textContent = result.type;
+    button.querySelector("small").textContent = result.meta || "";
+    container.append(button);
+  }
 }
 
 function renderFocusedEventView() {
@@ -7818,7 +7874,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -7868,6 +7924,7 @@ function render() {
     "project-tasks": "Project Tasks",
     events: "Events",
     calendar: "Calendar",
+    search: "Search",
     "focus-task": "Task",
     "focus-project": "Project",
     "focus-goal": "Goal",
@@ -7893,7 +7950,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -8064,6 +8121,18 @@ els.taskList.addEventListener("click", async (event) => {
     return;
   }
   if (event.target.closest(".connector-handle")) return;
+  const searchResult = event.target.closest(".search-result");
+  if (searchResult) {
+    const type = searchResult.dataset.searchType;
+    const id = searchResult.dataset.searchId;
+    const view = searchResult.dataset.searchView;
+    if (view) state.view = view;
+    else if (["Task", "Goal", "Project", "Person", "Idea", "Event"].includes(type)) {
+      focusObject(type.toLowerCase(), id, "search");
+    }
+    render();
+    return;
+  }
   const homeViewButton = event.target.closest("[data-home-view]");
   if (homeViewButton) {
     if (["today", "upcoming", "backlog", "done"].includes(homeViewButton.dataset.homeView)) {
@@ -9328,7 +9397,13 @@ els.taskFilterBar?.addEventListener("click", (event) => {
 
 els.search.addEventListener("input", () => {
   state.search = els.search.value;
-  renderTasks();
+  if (state.search.trim()) {
+    if (state.view !== "search") state.searchReturnView = state.view;
+    state.view = "search";
+  } else if (state.view === "search") {
+    state.view = validView(state.searchReturnView || "home");
+  }
+  render();
 });
 
 els.sort.addEventListener("change", () => {

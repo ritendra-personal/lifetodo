@@ -1577,6 +1577,44 @@ body.resizing .resize-handle::before {
   filter: grayscale(0.4);
 }
 
+.search-results {
+  display: grid;
+  gap: var(--task-list-gap);
+  padding: var(--task-list-pad);
+}
+
+.search-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(120px, 0.8fr);
+  align-items: center;
+  gap: var(--ui-gap);
+  width: 100%;
+  padding: var(--task-pad-y) var(--task-pad-x);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.search-result:hover {
+  border-color: var(--hover-line);
+  background: var(--hover-surface);
+  box-shadow: var(--hover-shadow);
+}
+
+.search-result span,
+.search-result small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.search-result small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .event-focus-editor {
   max-width: 920px;
   border: 1px solid var(--line);
@@ -4307,6 +4345,14 @@ dialog::backdrop {
   .event-card,
   .focus-event-form {
     grid-template-columns: 1fr;
+  }
+
+  .search-result {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .search-result small {
+    grid-column: 1 / -1;
   }
 
   .event-form .event-description-field,
