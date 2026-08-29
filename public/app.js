@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.90";
+const APP_VERSION = "1.10.91";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -225,7 +225,6 @@ const counts = {
   projectCharts: document.querySelector("#count-project-charts"),
   ideas: document.querySelector("#count-ideas"),
   graph: document.querySelector("#count-graph"),
-  timeline: document.querySelector("#count-timeline"),
   areas: document.querySelector("#count-areas"),
   skills: document.querySelector("#count-skills"),
   ageCategories: document.querySelector("#count-age-categories"),
@@ -3564,7 +3563,6 @@ function renderCounts() {
   counts.projectCharts.textContent = state.projects.length;
   counts.ideas.textContent = state.ideas.length;
   counts.graph.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
-  counts.timeline.textContent = state.tasks.filter((task) => task.status !== "done" || state.showDone).length;
   counts.areas.textContent = state.areas.length;
   counts.skills.textContent = state.skills.length;
   counts.ageCategories.textContent = state.ageCategories.length;
