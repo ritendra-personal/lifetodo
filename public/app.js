@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.84";
+const APP_VERSION = "1.10.85";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5620,6 +5620,16 @@ function hasEventConflict(events) {
   return events.some((event, index) => events.slice(index + 1).some((other) => eventsOverlap(event, other)));
 }
 
+function eventOccursOnDay(event, day) {
+  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
+  const start = eventDateTime(event.start_at);
+  const end = eventDateTime(event.end_at || event.start_at);
+  if (!start) return false;
+  if (!end || end <= start) return localDateKey(start) === localDateKey(dayStart);
+  return start < dayEnd && end > dayStart;
+}
+
 function fillEventSelects(root, event = {}) {
   const area = root.querySelector("[name='areaId']");
   const project = root.querySelector("[name='projectId']");
@@ -5834,7 +5844,7 @@ function renderCalendarView() {
     const cell = document.createElement("div");
     cell.className = `calendar-day ${key === today ? "today" : ""} ${day.getMonth() !== cursor.getMonth() && mode === "month" ? "outside-month" : ""}`;
     cell.innerHTML = `<strong>${day.getDate()}</strong><div class="calendar-events"></div>`;
-    const events = state.events.filter((event) => eventDateKey(event.start_at) === key).sort(eventSort);
+    const events = state.events.filter((event) => eventOccursOnDay(event, day)).sort(eventSort);
     for (const event of events) {
       const chip = document.createElement("button");
       const conflicts = events.some((other) => other.id !== event.id && eventsOverlap(event, other));
