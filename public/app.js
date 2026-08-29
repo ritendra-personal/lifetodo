@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.92";
+const APP_VERSION = "1.10.93";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -99,6 +99,7 @@ const state = {
   projectTaskFilter: localStorage.getItem("project-task-filter") || "",
   calendarMode: ["month", "week"].includes(localStorage.getItem("calendar-mode")) ? localStorage.getItem("calendar-mode") : "month",
   calendarLayers: JSON.parse(localStorage.getItem("calendar-layers") || "null") || { projects: true, events: true, tasks: true },
+  calendarTimelineZoom: Number(localStorage.getItem("calendar-timeline-zoom") || 84),
   calendarCursor: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   selectedId: null,
   focusedId: "",
@@ -5664,7 +5665,8 @@ function calendarTimelineMonthRange() {
 function renderCalendarTimeline() {
   const months = calendarTimelineMonthRange();
   const monthIndex = new Map(months.map((month, index) => [calendarMonthKey(month), index]));
-  const gridStyle = `grid-template-columns: repeat(${months.length}, minmax(84px, 1fr));`;
+  const columnWidth = Math.max(56, Math.min(260, state.calendarTimelineZoom || 84));
+  const gridStyle = `grid-template-columns: repeat(${months.length}, ${columnWidth}px);`;
   const monthLabels = months.map((month) => `<span>${new Intl.DateTimeFormat(undefined, { month: "short", year: "2-digit" }).format(month)}</span>`).join("");
   const rows = [];
   const addRow = (kind, id, title, start, end = start) => {
@@ -5688,9 +5690,10 @@ function renderCalendarTimeline() {
   const laneMarkup = ["project", "event", "task"].filter((kind) => state.calendarLayers[`${kind}s`]).map((kind) => {
     const laneRows = rows.filter((row) => row.kind === kind);
     const bars = laneRows.map((row, index) => `<button type="button" class="calendar-timeline-${kind}" data-${kind}-id="${row.id}" style="left:${(row.from / months.length) * 100}%;width:${((row.to - row.from + 1) / months.length) * 100}%;top:${index % 2 ? 22 : 8}px" title="${row.title}">${row.title}</button>`).join("");
-    return `<div class="calendar-timeline-lane"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
+    return `<div class="calendar-timeline-lane" style="width:${months.length * columnWidth}px"><span class="calendar-timeline-label">${kind}s</span>${bars}</div>`;
   }).join("");
-  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><span>${months.length} months</span></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${laneMarkup}</div></div></section>`;
+  const zoomLabel = columnWidth <= 64 ? "Compact" : columnWidth <= 100 ? "Balanced" : columnWidth <= 160 ? "Detailed" : "Wide";
+  return `<section class="calendar-timeline"><div class="calendar-timeline-head"><div><h3>Planning timeline</h3><p>Projects span time; events and tasks show where the schedule is occupied.</p></div><div class="calendar-timeline-controls"><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="-1" type="button" ${columnWidth <= 56 ? "disabled" : ""}>-</button><span>${zoomLabel}</span><button class="ghost-button calendar-timeline-zoom" data-calendar-timeline-zoom="1" type="button" ${columnWidth >= 260 ? "disabled" : ""}>+</button><span>${months.length} months</span></div></div><div class="calendar-timeline-scroll"><div class="calendar-timeline-months" style="${gridStyle}">${monthLabels}</div><div class="calendar-density-row" style="${gridStyle}">${densityRow}</div><div class="calendar-timeline-lanes">${laneMarkup}</div></div></section>`;
 }
 
 function eventOccursOnDay(event, day) {
@@ -8297,6 +8300,16 @@ els.taskList.addEventListener("click", async (event) => {
   if (calendarMode) {
     state.calendarMode = calendarMode.dataset.calendarMode === "week" ? "week" : "month";
     localStorage.setItem("calendar-mode", state.calendarMode);
+    renderTasks();
+    return;
+  }
+  const calendarTimelineZoom = event.target.closest("[data-calendar-timeline-zoom]");
+  if (calendarTimelineZoom) {
+    const levels = [56, 72, 84, 112, 144, 180, 220, 260];
+    const current = levels.reduce((best, level, index) => Math.abs(level - state.calendarTimelineZoom) < Math.abs(levels[best] - state.calendarTimelineZoom) ? index : best, 0);
+    const next = Math.max(0, Math.min(levels.length - 1, current + Number(calendarTimelineZoom.dataset.calendarTimelineZoom)));
+    state.calendarTimelineZoom = levels[next];
+    localStorage.setItem("calendar-timeline-zoom", String(state.calendarTimelineZoom));
     renderTasks();
     return;
   }

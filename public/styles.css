@@ -1636,8 +1636,8 @@ body.resizing .resize-handle::before {
 
 .calendar-view {
   display: grid;
-  grid-template-rows: auto auto minmax(520px, 1fr);
-  min-height: calc(100vh - 230px);
+  grid-template-rows: auto auto auto;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -1717,16 +1717,16 @@ body.resizing .resize-handle::before {
 
 .calendar-grid {
   min-height: 0;
-  grid-template-rows: repeat(6, minmax(92px, 1fr));
+  grid-template-rows: repeat(6, minmax(72px, 1fr));
 }
 
 .calendar-grid.calendar-week {
-  grid-template-rows: minmax(360px, 1fr);
+  grid-template-rows: minmax(250px, 1fr);
 }
 
 .calendar-day {
   min-width: 0;
-  min-height: 92px;
+  min-height: 72px;
   padding: 7px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -1870,6 +1870,21 @@ body.resizing .resize-handle::before {
   color: var(--muted);
   font-size: 0.78rem;
   white-space: nowrap;
+}
+
+.calendar-timeline-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.calendar-timeline-controls button {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
 }
 
 .calendar-timeline-scroll {
@@ -4568,6 +4583,11 @@ dialog::backdrop {
   .calendar-toolbar strong {
     order: -1;
     flex: 1 1 100%;
+  }
+
+  .calendar-timeline-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 }
 
