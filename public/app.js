@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.89";
+const APP_VERSION = "1.10.90";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5670,8 +5670,11 @@ function renderCalendarTimeline() {
   const monthLabels = months.map((month) => `<span>${new Intl.DateTimeFormat(undefined, { month: "short", year: "2-digit" }).format(month)}</span>`).join("");
   const rows = [];
   const addRow = (kind, id, title, start, end = start) => {
-    const from = monthIndex.get(calendarMonthKey(calendarMonthDate(start)));
-    const to = monthIndex.get(calendarMonthKey(calendarMonthDate(end)));
+    const startMonth = calendarMonthDate(start);
+    const endMonth = calendarMonthDate(end);
+    if (!startMonth || !endMonth) return;
+    const from = monthIndex.get(calendarMonthKey(startMonth));
+    const to = monthIndex.get(calendarMonthKey(endMonth));
     if (from === undefined || to === undefined) return;
     rows.push({ kind, id, title, from, to });
   };
@@ -8000,7 +8003,7 @@ function render() {
     "tasks-by-taxonomy": "Tasks by Taxonomy",
     "project-tasks": "Project Tasks",
     events: "Events",
-    calendar: "Calendar",
+    calendar: "Calendar + Timeline",
     search: "Search",
     "focus-task": "Task",
     "focus-project": "Project",
