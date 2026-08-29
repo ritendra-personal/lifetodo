@@ -1671,7 +1671,7 @@ body.resizing .resize-handle::before {
 }
 
 .focused-project-card {
-  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(140px, 0.55fr)) minmax(88px, 0.28fr);
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(120px, 0.5fr)) repeat(2, minmax(88px, 0.34fr));
   align-items: start;
 }
 
@@ -2010,7 +2010,7 @@ body.resizing .resize-handle::before {
 }
 
 .project-filter-bar {
-  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+  grid-template-columns: repeat(5, minmax(126px, 1fr)) auto;
 }
 
 .charts-view {
@@ -2240,7 +2240,7 @@ body.resizing .resize-handle::before {
 .project-filter-head,
 .project-filter-row {
   display: grid;
-  grid-template-columns: 34px minmax(120px, 0.72fr) 72px minmax(82px, 0.38fr) repeat(2, minmax(104px, 0.5fr)) 68px;
+  grid-template-columns: 34px minmax(116px, 0.72fr) 66px 74px minmax(82px, 0.38fr) repeat(2, minmax(96px, 0.46fr)) 68px;
   align-items: center;
   gap: var(--ui-gap);
 }
@@ -2250,21 +2250,21 @@ body.resizing .resize-handle::before {
   min-width: 0;
 }
 
-.project-filter-head > :nth-child(7),
-.project-filter-row > :nth-child(7) {
-  grid-column: 2 / 4;
-  grid-row: 2;
-}
-
 .project-filter-head > :nth-child(8),
 .project-filter-row > :nth-child(8) {
-  grid-column: 4 / -1;
+  grid-column: 2 / 4;
   grid-row: 2;
 }
 
 .project-filter-head > :nth-child(9),
 .project-filter-row > :nth-child(9) {
-  grid-column: 7;
+  grid-column: 4 / -1;
+  grid-row: 2;
+}
+
+.project-filter-head > :nth-child(10),
+.project-filter-row > :nth-child(10) {
+  grid-column: 8;
   grid-row: 1;
 }
 
@@ -2514,15 +2514,15 @@ body.resizing .resize-handle::before {
 }
 
 .project-form {
-  grid-template-columns: minmax(0, 1.2fr) minmax(84px, 0.45fr) repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.2fr) minmax(84px, 0.34fr) minmax(88px, 0.34fr) repeat(3, minmax(0, 1fr));
 }
 
-.project-form .field-label:nth-child(6) {
+.project-form .field-label:nth-child(7) {
   grid-column: 1 / 3;
 }
 
-.project-form .field-label:nth-child(7),
-.project-form .field-label:nth-child(8) {
+.project-form .field-label:nth-child(8),
+.project-form .field-label:nth-child(9) {
   grid-column: span 1;
 }
 
@@ -2539,7 +2539,7 @@ body.resizing .resize-handle::before {
 .project-card {
   border-left-width: 1px;
   border-top: 6px solid var(--project-status-color, #8a94a6);
-  grid-template-columns: 34px minmax(140px, 1fr) minmax(78px, 0.32fr) repeat(3, minmax(104px, 0.5fr)) minmax(106px, 0.44fr) minmax(118px, auto);
+  grid-template-columns: 34px minmax(140px, 1fr) minmax(72px, 0.28fr) minmax(74px, 0.28fr) repeat(3, minmax(96px, 0.44fr)) minmax(106px, 0.4fr) minmax(118px, auto);
   align-items: center;
   background: linear-gradient(180deg, var(--project-status-tint, rgba(138, 148, 166, 0.15)), #fff 48%);
 }
@@ -2553,7 +2553,7 @@ body.resizing .resize-handle::before {
 }
 
 .minimal-project-card {
-  grid-template-columns: 34px minmax(140px, 1fr) minmax(78px, 0.32fr) repeat(3, minmax(104px, 0.5fr)) minmax(106px, 0.44fr) minmax(118px, auto);
+  grid-template-columns: 34px minmax(140px, 1fr) minmax(72px, 0.28fr) minmax(74px, 0.28fr) repeat(3, minmax(96px, 0.44fr)) minmax(106px, 0.4fr) minmax(118px, auto);
 }
 
 .minimal-project-card .project-description-input {
@@ -3870,6 +3870,7 @@ dialog::backdrop {
   .project-form .field-label:nth-child(6),
   .project-form .field-label:nth-child(7),
   .project-form .field-label:nth-child(8),
+  .project-form .field-label:nth-child(9),
   .project-description-input,
   .project-date-pair,
   .project-taxonomy-field,

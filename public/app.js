@@ -1,12 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.78";
+const APP_VERSION = "1.10.79";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
 const densityLabels = { compact: "Compact", comfort: "Comfort", roomy: "Roomy" };
 const genderOptions = ["Male", "Female"];
 const raceOptions = ["Desi", "White", "Black", "Other"];
+const projectPriorityOptions = ["P0", "P1", "P2", "P3"];
 const timelineZoomLevels = [1.2, 2, 3.5, 6, 10, 18, 30, 42, 60, 84, 120];
 const autosaveTimers = new Map();
 let assignmentDrag = null;
@@ -102,7 +103,7 @@ const state = {
   sort: "manual",
   peopleSort: loadPeopleSort(),
   projectFilterSort: loadProjectFilterSort(),
-  projectSort: ["created", "name", "year", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "created",
+  projectSort: ["created", "name", "year", "priority", "startDate"].includes(localStorage.getItem("project-sort")) ? localStorage.getItem("project-sort") : "created",
   projectViewMode: localStorage.getItem("project-view-mode") === "minimal" ? "minimal" : "full",
   showDone: localStorage.getItem("show-done") === "true",
   density: densityOptions.includes(localStorage.getItem("planner-density")) ? localStorage.getItem("planner-density") : "comfort",
@@ -949,6 +950,16 @@ function normalizeProjectYear(value) {
   return String(year);
 }
 
+function normalizeProjectPriority(value) {
+  const raw = String(value ?? "").trim().toUpperCase();
+  return projectPriorityOptions.includes(raw) ? raw : "";
+}
+
+function projectPriorityRank(value) {
+  const index = projectPriorityOptions.indexOf(normalizeProjectPriority(value));
+  return index >= 0 ? index : projectPriorityOptions.length;
+}
+
 function normalizeProject(project) {
   const legacyDate = project.target_date || project.targetDate || "";
   return {
@@ -960,6 +971,7 @@ function normalizeProject(project) {
     project_status_id: project.project_status_id || project.projectStatusId || project.status_id || projectStatusIdForName(project.status),
     venue_id: project.venue_id || project.venueId || "",
     project_year: normalizeProjectYear(project.project_year || project.projectYear || project.year),
+    project_priority: normalizeProjectPriority(project.project_priority || project.projectPriority || project.priority),
     taxonomy_node_ids: parseIds(project.taxonomy_node_ids || project.taxonomyNodeIds),
     status: project.status || "",
     start_date: project.start_date || project.startDate || "",
@@ -1715,6 +1727,7 @@ function projectPayload(project) {
     project_status_id: project.project_status_id || null,
     venue_id: project.venue_id || null,
     project_year: project.project_year ? Number(project.project_year) : null,
+    project_priority: normalizeProjectPriority(project.project_priority) || null,
     status: project.status || "",
     start_date: project.start_date || null,
     end_date: project.end_date || null,
@@ -2550,6 +2563,7 @@ async function persistProject(project, options = {}) {
       project_status_id: normalized.project_status_id || null,
       status: projectStatusName(normalized),
       project_year: normalized.project_year ? Number(normalized.project_year) : null,
+      project_priority: normalizeProjectPriority(normalized.project_priority) || null,
       start_date: normalized.start_date || null,
       end_date: normalized.end_date || null,
       target_date: normalized.target_date || null,
@@ -2558,7 +2572,7 @@ async function persistProject(project, options = {}) {
     };
     const venueExists = normalized.venue_id && state.venues.some((venue) => venue.id === normalized.venue_id);
     payload.venue_id = venueExists ? normalized.venue_id : null;
-    let yearSaved = true;
+    let projectMetaSaved = true;
     let data;
     try {
       data = await withSlowOperationNotice(
@@ -2567,20 +2581,21 @@ async function persistProject(project, options = {}) {
         "Project save is taking longer than usual. Still waiting for the database..."
       );
     } catch (error) {
-      if (!/project_year|schema cache|column/i.test(error.message)) throw error;
-      yearSaved = false;
-      const { project_year, ...fallbackPayload } = payload;
+      if (!/project_year|project_priority|schema cache|column/i.test(error.message)) throw error;
+      projectMetaSaved = false;
+      const { project_year, project_priority, ...fallbackPayload } = payload;
       data = await upsertRowDirect("planner_projects", fallbackPayload, null, "project");
     }
     const saved = normalizeProject({ ...data, taxonomy_node_ids: normalized.taxonomy_node_ids });
-    if (!yearSaved) saved.project_year = normalized.project_year;
+    if (!projectMetaSaved) saved.project_year = normalized.project_year;
+    if (!projectMetaSaved) saved.project_priority = normalized.project_priority;
     if (options.syncTaxonomyLinks) {
       await syncProjectTaxonomyLinks(saved.id, saved.taxonomy_node_ids);
     }
     state.projects = state.projects.map((item) => (item.id === saved.id ? saved : item));
-    state.syncMessage = yearSaved
+    state.syncMessage = projectMetaSaved
       ? `Saved project to database at ${savedAtLabel()}.`
-      : `Saved project to database at ${savedAtLabel()}. Year is local until you run migration 016.`;
+      : `Saved project to database at ${savedAtLabel()}. Year/priority are local until you run migrations 016 and 021.`;
     state.syncError = "";
     if (options.render !== false) render();
     return { savedToCloud: true };
@@ -3537,6 +3552,17 @@ function fillProjectYearSelect(select, selected = "") {
   select.value = normalizeProjectYear(selected);
 }
 
+function fillProjectPrioritySelect(select, selected = "", emptyLabel = "No priority") {
+  select.innerHTML = `<option value="">${emptyLabel}</option>`;
+  for (const priority of projectPriorityOptions) {
+    const option = document.createElement("option");
+    option.value = priority;
+    option.textContent = priority;
+    select.append(option);
+  }
+  select.value = normalizeProjectPriority(selected);
+}
+
 function fillProjectTypeSelect(select, selected = "") {
   select.innerHTML = '<option value="">No type</option>';
   for (const type of sortedByName(state.projectTypes)) {
@@ -3816,6 +3842,7 @@ function isPrivatePeopleUnlocked() {
 
 function projectFilterSortValue(project, key) {
   if (key === "year") return project.project_year || "";
+  if (key === "priority") return projectPriorityRank(project.project_priority);
   if (key === "type") return projectTypeName(project) || "";
   if (key === "status") return projectStatusName(project) || "";
   if (key === "venue") return venueName(project) || "";
@@ -3825,11 +3852,13 @@ function projectFilterSortValue(project, key) {
 }
 
 function sortedProjectFilterProjects(projects) {
-  const allowedKeys = ["name", "year", "type", "status", "venue", "dates", "people"];
+  const allowedKeys = ["name", "year", "priority", "type", "status", "venue", "dates", "people"];
   const key = allowedKeys.includes(state.projectFilterSort.key) ? state.projectFilterSort.key : "name";
   const direction = state.projectFilterSort.direction === "desc" ? -1 : 1;
   return projects.slice().sort((a, b) => {
-    const primary = sortByLabel(projectFilterSortValue(a, key), projectFilterSortValue(b, key));
+    const primary = key === "priority"
+      ? projectFilterSortValue(a, key) - projectFilterSortValue(b, key)
+      : sortByLabel(projectFilterSortValue(a, key), projectFilterSortValue(b, key));
     if (primary) return primary * direction;
     return sortByLabel(a.name, b.name);
   });
@@ -3878,6 +3907,10 @@ function sortedProjects(projects) {
     if (state.projectSort === "year") {
       const yearCompare = (Number(a.project_year || 99999) - Number(b.project_year || 99999));
       if (yearCompare) return yearCompare;
+    }
+    if (state.projectSort === "priority") {
+      const priorityCompare = projectPriorityRank(a.project_priority) - projectPriorityRank(b.project_priority);
+      if (priorityCompare) return priorityCompare;
     }
     return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
   });
@@ -4618,6 +4651,7 @@ function renderFocusedProjectView() {
         <select name="projectStatusId" aria-label="Project status"></select>
         <select name="venueId" aria-label="Project venue"></select>
         <select name="projectYear" aria-label="Project year"></select>
+        <select name="projectPriority" aria-label="Project priority"></select>
         <input class="project-description-input" name="description" type="text" aria-label="Project description">
         <div class="project-date-pair">
           <label>
@@ -4655,6 +4689,7 @@ function renderFocusedProjectView() {
   fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
   fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
   fillProjectYearSelect(card.querySelector("[name='projectYear']"), project.project_year);
+  fillProjectPrioritySelect(card.querySelector("[name='projectPriority']"), project.project_priority);
   applyProjectCardStatusTone(card);
   card.querySelector("[name='description']").value = project.description;
   card.querySelector("[name='startDate']").value = project.start_date || "";
@@ -5558,12 +5593,13 @@ function filteredPeople(skillId, relationshipId, projectId = "", roleId = "", ge
   });
 }
 
-function filteredProjects(projectTypeId = "", projectStatusId = "", personId = "", venueId = "") {
+function filteredProjects(projectTypeId = "", projectStatusId = "", personId = "", venueId = "", projectPriority = "") {
   return state.projects.filter((project) => {
     if (projectTypeId && project.project_type_id !== projectTypeId) return false;
     if (projectStatusId && project.project_status_id !== projectStatusId) return false;
     if (personId && !state.projectAssignments.some((assignment) => assignment.project_id === project.id && assignment.person_id === personId)) return false;
     if (venueId && project.venue_id !== venueId) return false;
+    if (projectPriority && project.project_priority !== projectPriority) return false;
     return true;
   });
 }
@@ -5582,6 +5618,7 @@ function renderProjectFilterView() {
     <div class="people-filter-bar project-filter-bar">
       <select name="projectTypeFilter" aria-label="Filter by project type"></select>
       <select name="projectStatusFilter" aria-label="Filter by project status"></select>
+      <select name="projectPriorityFilter" aria-label="Filter by project priority"></select>
       <select name="projectVenueFilter" aria-label="Filter by venue"></select>
       <select name="projectPersonFilter" aria-label="Filter by project person"></select>
       <button class="ghost-button clear-project-filters" type="button">Clear filters</button>
@@ -5591,6 +5628,7 @@ function renderProjectFilterView() {
         <span>#</span>
         ${projectFilterSortHeader("name", "Name")}
         ${projectFilterSortHeader("year", "Year")}
+        ${projectFilterSortHeader("priority", "Priority")}
         ${projectFilterSortHeader("type", "Type")}
         ${projectFilterSortHeader("status", "Status")}
         ${projectFilterSortHeader("venue", "Venue")}
@@ -5603,6 +5641,7 @@ function renderProjectFilterView() {
   `;
   const typeSelect = els.taskList.querySelector("[name='projectTypeFilter']");
   const statusSelect = els.taskList.querySelector("[name='projectStatusFilter']");
+  const prioritySelect = els.taskList.querySelector("[name='projectPriorityFilter']");
   const venueSelect = els.taskList.querySelector("[name='projectVenueFilter']");
   const personSelect = els.taskList.querySelector("[name='projectPersonFilter']");
   typeSelect.innerHTML = '<option value="">All types</option>';
@@ -5619,6 +5658,7 @@ function renderProjectFilterView() {
     option.textContent = status.name;
     statusSelect.append(option);
   }
+  fillProjectPrioritySelect(prioritySelect, "", "All priorities");
   venueSelect.innerHTML = '<option value="">All venues</option>';
   for (const venue of sortedByName(state.venues)) {
     const option = document.createElement("option");
@@ -5635,13 +5675,15 @@ function renderProjectFilterView() {
   }
   const typeFilter = sessionStorage.getItem("project-type-filter") || "";
   const statusFilter = sessionStorage.getItem("project-status-filter") || "";
+  const priorityFilter = sessionStorage.getItem("project-priority-filter") || "";
   const venueFilter = sessionStorage.getItem("project-venue-filter") || "";
   const personFilter = sessionStorage.getItem("project-person-filter") || "";
   typeSelect.value = typeFilter;
   statusSelect.value = statusFilter;
+  prioritySelect.value = priorityFilter;
   venueSelect.value = venueFilter;
   personSelect.value = personFilter;
-  const projects = sortedProjectFilterProjects(filteredProjects(typeFilter, statusFilter, personFilter, venueFilter));
+  const projects = sortedProjectFilterProjects(filteredProjects(typeFilter, statusFilter, personFilter, venueFilter, priorityFilter));
   const list = els.taskList.querySelector(".project-filter-list");
   if (!projects.length) {
     const empty = document.createElement("div");
@@ -5664,15 +5706,17 @@ function renderProjectFilterView() {
       <span></span>
       <span></span>
       <span></span>
+      <span></span>
       <button class="ghost-button project-focus-button" type="button">Open</button>
     `;
     row.querySelector("strong").textContent = project.name;
     row.querySelectorAll("span")[0].textContent = project.project_year || "No year";
-    row.querySelectorAll("span")[1].textContent = projectTypeName(project) || "No type";
-    row.querySelectorAll("span")[2].textContent = projectStatusName(project) || "No status";
-    row.querySelectorAll("span")[3].textContent = venueName(project) || "No venue";
-    row.querySelectorAll("span")[4].textContent = [project.start_date || "No start", project.end_date || "No end"].join(" - ");
-    row.querySelectorAll("span")[5].textContent = projectPeopleNames(project).join(", ") || "No people";
+    row.querySelectorAll("span")[1].textContent = project.project_priority || "No priority";
+    row.querySelectorAll("span")[2].textContent = projectTypeName(project) || "No type";
+    row.querySelectorAll("span")[3].textContent = projectStatusName(project) || "No status";
+    row.querySelectorAll("span")[4].textContent = venueName(project) || "No venue";
+    row.querySelectorAll("span")[5].textContent = [project.start_date || "No start", project.end_date || "No end"].join(" - ");
+    row.querySelectorAll("span")[6].textContent = projectPeopleNames(project).join(", ") || "No people";
     list.append(row);
   }
 }
@@ -6021,6 +6065,9 @@ function renderProjectsView() {
         <label class="field-label">Year
           <select name="projectYear" aria-label="Project year"></select>
         </label>
+        <label class="field-label">Priority
+          <select name="projectPriority" aria-label="Project priority"></select>
+        </label>
         <label class="field-label">Type
           <select name="projectTypeId" aria-label="Project type"></select>
         </label>
@@ -6052,6 +6099,7 @@ function renderProjectsView() {
               <option value="created" ${state.projectSort === "created" ? "selected" : ""}>Created</option>
               <option value="name" ${state.projectSort === "name" ? "selected" : ""}>Name</option>
               <option value="year" ${state.projectSort === "year" ? "selected" : ""}>Year</option>
+              <option value="priority" ${state.projectSort === "priority" ? "selected" : ""}>Priority</option>
               <option value="startDate" ${state.projectSort === "startDate" ? "selected" : ""}>Start date</option>
             </select>
           </label>
@@ -6065,6 +6113,7 @@ function renderProjectsView() {
     </section>
   `;
   fillProjectYearSelect(els.taskList.querySelector("select[name='projectYear']"), "");
+  fillProjectPrioritySelect(els.taskList.querySelector("select[name='projectPriority']"), "");
   fillProjectTypeSelect(els.taskList.querySelector("select[name='projectTypeId']"), "");
   fillProjectStatusSelect(els.taskList.querySelector("select[name='projectStatusId']"), state.projectStatuses[0]?.id || "");
   fillVenueSelect(els.taskList.querySelector("select[name='venueId']"), "");
@@ -6092,6 +6141,7 @@ function renderProjectsView() {
         <div class="project-task-count"></div>
       </div>
       <select name="projectYear" aria-label="Project year"></select>
+      <select name="projectPriority" aria-label="Project priority"></select>
       <select name="projectTypeId" aria-label="Project type"></select>
       <select name="projectStatusId" aria-label="Project status"></select>
       <select name="venueId" aria-label="Project venue"></select>
@@ -6125,6 +6175,7 @@ function renderProjectsView() {
     `;
     card.querySelector("[name='name']").value = project.name;
     fillProjectYearSelect(card.querySelector("[name='projectYear']"), project.project_year);
+    fillProjectPrioritySelect(card.querySelector("[name='projectPriority']"), project.project_priority);
     fillProjectTypeSelect(card.querySelector("[name='projectTypeId']"), project.project_type_id);
     fillProjectStatusSelect(card.querySelector("[name='projectStatusId']"), project.project_status_id);
     fillVenueSelect(card.querySelector("[name='venueId']"), project.venue_id);
@@ -7124,7 +7175,7 @@ function makeTimelineProject(project, x, y, width) {
     <span class="timeline-project-meta"></span>
   `;
   node.querySelector(".timeline-project-title").textContent = project.name || "Untitled project";
-  node.querySelector(".timeline-project-meta").textContent = [project.project_year, type, status, `${formatDate(projectTimelineStart(project))} - ${formatDate(projectTimelineEnd(project))}`]
+  node.querySelector(".timeline-project-meta").textContent = [project.project_year, project.project_priority, type, status, `${formatDate(projectTimelineStart(project))} - ${formatDate(projectTimelineEnd(project))}`]
     .filter(Boolean)
     .join(" · ");
   return node;
@@ -7463,6 +7514,7 @@ els.taskList.addEventListener("click", async (event) => {
   if (clearProjectFiltersButton) {
     sessionStorage.removeItem("project-type-filter");
     sessionStorage.removeItem("project-status-filter");
+    sessionStorage.removeItem("project-priority-filter");
     sessionStorage.removeItem("project-venue-filter");
     sessionStorage.removeItem("project-person-filter");
     renderTasks();
@@ -7903,6 +7955,7 @@ els.taskList.addEventListener("submit", async (event) => {
         name,
         description: projectFormData.get("description").trim(),
         project_year: normalizeProjectYear(projectFormData.get("projectYear")),
+        project_priority: normalizeProjectPriority(projectFormData.get("projectPriority")),
         project_type_id: projectFormData.get("projectTypeId") || "",
         project_status_id: projectFormData.get("projectStatusId") || "",
         venue_id: projectFormData.get("venueId") || "",
@@ -8093,6 +8146,7 @@ function autosaveProjectCard(card) {
         name,
         description: card.querySelector("[name='description']").value.trim(),
         project_year: normalizeProjectYear(card.querySelector("[name='projectYear']").value),
+        project_priority: normalizeProjectPriority(card.querySelector("[name='projectPriority']").value),
         project_type_id: card.querySelector("[name='projectTypeId']").value || "",
         project_status_id: card.querySelector("[name='projectStatusId']").value || "",
         venue_id: card.querySelector("[name='venueId']").value || "",
@@ -8272,7 +8326,7 @@ els.taskList.addEventListener("change", (event) => {
   }
   const projectSort = event.target.closest("[name='projectSort']");
   if (projectSort) {
-    state.projectSort = ["created", "name", "year", "startDate"].includes(projectSort.value) ? projectSort.value : "created";
+    state.projectSort = ["created", "name", "year", "priority", "startDate"].includes(projectSort.value) ? projectSort.value : "created";
     localStorage.setItem("project-sort", state.projectSort);
     renderTasks();
     return;
@@ -8296,10 +8350,11 @@ els.taskList.addEventListener("change", (event) => {
     renderTasks();
     return;
   }
-  const projectFilter = event.target.closest("[name='projectTypeFilter'], [name='projectStatusFilter'], [name='projectVenueFilter'], [name='projectPersonFilter']");
+  const projectFilter = event.target.closest("[name='projectTypeFilter'], [name='projectStatusFilter'], [name='projectPriorityFilter'], [name='projectVenueFilter'], [name='projectPersonFilter']");
   if (projectFilter) {
     sessionStorage.setItem("project-type-filter", els.taskList.querySelector("[name='projectTypeFilter']")?.value || "");
     sessionStorage.setItem("project-status-filter", els.taskList.querySelector("[name='projectStatusFilter']")?.value || "");
+    sessionStorage.setItem("project-priority-filter", els.taskList.querySelector("[name='projectPriorityFilter']")?.value || "");
     sessionStorage.setItem("project-venue-filter", els.taskList.querySelector("[name='projectVenueFilter']")?.value || "");
     sessionStorage.setItem("project-person-filter", els.taskList.querySelector("[name='projectPersonFilter']")?.value || "");
     renderTasks();
