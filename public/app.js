@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.86";
+const APP_VERSION = "1.10.87";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -201,7 +201,6 @@ const detail = {
   area: document.querySelector("#detail-area"),
   priority: document.querySelector("#detail-priority"),
   due: document.querySelector("#detail-due"),
-  energy: document.querySelector("#detail-energy")
 };
 
 const counts = {
@@ -1200,7 +1199,6 @@ function normalizeTask(task) {
     priority: task.priority || "Medium",
     status: task.status || "active",
     due_date: task.due_date || task.dueDate || "",
-    energy: task.energy || "Medium",
     sort_order: Number.isFinite(order) ? order : 0,
     created_at: task.created_at || nowIso(),
     updated_at: task.updated_at || nowIso(),
@@ -1225,7 +1223,6 @@ function databasePayload(task) {
     area: task.area_id ? areaNameFor(task) : (task.area ?? ""),
     priority: task.priority,
     status: task.status,
-    energy: task.energy,
     sort_order: task.sort_order || 0,
     created_at: task.created_at,
     updated_at: task.updated_at,
@@ -2134,7 +2131,6 @@ function seedTasks() {
       area: "Life",
       priority: "High",
       due_date: today,
-      energy: "Low",
       sort_order: 1000
     }),
     normalizeTask({
@@ -2144,7 +2140,6 @@ function seedTasks() {
       area: "Work",
       priority: "Medium",
       due_date: tomorrow.toISOString().slice(0, 10),
-      energy: "Medium",
       sort_order: 2000
     })
   ];
@@ -4618,7 +4613,6 @@ async function createSubtaskAndFocus(parent, returnView = state.view) {
     priority: parent.priority,
     due_date: parent.due_date,
     tags: parent.tags,
-    energy: parent.energy,
     sort_order: nextSortOrder(parent.id)
   });
   await persistTask(task);
@@ -4684,13 +4678,6 @@ function renderFocusedTaskView() {
         <label class="field-label">Due
           <input name="dueDate" type="date">
         </label>
-        <label class="field-label">Energy
-          <select name="energy">
-            <option>Low</option>
-            <option>Medium</option>
-            <option>High</option>
-          </select>
-        </label>
         <label class="field-label">Tags
           <input name="tags" type="text" placeholder="comma separated tags">
         </label>
@@ -4717,7 +4704,6 @@ function renderFocusedTaskView() {
   fillAreaSelect(form.querySelector("[name='area']"), task.area_id || areaIdForName(task.area));
   form.querySelector("[name='priority']").value = task.priority;
   form.querySelector("[name='dueDate']").value = task.due_date || "";
-  form.querySelector("[name='energy']").value = task.energy;
   form.querySelector("[name='tags']").value = task.tags.join(", ");
   fillTaxonomyPicker(form.querySelector(".taxonomy-picker"), task.taxonomy_node_ids);
 }
@@ -7894,7 +7880,6 @@ function renderDetail() {
   detail.area.value = task.area_id || areaIdForName(task.area);
   detail.priority.value = task.priority;
   detail.due.value = task.due_date || "";
-  detail.energy.value = task.energy;
   els.completeButton.classList.toggle("reopen", task.status === "done");
   els.completeButton.innerHTML = `<span aria-hidden="true">${task.status === "done" ? "↺" : "✓"}</span>${task.status === "done" ? "Reopen task" : "Mark done"}`;
 }
@@ -8098,7 +8083,6 @@ els.taskForm.addEventListener("submit", async (event) => {
       priority: form.get("priority"),
       due_date: form.get("dueDate") || defaultDueDateForView(),
       tags: parseTags(form.get("tags")),
-      energy: "Medium",
       sort_order: nextSortOrder(form.get("parentId") || "")
     });
     state.selectedId = task.id;
@@ -8580,7 +8564,6 @@ els.taskList.addEventListener("submit", async (event) => {
         area_id: "",
         area: "",
         priority: "Medium",
-        energy: "Medium",
         sort_order: nextSortOrder("")
       }));
     } finally {
@@ -9441,7 +9424,6 @@ function detailPayload() {
     area: areaById(areaId)?.name || "",
     priority: detail.priority.value,
     due_date: detail.due.value || null,
-    energy: detail.energy.value
   };
 }
 
@@ -9462,7 +9444,6 @@ function focusedTaskPayload(form) {
     area: areaById(areaId)?.name || "",
     priority: form.querySelector("[name='priority']").value,
     due_date: form.querySelector("[name='dueDate']").value || null,
-    energy: form.querySelector("[name='energy']").value
   };
 }
 

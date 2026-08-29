@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Seven Lives</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?v=1.10.86">
+    <link rel="stylesheet" href="/styles.css?v=1.10.87">
   </head>
   <body>
     <div class="shell">
@@ -173,7 +173,7 @@
           <aside class="detail-pane" aria-label="Task details">
             <div id="empty-detail" class="empty-detail">
               <h3>Select a task</h3>
-              <p>Details, notes, energy, and status will appear here.</p>
+              <p>Details, notes, and status will appear here.</p>
             </div>
             <form id="detail-form" class="detail-form hidden">
               <div class="detail-form-head">
@@ -234,14 +234,6 @@
                   Due
                   <input id="detail-due" type="date">
                 </label>
-                <label>
-                  Energy
-                  <select id="detail-energy">
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                  </select>
-                </label>
               </div>
               <div class="detail-actions">
                 <button id="subtask-button" class="ghost-button" type="button">Add subtask</button>
@@ -281,6 +273,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=1.10.86" type="module"></script>
+    <script src="/app.js?v=1.10.87" type="module"></script>
   </body>
 </html>
