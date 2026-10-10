@@ -668,6 +668,39 @@ create unique index if not exists planner_phase_statuses_user_name_idx
 on planner_phase_statuses (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
 create index if not exists planner_phase_statuses_user_id_idx on planner_phase_statuses(user_id);
 create index if not exists planner_phase_statuses_sort_order_idx on planner_phase_statuses(sort_order);
+alter table public.planner_phase_statuses
+  drop constraint if exists planner_phase_statuses_fixed_names;
+alter table public.planner_phase_statuses
+  add constraint planner_phase_statuses_fixed_names
+  check (name in ('Not started', 'Blocked', 'Deprioritized', 'In progress', 'Completed', 'Not relevant')) not valid;
+
+create or replace function public.enforce_fixed_phase_status()
+returns trigger language plpgsql as $fixed$
+begin
+  if TG_OP = 'UPDATE' and NEW.name is distinct from OLD.name then
+    raise exception 'Phase status names are fixed; only colors can change';
+  end if;
+  NEW.sort_order := case NEW.name
+    when 'Not started' then 1000 when 'Blocked' then 2000
+    when 'Deprioritized' then 3000 when 'In progress' then 4000
+    when 'Completed' then 5000 when 'Not relevant' then 6000 end;
+  return NEW;
+end $fixed$;
+drop trigger if exists fixed_phase_status on public.planner_phase_statuses;
+create trigger fixed_phase_status before insert or update
+on public.planner_phase_statuses for each row execute function public.enforce_fixed_phase_status();
+
+drop policy if exists "planner_phase_statuses_all_for_authenticated_user" on public.planner_phase_statuses;
+drop policy if exists phase_status_select on public.planner_phase_statuses;
+drop policy if exists phase_status_insert on public.planner_phase_statuses;
+drop policy if exists phase_status_update on public.planner_phase_statuses;
+create policy phase_status_select on public.planner_phase_statuses
+for select to authenticated using ((select auth.uid()) = user_id);
+create policy phase_status_insert on public.planner_phase_statuses
+for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy phase_status_update on public.planner_phase_statuses
+for update to authenticated using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 create table if not exists planner_project_phase_tasks (
   id uuid primary key default gen_random_uuid(),
@@ -728,10 +761,6 @@ alter table planner_phase_statuses enable row level security;
 alter table planner_project_phase_tasks enable row level security;
 
 drop policy if exists "planner_phase_statuses_all_for_authenticated_user" on planner_phase_statuses;
-create policy "planner_phase_statuses_all_for_authenticated_user"
-on planner_phase_statuses for all to authenticated
-using ((select auth.uid()) = user_id)
-with check ((select auth.uid()) = user_id);
 
 drop policy if exists "planner_project_phases_all_for_authenticated_user" on planner_project_phases;
 create policy "planner_project_phases_all_for_authenticated_user"

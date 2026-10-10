@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
 const source = fs.readFileSync("public/app.js", "utf8");
-const names = ["saveProjectPhaseCell", "projectPhaseEntryFor", "renderProjectPhaseMatrixView", "projectPhaseLinksFor", "phaseStatusTone", "phaseStatusNameForId", "phaseStatusIdForName", "selectedPhaseProjectTypeId", "phasesForProjectType", "phaseProjectTypeControl"];
+const names = ["saveProjectPhaseCell", "projectPhaseEntryFor", "renderProjectPhaseMatrixView", "projectPhaseLinksFor", "phaseStatusTone", "phaseStatusNameForId", "phaseStatusIdForName", "selectedPhaseProjectTypeId", "phasesForProjectType", "phaseProjectTypeControl", "orderedPhaseStatuses", "projectPhaseCompletion"];
 const functions = names.map((name) => {
   const start = source.search(new RegExp("(?:async )?function " + name + "\\("));
   assert.ok(start >= 0, name);
@@ -36,7 +36,7 @@ const context = vm.createContext({
     writes.push({ table, payload }); return payload;
   }
 });
-vm.runInContext(functions, context);
+vm.runInContext(source.slice(source.indexOf("const defaultPhaseStatuses ="), source.indexOf("const defaultRoles =")) + functions, context);
 const form = {
   dataset: { matrixProjectId: "p", matrixPhaseId: "phase" },
   querySelector: (selector) => ({ value: selector.includes("Notes") ? "Phase notes" : "green" })
@@ -74,5 +74,22 @@ const form = {
   context.renderProjectPhaseMatrixView();
   assert.match(context.els.taskList.innerHTML, /Stage|Rehearsals/);
   assert.doesNotMatch(context.els.taskList.innerHTML, /Movie|Shooting/);
+  state.phaseStatuses.push({ id: "na", name: "Not relevant", color: "#666666" });
+  state.projectPhaseEntries.push({ project_id: "movie", phase_id: "write", status_id: "green" }, { project_id: "movie", phase_id: "shoot", status_id: "na" });
+  const result = context.projectPhaseCompletion("movie", context.phasesForProjectType("film"));
+  assert.equal(result.fraction, 1);
+  assert.equal(result.total, 1);
+  assert.equal(context.projectPhaseCompletion("stage", context.phasesForProjectType("play")).fraction, 0);
+  state.projects.push({ id: "unfinished", name: "Unfinished", project_type_id: "film" });
+  state.phaseProjectTypeId = "film";
+  state.phaseProjectSort = "least";
+  context.renderProjectPhaseMatrixView();
+  assert.ok(context.els.taskList.innerHTML.indexOf(">Unfinished</button>") < context.els.taskList.innerHTML.indexOf(">Movie</button>"));
+  assert.match(context.els.taskList.innerHTML, /100% complete/);
+  state.phaseProjectSort = "most";
+  context.renderProjectPhaseMatrixView();
+  assert.ok(context.els.taskList.innerHTML.indexOf(">Movie</button>") < context.els.taskList.innerHTML.indexOf(">Unfinished</button>"));
+  state.projectPhaseEntries.push({ project_id: "stage", phase_id: "rehearse", status_id: "na" });
+  assert.equal(context.projectPhaseCompletion("stage", context.phasesForProjectType("play")).fraction, null);
   console.log("Project phases: independent status/notes, multiple links, no task creation, cloud failure and migration guard passed.");
 })().catch((error) => { console.error(error); process.exit(1); });

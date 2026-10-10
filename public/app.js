@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.13.03";
+const APP_VERSION = "1.13.04";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -37,10 +37,11 @@ const defaultProjectTypes = ["Play", "Short Film", "Performance"].map((name, ind
 const defaultProjectStatuses = ["Not started", "In progress", "Completed", "Deprioritized"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultPhaseStatuses = [
   { name: "Not started", color: "#d85b49" },
+  { name: "Blocked", color: "#7b5ea7" },
+  { name: "Deprioritized", color: "#667085" },
   { name: "In progress", color: "#d6a21e" },
   { name: "Completed", color: "#2f855a" },
-  { name: "Not relevant", color: "#667085" },
-  { name: "Blocked", color: "#7b5ea7" }
+  { name: "Not relevant", color: "#667085" }
 ].map((item, index) => ({ ...item, sort_order: (index + 1) * 1000 }));
 const defaultRoles = ["Director", "Producer", "Writer", "Actor"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultVenues = [];
@@ -146,6 +147,7 @@ const state = {
   projectPhaseEntriesCloudReady: false,
   projectPhaseTypesCloudReady: false,
   phaseProjectTypeId: null,
+  phaseProjectSort: "least",
   taxonomiesCloudReady: false,
   taskTaxonomyLinksCloudReady: false,
   projectTaxonomyLinksCloudReady: false,
@@ -1978,6 +1980,11 @@ async function insertBackupRows(table, rows, label = table) {
 async function replaceCloudWithBackup(data) {
   if (!isSupabaseReady()) throw new Error("Sign in with Google before restoring to Supabase.");
   await refreshSupabaseSession("restore", { force: true });
+  const statusIdMap = new Map(data.phaseStatuses.map((status) => [status.id, phaseStatusIdForName(status.name)]));
+  for (const entry of data.projectPhaseEntries) {
+    if (entry.status_id && !statusIdMap.get(entry.status_id)) throw new Error("Backup contains a custom phase status. Map it to a fixed status before restoring.");
+  }
+  data = { ...data, projectPhaseEntries: data.projectPhaseEntries.map((entry) => ({ ...entry, status_id: statusIdMap.get(entry.status_id) || null })) };
   const userFilter = `user_id=eq.${encodeURIComponent(state.user.id)}`;
   const deleteOrder = [
     "planner_events",
@@ -1985,6 +1992,7 @@ async function replaceCloudWithBackup(data) {
     "planner_project_taxonomy_nodes",
     "planner_project_phase_tasks",
     "planner_project_phase_entries",
+    "planner_project_phases",
     "planner_task_taxonomy_nodes",
     "planner_taxonomy_nodes",
     "planner_taxonomies",
@@ -2001,10 +2009,8 @@ async function replaceCloudWithBackup(data) {
     "planner_relationship_types",
     "planner_project_types",
     "planner_project_statuses",
-    "planner_phase_statuses",
     "planner_roles",
     "planner_venues"
-    ,"planner_project_phases"
   ];
   for (const table of deleteOrder) {
     await deleteRowsDirect(table, userFilter, null, table);
@@ -2016,7 +2022,10 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_relationship_types", optionRows(data.relationshipTypes), "relationships");
   await insertBackupRows("planner_project_types", optionRows(data.projectTypes), "project types");
   await insertBackupRows("planner_project_statuses", optionRows(data.projectStatuses), "project statuses");
-  await insertBackupRows("planner_phase_statuses", optionRows(data.phaseStatuses), "phase statuses");
+  for (const status of orderedPhaseStatuses()) {
+    const backupStatus = data.phaseStatuses.find((item) => item.name === status.name);
+    if (backupStatus) await persistNamedOption("phase-statuses", { ...status, color: backupStatus.color }, { render: false });
+  }
   await insertBackupRows("planner_roles", optionRows(data.roles), "roles");
   await insertBackupRows("planner_venues", optionRows(data.venues), "venues");
   await insertBackupRows("planner_project_phases", optionRows(data.projectPhases), "project phases");
@@ -2041,6 +2050,7 @@ async function replaceCloudWithBackup(data) {
   if (data.peoplePrivateRows.length) {
     await insertBackupRows("planner_person_private_attributes", data.peoplePrivateRows.map(privatePersonPayload), "private people");
   }
+  applyBackupData({ ...data, phaseStatuses: orderedPhaseStatuses() });
 }
 
 function backupGoalLinks(data) {
@@ -2114,8 +2124,8 @@ async function restoreBackupFile(file, options = {}) {
     state.syncError = "";
     state.syncMessage = options.toCloud ? "Restoring backup to Supabase..." : "Restoring backup locally...";
     render();
-    applyBackupData(data);
     if (options.toCloud) await replaceCloudWithBackup(data);
+    else applyBackupData(data);
     state.syncError = "";
     state.syncMessage = options.toCloud
       ? `Backup restored to Supabase at ${savedAtLabel()}.`
@@ -3302,6 +3312,12 @@ function optionConfig(type) {
 }
 
 async function persistNamedOption(type, option, options = {}) {
+  if (type === "phase-statuses") {
+    const definition = defaultPhaseStatuses.find((status) => status.name === option.name);
+    const existing = state.phaseStatuses.find((status) => status.id === option.id);
+    if (!definition || (existing && existing.name !== option.name)) throw new Error("Phase status names are fixed; only colors can change.");
+    option = { ...option, sort_order: definition.sort_order };
+  }
   if (type === "project-phases" && isSupabaseReady() && !state.projectPhaseTypesCloudReady) {
     throw new Error("Phase was not saved: run migration 028_project_type_phases.sql, then refresh.");
   }
@@ -3410,6 +3426,7 @@ function detachAnnotationReferences(type, id) {
 }
 
 async function deleteNamedOption(type, id) {
+  if (type === "phase-statuses") throw new Error("Phase statuses cannot be deleted.");
   const config = optionConfig(type);
   const option = state[config.stateKey].find((item) => item.id === id);
   if (!option) return;
@@ -5476,6 +5493,10 @@ function renderAreasView() {
 }
 
 function renderNamedSettingsView(type) {
+  if (type === "phase-statuses") {
+    els.taskList.innerHTML = `<div class="planning-list area-settings-list">${orderedPhaseStatuses().map((status) => `<div class="area-settings-row named-settings-row named-settings-row-with-color" data-option-id="${status.id}" data-option-type="phase-statuses"><input class="named-option-input" aria-label="Phase status" value="${escapeHtml(status.name)}" readonly><input class="named-option-color-input" type="color" aria-label="${escapeHtml(status.name)} color" value="${status.color || "#667085"}"><span>${namedOptionUsage("phase-statuses", status.id)} phases</span></div>`).join("")}</div>`;
+    return;
+  }
   const config = optionConfig(type);
   const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", "phase-statuses": "Phase Statuses", roles: "Roles", venues: "Venues", "project-phases": "Project Phases" };
   const title = titles[type] || "Settings";
@@ -5723,6 +5744,7 @@ async function saveProjectPhaseCell(form) {
   const existingEntry = projectPhaseEntryFor(projectId, phaseId);
   const notes = form.querySelector("[name='phaseTaskNotes']")?.value.trim() || "";
   const statusId = form.querySelector("[name='phaseStatusId']")?.value || "";
+  if (!orderedPhaseStatuses().some((status) => status.id === statusId)) throw new Error("Choose a fixed phase status. Run the fixed phase statuses migration if the list is missing.");
   if (!project || !state.projectPhases.some((phase) => phase.id === phaseId)) throw new Error("Select a project and phase.");
   const phase = state.projectPhases.find((item) => item.id === phaseId);
   if ((phase.project_type_id || "") !== (project.project_type_id || "")) throw new Error("This phase belongs to a different project type.");
@@ -5756,6 +5778,21 @@ function selectedPhaseProjectTypeId() {
   return state.phaseProjectTypeId ?? sortedByName(state.projectTypes)[0]?.id ?? "";
 }
 
+function orderedPhaseStatuses() {
+  return defaultPhaseStatuses.flatMap((definition) => {
+    const status = state.phaseStatuses.find((item) => item.name === definition.name);
+    return status ? [status] : [];
+  });
+}
+
+function projectPhaseCompletion(projectId, phases) {
+  const statuses = phases.map((phase) => phaseStatusNameForId(projectPhaseEntryFor(projectId, phase.id)?.status_id) || "Not started");
+  const applicable = statuses.filter((name) => name !== "Not relevant");
+  const completed = applicable.filter((name) => name === "Completed").length;
+  const rank = applicable.reduce((sum, name) => sum + Math.max(0, defaultPhaseStatuses.findIndex((status) => status.name === name)), 0);
+  return { completed, total: applicable.length, fraction: applicable.length ? completed / applicable.length : null, rank: applicable.length ? rank / applicable.length : 0 };
+}
+
 function phasesForProjectType(typeId) {
   return state.projectPhases.filter((phase) => (phase.project_type_id || "") === typeId)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
@@ -5768,8 +5805,18 @@ function phaseProjectTypeControl() {
 
 function renderProjectPhaseMatrixView() {
   const typeId = selectedPhaseProjectTypeId();
-  const projects = sortedByName(state.projects.filter((project) => (project.project_type_id || "") === typeId));
   const phases = phasesForProjectType(typeId);
+  const projects = state.projects.filter((project) => (project.project_type_id || "") === typeId).sort((a, b) => {
+    if (state.phaseProjectSort !== "name") {
+      const left = projectPhaseCompletion(a.id, phases).fraction;
+      const right = projectPhaseCompletion(b.id, phases).fraction;
+      if (left === null && right !== null) return 1;
+      if (right === null && left !== null) return -1;
+      const difference = (left ?? 0) - (right ?? 0) || projectPhaseCompletion(a.id, phases).rank - projectPhaseCompletion(b.id, phases).rank;
+      if (difference) return state.phaseProjectSort === "most" ? -difference : difference;
+    }
+    return a.name.localeCompare(b.name);
+  });
   const selectedProject = state.matrixProjectId ? state.projects.find((project) => project.id === state.matrixProjectId) : null;
   const selectedPhase = state.matrixPhaseId ? state.projectPhases.find((phase) => phase.id === state.matrixPhaseId) : null;
   const selectedEntry = projectPhaseEntryFor(selectedProject?.id, selectedPhase?.id);
@@ -5779,13 +5826,14 @@ function renderProjectPhaseMatrixView() {
     <div class="project-phase-matrix">
       <div class="matrix-toolbar">
         ${phaseProjectTypeControl()}
-        <div class="matrix-legend">${state.phaseStatuses.map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
+        <label class="field-label">Sort<select name="phaseProjectSort"><option value="least"${state.phaseProjectSort === "least" ? " selected" : ""}>Least complete first</option><option value="most"${state.phaseProjectSort === "most" ? " selected" : ""}>Most complete first</option><option value="name"${state.phaseProjectSort === "name" ? " selected" : ""}>Name</option></select></label>
+        <div class="matrix-legend">${orderedPhaseStatuses().map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
       </div>
       ${selectedProject && selectedPhase ? `
         <section class="matrix-assignment-panel">
           <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span></div>
           <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
-            <label>Phase status<select name="phaseStatusId"><option value="">No status</option>${sortedByName(state.phaseStatuses).map((status) => `<option value="${status.id}"${status.id === (selectedEntry?.status_id || phaseStatusIdForName("Not started")) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
+            <label>Phase status<select name="phaseStatusId" required>${orderedPhaseStatuses().map((status) => `<option value="${status.id}"${status.id === (selectedEntry?.status_id || phaseStatusIdForName("Not started")) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
             <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Notes for this project phase">${escapeHtml(selectedEntry?.notes || "")}</textarea></label>
             <div class="matrix-cell-actions"><button class="primary-button" type="submit">Save phase</button></div>
           </form>
@@ -5802,7 +5850,8 @@ function renderProjectPhaseMatrixView() {
           <tbody>
             ${projects.map((project) => {
               const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
-              return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
+              const completion = projectPhaseCompletion(project.id, phases);
+              return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${completion.fraction === null ? "N/A" : Math.round(completion.fraction * 100) + "% complete"} · ${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
                 const entry = projectPhaseEntryFor(project.id, phase.id);
                 const statusLabel = phaseStatusNameForId(entry?.status_id) || "Not started";
                 const status = phaseStatusTone(statusLabel);
@@ -9639,6 +9688,11 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  if (event.target.name === "phaseProjectSort") {
+    state.phaseProjectSort = event.target.value;
+    renderTasks();
+    return;
+  }
   if (event.target.name === "phaseProjectType") {
     state.phaseProjectTypeId = event.target.value;
     state.matrixProjectId = "";
