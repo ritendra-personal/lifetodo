@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.12.00";
+const APP_VERSION = "1.12.01";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -4389,6 +4389,11 @@ function projectNameForId(id) {
   return state.projects.find((project) => project.id === id)?.name || "";
 }
 
+function phaseNameForTask(id) {
+  const link = state.projectPhaseLinks.find((item) => item.task_id === id);
+  return link ? state.projectPhases.find((phase) => phase.id === link.phase_id)?.name || "" : "";
+}
+
 function venueName(project) {
   return state.venues.find((venue) => venue.id === project.venue_id)?.name || "";
 }
@@ -4702,6 +4707,7 @@ function renderTask(task, depth, childCount) {
     addPill(task.priority, task.priority.toLowerCase());
     addPill(formatDate(task.due_date));
     addPill(projectNameForId(task.project_id), "project-pill");
+    addPill(phaseNameForTask(task.id), "phase-pill");
     for (const taxonomy of selectedTaxonomyLabels(task.taxonomy_node_ids)) {
       addPill(taxonomy.label, "taxonomy-pill-meta");
     }
@@ -5698,14 +5704,14 @@ function renderProjectPhaseMatrixView() {
   els.taskList.innerHTML = `
     <div class="project-phase-matrix">
       <div class="matrix-toolbar">
-        <div><strong>Project Phases</strong><span class="matrix-help">Projects are rows; configurable phases are columns. Each cell is one editable phase task.</span></div>
+        <div><strong>Project Phases</strong><span class="matrix-help">Projects are rows; configurable phases are columns. Each cell is one editable regular task linked to that project and phase.</span></div>
         <div class="matrix-legend"><span><i class="matrix-legend-dot not-started"></i>Not started</span><span><i class="matrix-legend-dot active"></i>In progress</span><span><i class="matrix-legend-dot complete"></i>Completed</span><span><i class="matrix-legend-dot neutral"></i>Other</span></div>
       </div>
       ${selectedProject && selectedPhase ? `
         <section class="matrix-assignment-panel">
-          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span><small class="matrix-assignment-help">Each cell contains exactly one phase task. Edit it here.</small></div>
+          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span><small class="matrix-assignment-help">This is one regular task for this project phase. It also appears under Tasks → Backlog when it has no due date.</small></div>
           <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
-            <label>Task title<input name="phaseTaskTitle" type="text" placeholder="What needs to happen in this phase?" value="${escapeHtml((state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)?.title) || "")}" required></label>
+            <label>Phase task<input name="phaseTaskTitle" type="text" placeholder="What needs to happen in this phase?" value="${escapeHtml((state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)?.title) || "")}" required></label>
             <label>Status<select name="phaseStatusId"><option value="">No status</option>${sortedByName(state.projectStatuses).map((status) => `<option value="${status.id}"${status.id === phaseStatusIdForLink(projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0], state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
             <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Notes for this project phase">${escapeHtml(projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.notes || "")}</textarea></label>
             <div class="matrix-cell-actions"><button class="primary-button" type="submit">Save phase task</button>${projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id ? `<button class="link-button matrix-task-link" type="button" data-matrix-task-id="${projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0].task_id}">Open full task</button>` : ""}</div>
@@ -5714,19 +5720,18 @@ function renderProjectPhaseMatrixView() {
       ` : ""}
       <div class="project-phase-matrix-scroll">
         <table class="project-phase-matrix-table">
-          <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;">Project<span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}<th>Unassigned</th></tr></thead>
+          <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;">Project<span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}</tr></thead>
           <tbody>
             ${projects.map((project) => {
               const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
-              const assignedIds = new Set(state.projectPhaseLinks.filter((link) => link.project_id === project.id).map((link) => link.task_id));
               return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
                 const link = projectPhaseLinksFor(project.id, phase.id)[0];
                 const task = link ? state.tasks.find((item) => item.id === link.task_id) : null;
                 const status = phaseStatusTone(projectStatusNameForId(phaseStatusIdForLink(link, task)));
                 const statusLabel = status === "not-started" ? "Not started" : status === "active" ? "In progress" : status === "complete" ? "Completed" : "Other";
                 return `<td><button class="matrix-cell ${status}" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${task ? `${statusLabel}: ${task.title}` : "Not started: create phase task"}"><span class="matrix-cell-status"></span><strong>${task ? "1/1" : "0/1"}</strong><small>${statusLabel}</small></button></td>`;
-              }).join("")}<td class="matrix-unassigned">${Math.max(0, projectTasks.filter((task) => !assignedIds.has(task.id)).length)}</td></tr>`;
-            }).join("") || `<tr><td colspan="${phases.length + 2}" class="empty-state">Create a project to start mapping phases.</td></tr>`}
+              }).join("")}</tr>`;
+            }).join("") || `<tr><td colspan="${phases.length + 1}" class="empty-state">Create a project to start mapping phases.</td></tr>`}
           </tbody>
         </table>
       </div>
