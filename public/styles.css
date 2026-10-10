@@ -1433,7 +1433,7 @@ body.resizing .resize-handle::before {
 .matrix-assigned-tasks { display: grid; gap: 5px; margin-top: 9px; }
 .matrix-task-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--line-soft); padding-top: 5px; }
 .matrix-task-row .danger-button { padding: 3px 8px; font-size: .75rem; }
-.matrix-cell-form { display: grid; grid-template-columns: minmax(200px, 1.4fr) 180px minmax(220px, 2fr) auto; gap: 8px; align-items: end; }
+.matrix-cell-form { display: grid; grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) auto; gap: 8px; align-items: end; }
 .matrix-cell-form label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: .76rem; font-weight: 800; text-transform: uppercase; }
 .matrix-cell-form input, .matrix-cell-form select, .matrix-cell-form textarea { width: 100%; min-width: 0; }
 .matrix-cell-form textarea { min-height: 42px; resize: vertical; }

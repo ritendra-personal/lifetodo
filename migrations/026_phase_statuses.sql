@@ -36,6 +36,9 @@ select distinct ps.user_id,
 from planner_project_statuses ps
 on conflict do nothing;
 
+alter table planner_project_phase_tasks
+  drop constraint if exists planner_project_phase_tasks_status_id_fkey;
+
 update planner_project_phase_tasks link
 set status_id = phase_status.id
 from planner_project_statuses project_status
@@ -44,8 +47,6 @@ join planner_phase_statuses phase_status
  and lower(phase_status.name) = lower(project_status.name)
 where link.status_id = project_status.id;
 
-alter table planner_project_phase_tasks
-  drop constraint if exists planner_project_phase_tasks_status_id_fkey;
 alter table planner_project_phase_tasks
   add constraint planner_project_phase_tasks_status_id_fkey
   foreign key (status_id) references planner_phase_statuses(id) on delete set null;
