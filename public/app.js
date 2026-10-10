@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.97";
+const APP_VERSION = "1.10.98";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -37,6 +37,7 @@ const defaultProjectTypes = ["Play", "Short Film", "Performance"].map((name, ind
 const defaultProjectStatuses = ["Not started", "In progress", "Completed", "Deprioritized"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultRoles = ["Director", "Producer", "Writer", "Actor"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultVenues = [];
+const defaultProjectPhases = ["Conception", "Writing", "Casting", "Shooting", "Direction", "Post-production", "Release"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 
 function loadPeopleSort() {
   try {
@@ -91,6 +92,8 @@ const state = {
   projectStatuses: loadNamedOptions("planner-project-statuses", defaultProjectStatuses),
   roles: loadNamedOptions("planner-roles", defaultRoles),
   venues: loadNamedOptions("planner-venues", defaultVenues),
+  projectPhases: loadNamedOptions("planner-project-phases", defaultProjectPhases),
+  projectPhaseLinks: loadProjectPhaseLinks(),
   selectedAssignmentTaskId: "",
   selectedAssignmentPersonId: "",
   assignmentSelectedOnly: localStorage.getItem("assignment-selected-only") === "true",
@@ -129,6 +132,8 @@ const state = {
   projectsCloudReady: false,
   eventsCloudReady: false,
   venuesCloudReady: false,
+  projectPhasesCloudReady: false,
+  projectPhaseLinksCloudReady: false,
   taxonomiesCloudReady: false,
   taskTaxonomyLinksCloudReady: false,
   projectTaxonomyLinksCloudReady: false,
@@ -142,7 +147,9 @@ const state = {
   areas: loadAreas(),
   plannerKey: localStorage.getItem("planner-key") || "",
   timelineZoom: Number(localStorage.getItem("timeline-zoom") || 42),
-  detailWidth: Number(localStorage.getItem("detail-width") || 360)
+  detailWidth: Number(localStorage.getItem("detail-width") || 360),
+  matrixProjectId: "",
+  matrixPhaseId: ""
 };
 
 const els = {
@@ -235,6 +242,8 @@ const counts = {
   projectStatuses: document.querySelector("#count-project-statuses"),
   roles: document.querySelector("#count-roles"),
   venues: document.querySelector("#count-venues"),
+  projectPhases: document.querySelector("#count-project-phases"),
+  projectMatrix: document.querySelector("#count-project-matrix"),
   taxonomies: document.querySelector("#count-taxonomies"),
   backup: document.querySelector("#count-backup"),
   home: document.querySelector("#count-home"),
@@ -275,6 +284,15 @@ function saveNamedOptions() {
   localStorage.setItem("planner-project-statuses", JSON.stringify(state.projectStatuses));
   localStorage.setItem("planner-roles", JSON.stringify(state.roles));
   localStorage.setItem("planner-venues", JSON.stringify(state.venues));
+  localStorage.setItem("planner-project-phases", JSON.stringify(state.projectPhases));
+}
+
+function loadProjectPhaseLinks() {
+  try {
+    return JSON.parse(localStorage.getItem("planner-project-phase-links") || "[]").map(normalizeProjectPhaseLink);
+  } catch {
+    return [];
+  }
 }
 
 function publicPersonForStorage(person) {
@@ -477,6 +495,7 @@ function validView(view) {
     "timeline",
     "tasks-by-taxonomy",
     "project-tasks",
+    "project-matrix",
     "events",
     "calendar",
     "areas",
@@ -488,6 +507,7 @@ function validView(view) {
     "roles",
     "venues",
     "taxonomies",
+    "project-phases",
     "backup",
     "focus-task",
     "focus-project",
@@ -1097,6 +1117,17 @@ function normalizeProjectTaxonomyLink(link) {
   };
 }
 
+function normalizeProjectPhaseLink(link) {
+  return {
+    id: link.id || makeId(),
+    user_id: link.user_id || link.userId || state.user?.id || null,
+    project_id: link.project_id || link.projectId || "",
+    phase_id: link.phase_id || link.phaseId || "",
+    task_id: link.task_id || link.taskId || "",
+    created_at: link.created_at || nowIso()
+  };
+}
+
 function normalizeArea(area, index = 0) {
   return {
     id: area.id || makeId(),
@@ -1476,6 +1507,7 @@ function loadLocal() {
   const rawPeople = localStorage.getItem("planner-people");
   const rawPeoplePrivate = localStorage.getItem("planner-people-private");
   const rawTaxonomies = localStorage.getItem("planner-taxonomies");
+  const rawProjectPhaseLinks = localStorage.getItem("planner-project-phase-links");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.events = rawEvents ? JSON.parse(rawEvents).map(normalizeEvent) : [];
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
@@ -1485,6 +1517,7 @@ function loadLocal() {
   state.people = rawPeople ? JSON.parse(rawPeople).map(normalizePerson).map(publicPersonForStorage).map(normalizePerson) : [];
   state.peoplePrivateRows = rawPeoplePrivate ? JSON.parse(rawPeoplePrivate) : [];
   state.taxonomies = rawTaxonomies ? JSON.parse(rawTaxonomies).map(normalizeTaxonomy) : [];
+  state.projectPhaseLinks = rawProjectPhaseLinks ? JSON.parse(rawProjectPhaseLinks).map(normalizeProjectPhaseLink) : [];
   state.syncError = "";
   state.syncMessage = "Using local browser storage. Click Key, enter your planner key, and click Connect to use Supabase.";
   saveLocal();
@@ -1500,6 +1533,7 @@ function saveLocal(options = {}) {
   localStorage.setItem("planner-people", JSON.stringify(state.people.map(publicPersonForStorage)));
   localStorage.setItem("planner-people-private", JSON.stringify(state.peoplePrivateRows));
   localStorage.setItem("planner-taxonomies", JSON.stringify(state.taxonomies));
+  localStorage.setItem("planner-project-phase-links", JSON.stringify(state.projectPhaseLinks));
   if (!options.silent) state.syncMessage = "Saved locally in this browser only.";
 }
 
@@ -1528,6 +1562,8 @@ function backupData() {
       project_statuses: state.projectStatuses,
       roles: state.roles,
       venues: state.venues,
+      project_phases: state.projectPhases,
+      project_phase_links: state.projectPhaseLinks,
       taxonomies: state.taxonomies
     }
   };
@@ -1579,6 +1615,8 @@ function normalizeBackupData(fileData) {
     projectStatuses: (data.project_statuses || data.projectStatuses || defaultProjectStatuses).map(normalizeNamedOption),
     roles: (data.roles?.length ? data.roles : defaultRoles).map(normalizeNamedOption),
     venues: (data.venues?.length ? data.venues : defaultVenues).map(normalizeNamedOption),
+    projectPhases: (data.project_phases || data.projectPhases || defaultProjectPhases).map(normalizeNamedOption),
+    projectPhaseLinks: (data.project_phase_links || data.projectPhaseLinks || []).map(normalizeProjectPhaseLink),
     taxonomies: (data.taxonomies || []).map(normalizeTaxonomy)
   };
 }
@@ -1601,6 +1639,8 @@ function applyBackupData(data) {
   state.projectStatuses = data.projectStatuses;
   state.roles = data.roles;
   state.venues = data.venues;
+  state.projectPhases = data.projectPhases;
+  state.projectPhaseLinks = data.projectPhaseLinks;
   state.taxonomies = data.taxonomies;
   saveAreas();
   saveNamedOptions();
@@ -1880,6 +1920,17 @@ function projectTaxonomyLinkPayload(link) {
   };
 }
 
+function projectPhaseLinkPayload(link) {
+  return {
+    id: link.id,
+    project_id: link.project_id,
+    phase_id: link.phase_id,
+    task_id: link.task_id,
+    user_id: state.user.id,
+    created_at: link.created_at || nowIso()
+  };
+}
+
 function privatePersonPayload(row) {
   return {
     person_id: row.person_id,
@@ -1902,6 +1953,7 @@ async function replaceCloudWithBackup(data) {
     "planner_events",
     "planner_person_private_attributes",
     "planner_project_taxonomy_nodes",
+    "planner_project_phase_tasks",
     "planner_task_taxonomy_nodes",
     "planner_taxonomy_nodes",
     "planner_taxonomies",
@@ -1920,6 +1972,7 @@ async function replaceCloudWithBackup(data) {
     "planner_project_statuses",
     "planner_roles",
     "planner_venues"
+    ,"planner_project_phases"
   ];
   for (const table of deleteOrder) {
     await deleteRowsDirect(table, userFilter, null, table);
@@ -1933,6 +1986,7 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_project_statuses", optionRows(data.projectStatuses), "project statuses");
   await insertBackupRows("planner_roles", optionRows(data.roles), "roles");
   await insertBackupRows("planner_venues", optionRows(data.venues), "venues");
+  await insertBackupRows("planner_project_phases", optionRows(data.projectPhases), "project phases");
   await insertBackupRows("planner_taxonomies", data.taxonomies.map(taxonomyPayload), "taxonomies");
   await insertBackupRows(
     "planner_taxonomy_nodes",
@@ -1945,6 +1999,7 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_people", data.people.map(personPayload), "people");
   await insertBackupRows("planner_ideas", data.ideas.map(ideaPayload), "ideas");
   await insertBackupRows("planner_tasks", data.tasks.map((task) => databasePayload({ ...task, user_id: state.user.id })), "tasks");
+  await insertBackupRows("planner_project_phase_tasks", data.projectPhaseLinks.map(projectPhaseLinkPayload), "project phase links");
   await insertBackupRows("planner_events", data.events.map(eventPayload), "events");
   await insertBackupRows("planner_task_goal_links", backupGoalLinks(data).map(taskGoalLinkPayload), "goal links");
   await insertBackupRows("planner_task_taxonomy_nodes", backupTaskTaxonomyLinks(data).map(taskTaxonomyLinkPayload), "task taxonomy links");
@@ -2209,6 +2264,7 @@ async function loadTasksNow() {
     }
     const projectTaxonomyLinks = await loadProjectTaxonomyLinksData();
     const projects = await loadProjectsData(projectTaxonomyLinks || []);
+    const projectPhaseData = await loadProjectPhaseData();
     const goalLinks = await loadGoalLinksData();
     const taxonomies = await loadTaxonomiesData();
     const taskTaxonomyLinks = await loadTaskTaxonomyLinksData();
@@ -2239,6 +2295,12 @@ async function loadTasksNow() {
     state.ideas = ideas.map(normalizeIdea);
     if (events) state.events = events;
     if (projects) state.projects = projects;
+    if (projectPhaseData) {
+      state.projectPhases = projectPhaseData.phases;
+      state.projectPhaseLinks = projectPhaseData.links;
+      saveNamedOptions();
+      saveLocal({ silent: true });
+    }
     if (goalLinks) {
       state.goalLinks = goalLinks;
       await seedGoalLinksFromLegacyTasks();
@@ -2262,6 +2324,69 @@ async function loadTasksNow() {
     state.syncMessage = "";
     render();
     console.error("Supabase load failed", error);
+  }
+}
+
+async function loadProjectPhaseData() {
+  try {
+    const [{ data: phases, error: phasesError }, { data: links, error: linksError }] = await Promise.all([
+      state.supabase.from("planner_project_phases").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
+      state.supabase.from("planner_project_phase_tasks").select("*").eq("user_id", state.user.id).order("created_at", { ascending: true })
+    ]);
+    if (phasesError || linksError) throw phasesError || linksError;
+    state.projectPhasesCloudReady = true;
+    state.projectPhaseLinksCloudReady = true;
+    const normalizedPhases = (phases || []).map(normalizeNamedOption);
+    if (!normalizedPhases.length) {
+      await Promise.all(state.projectPhases.map((phase) => persistNamedOption("project-phases", phase, { render: false })));
+    }
+    return {
+      phases: normalizedPhases.length ? normalizedPhases : state.projectPhases,
+      links: (links || []).map(normalizeProjectPhaseLink)
+    };
+  } catch (error) {
+    state.projectPhasesCloudReady = false;
+    state.projectPhaseLinksCloudReady = false;
+    state.syncMessage = state.syncMessage || "Project phases are local until you run migration 024.";
+    console.warn("Supabase project phases unavailable; keeping project phases local", error);
+    return null;
+  }
+}
+
+async function persistProjectPhaseLink(projectId, phaseId, taskId) {
+  const existing = state.projectPhaseLinks.find((link) => link.project_id === projectId && link.phase_id === phaseId && link.task_id === taskId);
+  if (existing) return existing;
+  const link = normalizeProjectPhaseLink({ project_id: projectId, phase_id: phaseId, task_id: taskId });
+  state.projectPhaseLinks = [...state.projectPhaseLinks, link];
+  saveLocal({ silent: true });
+  if (isSupabaseReady()) {
+    if (!state.projectPhaseLinksCloudReady) throw new Error("Project phase links were not saved to database: run migration 024_project_phases.sql.");
+    try {
+      const saved = normalizeProjectPhaseLink(await upsertRowDirect("planner_project_phase_tasks", projectPhaseLinkPayload(link), null, "project phase link"));
+      state.projectPhaseLinks = state.projectPhaseLinks.map((item) => item.id === link.id ? saved : item);
+    } catch (error) {
+      state.projectPhaseLinks = state.projectPhaseLinks.filter((item) => item.id !== link.id);
+      saveLocal({ silent: true });
+      throw error;
+    }
+  }
+  state.syncError = "";
+  state.syncMessage = isSupabaseReady() ? `Saved project phase link at ${savedAtLabel()}.` : `Saved project phase link locally at ${savedAtLabel()}.`;
+  return link;
+}
+
+async function deleteProjectPhaseLink(linkId) {
+  const previous = state.projectPhaseLinks;
+  state.projectPhaseLinks = previous.filter((link) => link.id !== linkId);
+  saveLocal({ silent: true });
+  try {
+    if (isSupabaseReady()) await deleteRowDirect("planner_project_phase_tasks", linkId, null, "project phase link");
+    state.syncError = "";
+    state.syncMessage = `Removed project phase link at ${savedAtLabel()}.`;
+  } catch (error) {
+    state.projectPhaseLinks = previous;
+    saveLocal({ silent: true });
+    throw error;
   }
 }
 
@@ -3114,6 +3239,9 @@ function optionConfig(type) {
   if (type === "venues") {
     return { table: "planner_venues", stateKey: "venues", label: "venue", cloudFlag: "venuesCloudReady" };
   }
+  if (type === "project-phases") {
+    return { table: "planner_project_phases", stateKey: "projectPhases", label: "project phase", cloudFlag: "projectPhasesCloudReady" };
+  }
   return { table: "planner_relationship_types", stateKey: "relationshipTypes", label: "relationship", cloudFlag: "peopleCloudReady" };
 }
 
@@ -3163,6 +3291,7 @@ function namedOptionUsage(type, id) {
   if (type === "project-types") return state.projects.filter((project) => project.project_type_id === id).length;
   if (type === "project-statuses") return state.projects.filter((project) => project.project_status_id === id).length;
   if (type === "venues") return state.projects.filter((project) => project.venue_id === id).length;
+  if (type === "project-phases") return state.projectPhaseLinks.filter((link) => link.phase_id === id).length;
   if (type === "roles") return state.projectAssignments.filter((assignment) => assignment.role_ids.includes(id)).length;
   return state.people.filter((person) => person.relationship_type_id === id).length;
 }
@@ -3185,6 +3314,8 @@ function detachAnnotationReferences(type, id) {
       ...assignment,
       role_ids: assignment.role_ids.filter((roleId) => roleId !== id)
     }));
+  } else if (type === "project-phases") {
+    state.projectPhaseLinks = state.projectPhaseLinks.filter((link) => link.phase_id !== id);
   } else {
     state.people = state.people.map((person) => (person.relationship_type_id === id ? { ...person, relationship_type_id: "" } : person));
   }
@@ -3557,6 +3688,7 @@ function renderCounts() {
   counts.events.textContent = state.events.length;
   counts.calendar.textContent = state.events.length;
   counts.projectTasks.textContent = state.tasks.filter((task) => task.project_id).length;
+  counts.projectMatrix.textContent = state.projects.length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
   counts.peopleCharts.textContent = state.people.length;
@@ -3573,6 +3705,7 @@ function renderCounts() {
   counts.projectStatuses.textContent = state.projectStatuses.length;
   counts.roles.textContent = state.roles.length;
   counts.venues.textContent = state.venues.length;
+  counts.projectPhases.textContent = state.projectPhases.length;
   counts.taxonomies.textContent = state.taxonomies.length;
   counts.backup.textContent = "JSON";
   counts.open.textContent = state.tasks.filter((task) => task.status !== "done").length;
@@ -4419,6 +4552,10 @@ function renderTasks() {
     renderTaxonomiesView();
     return;
   }
+  if (state.view === "project-phases") {
+    renderNamedSettingsView("project-phases");
+    return;
+  }
   if (state.view === "backup") {
     renderBackupView();
     return;
@@ -4445,6 +4582,10 @@ function renderTasks() {
   }
   if (state.view === "project-tasks") {
     renderProjectTasksView();
+    return;
+  }
+  if (state.view === "project-matrix") {
+    renderProjectPhaseMatrixView();
     return;
   }
 
@@ -5229,7 +5370,7 @@ function renderAreasView() {
 
 function renderNamedSettingsView(type) {
   const config = optionConfig(type);
-  const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles", venues: "Venues" };
+  const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles", venues: "Venues", "project-phases": "Project Phases" };
   const title = titles[type] || "Settings";
   const items = state[config.stateKey];
   const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
@@ -5272,7 +5413,7 @@ function renderNamedSettingsView(type) {
     row.querySelector(".named-option-input").value = item.name;
     if (supportsColor) row.querySelector(".named-option-color-input").value = item.color || relationshipTone(item.name).color;
     const usage = namedOptionUsage(type, item.id);
-    row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses", "venues"].includes(type) ? "project" : type === "roles" ? "assignment" : "person"}${usage === 1 ? "" : "s"}`;
+    row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses", "venues"].includes(type) ? "project" : type === "roles" ? "assignment" : type === "project-phases" ? "link" : "person"}${usage === 1 ? "" : "s"}`;
     list.append(row);
   }
 }
@@ -5445,6 +5586,60 @@ function renderTasksByTaxonomyView() {
     view.append(card);
   }
   els.taskList.append(view);
+}
+
+function projectPhaseLinksFor(projectId, phaseId) {
+  return state.projectPhaseLinks.filter((link) => link.project_id === projectId && link.phase_id === phaseId);
+}
+
+function renderProjectPhaseMatrixView() {
+  const projects = sortedByName(state.projects);
+  const phases = sortedByName(state.projectPhases);
+  const selectedProject = state.matrixProjectId ? state.projects.find((project) => project.id === state.matrixProjectId) : null;
+  const selectedPhase = state.matrixPhaseId ? state.projectPhases.find((phase) => phase.id === state.matrixPhaseId) : null;
+  els.taskList.innerHTML = `
+    <div class="project-phase-matrix">
+      <div class="matrix-toolbar">
+        <div><strong>Project Phase Matrix</strong><span class="matrix-help">Projects are rows; configurable phases are columns. Click a cell to assign tasks.</span></div>
+        <div class="matrix-legend"><span><i class="matrix-legend-dot empty"></i>No tasks</span><span><i class="matrix-legend-dot active"></i>In progress</span><span><i class="matrix-legend-dot complete"></i>Completed</span></div>
+      </div>
+      ${selectedProject && selectedPhase ? `
+        <section class="matrix-assignment-panel">
+          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span></div>
+          <div class="matrix-add-row">
+            <select name="matrixTaskId" aria-label="Task to add">
+              <option value="">Add project task...</option>
+              ${state.tasks.filter((task) => task.project_id === selectedProject.id && !projectPhaseLinksFor(selectedProject.id, selectedPhase.id).some((link) => link.task_id === task.id)).sort((a, b) => sortByLabel(a.title, b.title)).map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")}
+            </select>
+            <button class="primary-button matrix-add-task-button" type="button">Add task</button>
+          </div>
+          <div class="matrix-assigned-tasks">
+            ${projectPhaseLinksFor(selectedProject.id, selectedPhase.id).map((link) => {
+              const task = state.tasks.find((item) => item.id === link.task_id);
+              return task ? `<div class="matrix-task-row"><button class="link-button matrix-task-link" type="button" data-matrix-task-id="${task.id}">${escapeHtml(task.title)}</button><button class="danger-button matrix-remove-task-button" type="button" data-matrix-link-id="${link.id}">Remove</button></div>` : "";
+            }).join("") || `<span class="muted">No tasks assigned to this phase yet.</span>`}
+          </div>
+        </section>
+      ` : ""}
+      <div class="project-phase-matrix-scroll">
+        <table class="project-phase-matrix-table">
+          <thead><tr><th>Project</th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}<th>Unassigned</th></tr></thead>
+          <tbody>
+            ${projects.map((project) => {
+              const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
+              const assignedIds = new Set(state.projectPhaseLinks.filter((link) => link.project_id === project.id).map((link) => link.task_id));
+              return `<tr><th class="matrix-project-name"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
+                const links = projectPhaseLinksFor(project.id, phase.id);
+                const tasks = links.map((link) => state.tasks.find((task) => task.id === link.task_id)).filter(Boolean);
+                const status = !tasks.length ? "empty" : tasks.every((task) => task.status === "done") ? "complete" : "active";
+                return `<td><button class="matrix-cell ${status}" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${tasks.length ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : "Assign a task"}"><span class="matrix-cell-status"></span><span>${tasks.length ? `${tasks.filter((task) => task.status === "done").length}/${tasks.length}` : "—"}</span></button></td>`;
+              }).join("")}<td class="matrix-unassigned">${Math.max(0, projectTasks.filter((task) => !assignedIds.has(task.id)).length)}</td></tr>`;
+            }).join("") || `<tr><td colspan="${phases.length + 2}" class="empty-state">Create a project to start mapping phases.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function projectTaskMatches(task) {
@@ -8029,7 +8224,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -8076,6 +8271,7 @@ function render() {
     timeline: "Timeline",
     "tasks-by-taxonomy": "Tasks by Taxonomy",
     "project-tasks": "Project Tasks",
+    "project-matrix": "Project Phase Matrix",
     events: "Events",
     calendar: "Calendar + Timeline",
     search: "Search",
@@ -8093,6 +8289,7 @@ function render() {
     roles: "Roles",
     venues: "Venues",
     taxonomies: "Taxonomies",
+    "project-phases": "Project Phases",
     backup: "Backup"
   };
   const keyObjectSubtitles = {
@@ -8104,7 +8301,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "tasks-by-taxonomy", "project-tasks", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
@@ -9412,6 +9609,44 @@ els.taskList.addEventListener("change", (event) => {
 });
 
 els.taskList.addEventListener("click", (event) => {
+  const matrixCell = event.target.closest("[data-matrix-cell]");
+  if (matrixCell) {
+    state.matrixProjectId = matrixCell.dataset.matrixProjectId;
+    state.matrixPhaseId = matrixCell.dataset.matrixPhaseId;
+    renderTasks();
+    return;
+  }
+  const matrixProject = event.target.closest(".matrix-project-link");
+  if (matrixProject) {
+    focusObject("project", matrixProject.dataset.matrixProjectId, "project-matrix");
+    return;
+  }
+  const matrixTask = event.target.closest(".matrix-task-link");
+  if (matrixTask) {
+    focusObject("task", matrixTask.dataset.matrixTaskId, "project-matrix");
+    return;
+  }
+  const matrixRemove = event.target.closest(".matrix-remove-task-button");
+  if (matrixRemove) {
+    deleteProjectPhaseLink(matrixRemove.dataset.matrixLinkId).then(() => renderTasks()).catch((error) => {
+      state.syncError = `Project phase link was not removed: ${error.message}`;
+      state.syncMessage = "";
+      render();
+    });
+    return;
+  }
+  const matrixAdd = event.target.closest(".matrix-add-task-button");
+  if (matrixAdd) {
+    const panel = matrixAdd.closest(".matrix-assignment-panel");
+    const taskId = panel?.querySelector("[name='matrixTaskId']")?.value;
+    if (!taskId || !state.matrixProjectId || !state.matrixPhaseId) return;
+    persistProjectPhaseLink(state.matrixProjectId, state.matrixPhaseId, taskId).then(() => renderTasks()).catch((error) => {
+      state.syncError = `Project phase link was not saved: ${error.message}`;
+      state.syncMessage = "";
+      render();
+    });
+    return;
+  }
   const projectFilterSortButton = event.target.closest("[data-project-filter-sort]");
   if (projectFilterSortButton) {
     setProjectFilterSort(projectFilterSortButton.dataset.projectFilterSort);
