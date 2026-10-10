@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.99";
+const APP_VERSION = "1.11.00";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -149,7 +149,11 @@ const state = {
   timelineZoom: Number(localStorage.getItem("timeline-zoom") || 42),
   detailWidth: Number(localStorage.getItem("detail-width") || 360),
   matrixProjectId: "",
-  matrixPhaseId: ""
+  matrixPhaseId: "",
+  matrixProjectColumnWidth: Number(localStorage.getItem("matrix-project-column-width") || 190),
+  matrixResizing: false,
+  matrixResizeStartX: 0,
+  matrixResizeStartWidth: 190
 };
 
 const els = {
@@ -5605,13 +5609,13 @@ function renderProjectPhaseMatrixView() {
       </div>
       ${selectedProject && selectedPhase ? `
         <section class="matrix-assignment-panel">
-          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span></div>
+          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span><small class="matrix-assignment-help">Assign existing project tasks to this phase. This does not create a new task.</small></div>
           <div class="matrix-add-row">
             <select name="matrixTaskId" aria-label="Task to add">
-              <option value="">Add project task...</option>
+              <option value="">Assign existing task...</option>
               ${state.tasks.filter((task) => task.project_id === selectedProject.id && !projectPhaseLinksFor(selectedProject.id, selectedPhase.id).some((link) => link.task_id === task.id)).sort((a, b) => sortByLabel(a.title, b.title)).map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")}
             </select>
-            <button class="primary-button matrix-add-task-button" type="button">Add task</button>
+            <button class="primary-button matrix-add-task-button" type="button">Assign</button>
           </div>
           <div class="matrix-assigned-tasks">
             ${projectPhaseLinksFor(selectedProject.id, selectedPhase.id).map((link) => {
@@ -5623,12 +5627,12 @@ function renderProjectPhaseMatrixView() {
       ` : ""}
       <div class="project-phase-matrix-scroll">
         <table class="project-phase-matrix-table">
-          <thead><tr><th>Project</th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}<th>Unassigned</th></tr></thead>
+          <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;">Project<span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}<th>Unassigned</th></tr></thead>
           <tbody>
             ${projects.map((project) => {
               const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
               const assignedIds = new Set(state.projectPhaseLinks.filter((link) => link.project_id === project.id).map((link) => link.task_id));
-              return `<tr><th class="matrix-project-name"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
+              return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
                 const links = projectPhaseLinksFor(project.id, phase.id);
                 const tasks = links.map((link) => state.tasks.find((task) => task.id === link.task_id)).filter(Boolean);
                 const status = !tasks.length ? "not-started" : tasks.every((task) => task.status === "done") ? "complete" : "active";
@@ -10029,4 +10033,33 @@ els.resizeHandle.addEventListener("pointerup", (event) => {
   localStorage.setItem("detail-width", String(Math.round(state.detailWidth)));
   els.resizeHandle.releasePointerCapture(event.pointerId);
   document.body.classList.remove("resizing");
+});
+
+document.addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest(".matrix-column-resize");
+  if (!handle || state.view !== "project-matrix") return;
+  state.matrixResizing = true;
+  state.matrixResizeStartX = event.clientX;
+  state.matrixResizeStartWidth = state.matrixProjectColumnWidth;
+  handle.setPointerCapture?.(event.pointerId);
+  document.body.classList.add("matrix-resizing");
+  event.preventDefault();
+});
+
+document.addEventListener("pointermove", (event) => {
+  if (!state.matrixResizing) return;
+  state.matrixProjectColumnWidth = Math.min(420, Math.max(120, state.matrixResizeStartWidth + event.clientX - state.matrixResizeStartX));
+  const header = document.querySelector(".matrix-project-header");
+  document.querySelectorAll(".matrix-project-header, .matrix-project-name").forEach((cell) => {
+    cell.style.width = `${state.matrixProjectColumnWidth}px`;
+    cell.style.minWidth = `${state.matrixProjectColumnWidth}px`;
+  });
+  if (header) header.title = `Project column: ${Math.round(state.matrixProjectColumnWidth)}px`;
+});
+
+document.addEventListener("pointerup", () => {
+  if (!state.matrixResizing) return;
+  state.matrixResizing = false;
+  localStorage.setItem("matrix-project-column-width", String(Math.round(state.matrixProjectColumnWidth)));
+  document.body.classList.remove("matrix-resizing");
 });

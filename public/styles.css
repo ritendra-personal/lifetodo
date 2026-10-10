@@ -1426,6 +1426,7 @@ body.resizing .resize-handle::before {
 .matrix-assignment-panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: #fff; }
 .matrix-assignment-panel > div:first-child { margin-bottom: 9px; }
 .matrix-assignment-panel > div:first-child span { color: var(--muted); }
+.matrix-assignment-help { display: block; color: var(--muted); font-size: .78rem; margin-top: 3px; }
 .matrix-add-row { display: flex; gap: 8px; }
 .matrix-add-row select { flex: 1; min-width: 0; }
 .matrix-assigned-tasks { display: grid; gap: 5px; margin-top: 9px; }
@@ -1438,6 +1439,11 @@ body.resizing .resize-handle::before {
 .project-phase-matrix-table thead th:first-child, .project-phase-matrix-table tbody th { text-align: left; }
 .project-phase-matrix-table thead th:first-child, .project-phase-matrix-table tbody th:first-child { position: sticky; left: 0; z-index: 3; background: #fff; min-width: 190px; }
 .project-phase-matrix-table thead th:first-child { background: #f8fafc; }
+.matrix-project-header { position: relative; }
+.matrix-column-resize { position: absolute; top: 0; right: -5px; width: 10px; height: 100%; cursor: col-resize; z-index: 5; }
+.matrix-column-resize::after { content: ""; position: absolute; top: 20%; bottom: 20%; left: 4px; border-left: 2px solid #94a3b8; opacity: .8; }
+.matrix-column-resize:hover::after { border-color: var(--accent); }
+body.matrix-resizing, body.matrix-resizing * { cursor: col-resize !important; user-select: none; }
 .matrix-project-name small { display: block; color: var(--muted); font-weight: 400; font-size: .75rem; margin-top: 2px; }
 .matrix-cell { width: 100%; min-width: 96px; min-height: 52px; border: 1px solid transparent; border-radius: 4px; display: grid; grid-template-columns: 9px 1fr; grid-template-rows: 1fr 1fr; align-items: center; justify-items: center; gap: 0 5px; background: #fef2f2; color: var(--text); cursor: pointer; }
 .matrix-cell:hover { border-color: var(--accent); transform: translateY(-1px); }
