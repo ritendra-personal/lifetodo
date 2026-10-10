@@ -2525,6 +2525,9 @@ body.matrix-resizing, body.matrix-resizing * { cursor: col-resize !important; us
   grid-template-columns: minmax(0, 1fr) 92px auto auto;
 }
 
+.phase-order-buttons { display: inline-flex; gap: 3px; }
+.phase-order-buttons .ghost-button { min-width: 30px; padding: 4px 7px; line-height: 1; }
+
 .area-usage {
   color: var(--muted);
   white-space: nowrap;

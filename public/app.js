@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.11.00";
+const APP_VERSION = "1.11.01";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -3300,6 +3300,31 @@ function namedOptionUsage(type, id) {
   return state.people.filter((person) => person.relationship_type_id === id).length;
 }
 
+async function moveProjectPhase(phaseId, direction) {
+  const phases = [...state.projectPhases].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const index = phases.findIndex((phase) => phase.id === phaseId);
+  const nextIndex = index + direction;
+  if (index < 0 || nextIndex < 0 || nextIndex >= phases.length) return;
+  [phases[index], phases[nextIndex]] = [phases[nextIndex], phases[index]];
+  phases.forEach((phase, phaseIndex) => { phase.sort_order = (phaseIndex + 1) * 1000; });
+  state.projectPhases = phases;
+  saveNamedOptions();
+  showSyncMessage("Saving phase order...");
+  try {
+    if (isSupabaseReady()) {
+      if (!state.projectPhasesCloudReady) throw new Error("Project phases are not connected. Run migration 024_project_phases.sql.");
+      await Promise.all(phases.map((phase) => persistNamedOption("project-phases", phase, { render: false })));
+    }
+    state.syncError = "";
+    state.syncMessage = `Saved phase order at ${savedAtLabel()}.`;
+    render();
+  } catch (error) {
+    state.syncError = `Phase order was not saved: ${error.message}`;
+    state.syncMessage = "";
+    render();
+  }
+}
+
 function detachAnnotationReferences(type, id) {
   if (type === "skills") {
     state.people = state.people.map((person) => ({ ...person, skill_ids: person.skill_ids.filter((skillId) => skillId !== id) }));
@@ -5376,7 +5401,9 @@ function renderNamedSettingsView(type) {
   const config = optionConfig(type);
   const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles", venues: "Venues", "project-phases": "Project Phases" };
   const title = titles[type] || "Settings";
-  const items = state[config.stateKey];
+  const items = type === "project-phases"
+    ? [...state[config.stateKey]].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    : state[config.stateKey];
   const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
   const supportsColor = type === "relationships";
   els.taskList.innerHTML = `
@@ -5412,6 +5439,7 @@ function renderNamedSettingsView(type) {
       <input class="named-option-input" type="text" aria-label="${fieldLabel} name">
       ${supportsColor ? `<input class="named-option-color-input" type="color" aria-label="${fieldLabel} color">` : ""}
       <span class="area-usage"></span>
+      ${type === "project-phases" ? `<div class="phase-order-buttons"><button class="ghost-button move-phase-button" data-direction="-1" type="button" aria-label="Move phase up" title="Move phase up">↑</button><button class="ghost-button move-phase-button" data-direction="1" type="button" aria-label="Move phase down" title="Move phase down">↓</button></div>` : ""}
       <button class="danger-button delete-option-button" type="button">Delete</button>
     `;
     row.querySelector(".named-option-input").value = item.name;
@@ -5598,7 +5626,7 @@ function projectPhaseLinksFor(projectId, phaseId) {
 
 function renderProjectPhaseMatrixView() {
   const projects = sortedByName(state.projects);
-  const phases = sortedByName(state.projectPhases);
+  const phases = [...state.projectPhases].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   const selectedProject = state.matrixProjectId ? state.projects.find((project) => project.id === state.matrixProjectId) : null;
   const selectedPhase = state.matrixPhaseId ? state.projectPhases.find((phase) => phase.id === state.matrixPhaseId) : null;
   els.taskList.innerHTML = `
@@ -8666,6 +8694,12 @@ els.taskList.addEventListener("click", async (event) => {
   if (deleteOptionButton) {
     const row = deleteOptionButton.closest("[data-option-id]");
     if (row) deleteNamedOption(row.dataset.optionType, row.dataset.optionId);
+    return;
+  }
+  const movePhaseButton = event.target.closest(".move-phase-button");
+  if (movePhaseButton) {
+    const row = movePhaseButton.closest("[data-option-type='project-phases']");
+    if (row) moveProjectPhase(row.dataset.optionId, Number(movePhaseButton.dataset.direction));
     return;
   }
   const addTaxonomyRootButton = event.target.closest(".add-taxonomy-root-button");
