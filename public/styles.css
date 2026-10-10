@@ -1439,8 +1439,11 @@ body.resizing .resize-handle::before {
 .matrix-cell-form textarea { min-height: 42px; resize: vertical; }
 .matrix-cell-actions { display: flex; gap: 8px; align-items: center; }
 .project-phase-matrix-scroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-.project-phase-matrix-table { border-collapse: collapse; min-width: max-content; width: 100%; }
+.project-phase-matrix-table { border-collapse: separate; border-spacing: 0 8px; width: max-content; }
 .project-phase-matrix-table th, .project-phase-matrix-table td { border: 1px solid #cbd5e1; padding: 7px; text-align: center; vertical-align: middle; }
+.project-phase-matrix-table tbody td { padding: 0; }
+.project-phase-matrix-table th:not(:first-child), .project-phase-matrix-table td { width: 112px; min-width: 112px; max-width: 112px; }
+.project-phase-matrix-table thead th { overflow-wrap: anywhere; }
 .project-phase-matrix-table thead th { position: sticky; top: 0; z-index: 2; background: #f8fafc; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
 .project-phase-matrix-table thead th:first-child, .project-phase-matrix-table tbody th { text-align: left; }
 .project-phase-matrix-table thead th:first-child, .project-phase-matrix-table tbody th:first-child { position: sticky; left: 0; z-index: 3; background: #fff; min-width: 190px; }
@@ -1451,11 +1454,11 @@ body.resizing .resize-handle::before {
 .matrix-column-resize:hover::after { border-color: var(--accent); }
 body.matrix-resizing, body.matrix-resizing * { cursor: col-resize !important; user-select: none; }
 .matrix-project-name small { display: block; color: var(--muted); font-weight: 400; font-size: .75rem; margin-top: 2px; }
-.matrix-cell { --phase-status-color: #94a3b8; width: 100%; min-width: 96px; min-height: 52px; border: 1px solid transparent; border-radius: 4px; display: grid; grid-template-columns: 9px 1fr; grid-template-rows: 1fr 1fr; align-items: center; justify-items: center; gap: 0 5px; background: color-mix(in srgb, var(--phase-status-color) 12%, white); color: var(--text); cursor: pointer; }
-.matrix-cell:hover { border-color: var(--accent); transform: translateY(-1px); }
+.matrix-cell { --phase-status-color: #94a3b8; width: 112px; min-width: 0; min-height: 52px; padding: 6px; border: 1px solid transparent; border-radius: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); grid-template-rows: 1fr 1fr; align-items: center; justify-items: center; gap: 3px 5px; background: color-mix(in srgb, var(--phase-status-color) 12%, white); color: var(--text); cursor: pointer; }
+.matrix-cell:hover { border-color: var(--accent); transform: none; }
 .matrix-cell.not-started, .matrix-cell.active, .matrix-cell.complete, .matrix-cell.neutral { border-color: var(--phase-status-color); }
 .matrix-cell-status { grid-row: 1 / span 2; background: var(--phase-status-color) !important; }
-.matrix-cell strong { font-size: .85rem; line-height: 1; }
+.matrix-cell strong { font-size: .75rem; line-height: 1.2; overflow-wrap: anywhere; }
 .matrix-cell small { font-size: .63rem; line-height: 1; white-space: nowrap; }
 .matrix-unassigned { color: var(--muted); font-weight: 600; }
 @media (max-width: 760px) {
