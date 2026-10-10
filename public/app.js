@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.12.01";
+const APP_VERSION = "1.12.02";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5839,10 +5839,7 @@ function renderProjectTasksView() {
   filter.value = state.projectTaskFilter;
   els.taskList.querySelector("[name='projectTaskStatus']").value = state.projectTaskStatus;
   const groupsContainer = els.taskList.querySelector(".project-tasks-groups");
-  const selectedGroups = [
-    ...(state.projectTaskFilter ? filteredProjects : filteredProjects),
-    ...(state.projectTaskFilter ? [] : [{ id: "", name: "Unassigned" }])
-  ];
+  const selectedGroups = filteredProjects;
   for (const project of selectedGroups) {
     const tasks = groups.get(project.id) || [];
     const roots = tasks.filter((task) => !task.parent_id || !tasks.some((item) => item.id === task.parent_id));
