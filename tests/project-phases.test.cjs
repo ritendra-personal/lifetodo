@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
 const source = fs.readFileSync("public/app.js", "utf8");
-const names = ["saveProjectPhaseCell", "projectPhaseEntryFor", "renderProjectPhaseMatrixView", "projectPhaseLinksFor", "phaseStatusTone", "phaseStatusNameForId", "phaseStatusIdForName"];
+const names = ["saveProjectPhaseCell", "projectPhaseEntryFor", "renderProjectPhaseMatrixView", "projectPhaseLinksFor", "phaseStatusTone", "phaseStatusNameForId", "phaseStatusIdForName", "selectedPhaseProjectTypeId", "phasesForProjectType", "phaseProjectTypeControl"];
 const functions = names.map((name) => {
   const start = source.search(new RegExp("(?:async )?function " + name + "\\("));
   assert.ok(start >= 0, name);
@@ -15,6 +15,7 @@ let cloud = false;
 let fail = false;
 const writes = [];
 const state = {
+  projectTypes: [], phaseProjectTypeId: "",
   projects: [{ id: "p", name: "Project" }],
   projectPhases: [{ id: "phase", name: "Writing", sort_order: 0 }],
   phaseStatuses: [{ id: "green", name: "Completed", color: "#00ff00" }],
@@ -59,5 +60,19 @@ const form = {
   await assert.rejects(context.saveProjectPhaseCell(form), /027/);
   context.renderProjectPhaseMatrixView();
   assert.match(context.els.taskList.innerHTML, /--phase-status-color:#00ff00/);
+  state.projectTypes = [{ id: "film", name: "Film" }, { id: "play", name: "Play" }];
+  state.projects.push({ id: "movie", name: "Movie", project_type_id: "film" }, { id: "stage", name: "Stage", project_type_id: "play" });
+  state.projectPhases.push({ id: "shoot", name: "Shooting", project_type_id: "film", sort_order: 2000 }, { id: "write", name: "Writing", project_type_id: "film", sort_order: 1000 }, { id: "rehearse", name: "Rehearsals", project_type_id: "play" });
+  state.phaseProjectTypeId = "film";
+  state.matrixProjectId = "";
+  state.matrixPhaseId = "";
+  context.renderProjectPhaseMatrixView();
+  assert.match(context.els.taskList.innerHTML, /Movie/);
+  assert.doesNotMatch(context.els.taskList.innerHTML, /Stage|Rehearsals/);
+  assert.ok(context.els.taskList.innerHTML.indexOf(">Writing</th>") < context.els.taskList.innerHTML.indexOf(">Shooting</th>"));
+  state.phaseProjectTypeId = "play";
+  context.renderProjectPhaseMatrixView();
+  assert.match(context.els.taskList.innerHTML, /Stage|Rehearsals/);
+  assert.doesNotMatch(context.els.taskList.innerHTML, /Movie|Shooting/);
   console.log("Project phases: independent status/notes, multiple links, no task creation, cloud failure and migration guard passed.");
 })().catch((error) => { console.error(error); process.exit(1); });

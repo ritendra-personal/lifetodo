@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.13.02";
+const APP_VERSION = "1.13.03";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -144,6 +144,8 @@ const state = {
   projectPhasesCloudReady: false,
   projectPhaseLinksCloudReady: false,
   projectPhaseEntriesCloudReady: false,
+  projectPhaseTypesCloudReady: false,
+  phaseProjectTypeId: null,
   taxonomiesCloudReady: false,
   taskTaxonomyLinksCloudReady: false,
   projectTaxonomyLinksCloudReady: false,
@@ -1164,6 +1166,7 @@ function normalizeNamedOption(option, index = 0) {
     id: option.id || makeId(),
     name: option.name || "",
     color: option.color || "",
+    ...(Object.hasOwn(option, "project_type_id") ? { project_type_id: option.project_type_id || null } : {}),
     sort_order: Number(option.sort_order ?? option.sortOrder ?? index * 1000) || 0,
     created_at: option.created_at || nowIso(),
     updated_at: option.updated_at || nowIso()
@@ -2369,6 +2372,7 @@ async function loadProjectPhaseData() {
     ]);
     if (phasesError || linksError || phaseStatusesError) throw phasesError || linksError || phaseStatusesError;
     state.projectPhasesCloudReady = true;
+    state.projectPhaseTypesCloudReady = !(phases || []).some((phase) => !Object.hasOwn(phase, "project_type_id"));
     state.projectPhaseLinksCloudReady = true;
     state.projectPhaseEntriesCloudReady = !entriesError;
     const normalizedPhases = (phases || []).map(normalizeNamedOption);
@@ -2389,6 +2393,7 @@ async function loadProjectPhaseData() {
     state.projectPhasesCloudReady = false;
     state.projectPhaseLinksCloudReady = false;
     state.projectPhaseEntriesCloudReady = false;
+    state.projectPhaseTypesCloudReady = false;
     state.syncMessage = state.syncMessage || "Project phases are local until you run migration 026_phase_statuses.sql.";
     console.warn("Supabase project phases unavailable; keeping project phases local", error);
     return null;
@@ -2396,6 +2401,9 @@ async function loadProjectPhaseData() {
 }
 
 async function persistProjectPhaseLink(projectId, phaseId, taskId) {
+  const project = state.projects.find((item) => item.id === projectId);
+  const phase = state.projectPhases.find((item) => item.id === phaseId);
+  if (!project || !phase || (project.project_type_id || "") !== (phase.project_type_id || "")) throw new Error("Choose a phase for this project's type.");
   if (!state.tasks.some((task) => task.id === taskId && task.project_id === projectId)) throw new Error("Choose a task from this project.");
   if (isSupabaseReady() && !state.projectPhaseEntriesCloudReady) throw new Error("Run migration 027_independent_project_phases.sql before linking tasks.");
   const existing = state.projectPhaseLinks.find((link) => link.project_id === projectId && link.phase_id === phaseId && link.task_id === taskId);
@@ -3294,6 +3302,9 @@ function optionConfig(type) {
 }
 
 async function persistNamedOption(type, option, options = {}) {
+  if (type === "project-phases" && isSupabaseReady() && !state.projectPhaseTypesCloudReady) {
+    throw new Error("Phase was not saved: run migration 028_project_type_phases.sql, then refresh.");
+  }
   const config = optionConfig(type);
   const normalized = normalizeNamedOption({ ...option, updated_at: nowIso() });
   const list = state[config.stateKey];
@@ -3346,13 +3357,13 @@ function namedOptionUsage(type, id) {
 }
 
 async function moveProjectPhase(phaseId, direction) {
-  const phases = [...state.projectPhases].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const phases = phasesForProjectType(selectedPhaseProjectTypeId());
   const index = phases.findIndex((phase) => phase.id === phaseId);
   const nextIndex = index + direction;
   if (index < 0 || nextIndex < 0 || nextIndex >= phases.length) return;
   [phases[index], phases[nextIndex]] = [phases[nextIndex], phases[index]];
   phases.forEach((phase, phaseIndex) => { phase.sort_order = (phaseIndex + 1) * 1000; });
-  state.projectPhases = phases;
+  state.projectPhases = state.projectPhases.map((phase) => phases.find((item) => item.id === phase.id) || phase);
   saveNamedOptions();
   showSyncMessage("Saving phase order...");
   try {
@@ -5469,11 +5480,12 @@ function renderNamedSettingsView(type) {
   const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", "phase-statuses": "Phase Statuses", roles: "Roles", venues: "Venues", "project-phases": "Project Phases" };
   const title = titles[type] || "Settings";
   const items = type === "project-phases"
-    ? [...state[config.stateKey]].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    ? phasesForProjectType(selectedPhaseProjectTypeId())
     : state[config.stateKey];
   const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
   const supportsColor = type === "relationships" || type === "phase-statuses";
   els.taskList.innerHTML = `
+    ${type === "project-phases" ? phaseProjectTypeControl() : ""}
     <form id="named-settings-form" class="planning-form named-settings-form${supportsColor ? " named-settings-form-with-color" : ""}" data-option-type="${type}">
       <label class="field-label">${fieldLabel}
         <input name="name" type="text" placeholder="New ${config.label}" required>
@@ -5712,6 +5724,8 @@ async function saveProjectPhaseCell(form) {
   const notes = form.querySelector("[name='phaseTaskNotes']")?.value.trim() || "";
   const statusId = form.querySelector("[name='phaseStatusId']")?.value || "";
   if (!project || !state.projectPhases.some((phase) => phase.id === phaseId)) throw new Error("Select a project and phase.");
+  const phase = state.projectPhases.find((item) => item.id === phaseId);
+  if ((phase.project_type_id || "") !== (project.project_type_id || "")) throw new Error("This phase belongs to a different project type.");
   if (isSupabaseReady() && !state.projectPhaseEntriesCloudReady) {
     throw new Error("Phase was not saved: run migration 027_independent_project_phases.sql in Supabase, then refresh.");
   }
@@ -5738,9 +5752,24 @@ function projectPhaseEntryFor(projectId, phaseId) {
   return state.projectPhaseEntries.find((entry) => entry.project_id === projectId && entry.phase_id === phaseId);
 }
 
+function selectedPhaseProjectTypeId() {
+  return state.phaseProjectTypeId ?? sortedByName(state.projectTypes)[0]?.id ?? "";
+}
+
+function phasesForProjectType(typeId) {
+  return state.projectPhases.filter((phase) => (phase.project_type_id || "") === typeId)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+}
+
+function phaseProjectTypeControl() {
+  const selected = selectedPhaseProjectTypeId();
+  return `<label class="field-label phase-type-control">Project Type<select name="phaseProjectType"><option value=""${selected === "" ? " selected" : ""}>No type</option>${sortedByName(state.projectTypes).map((type) => `<option value="${type.id}"${type.id === selected ? " selected" : ""}>${escapeHtml(type.name)}</option>`).join("")}</select></label>`;
+}
+
 function renderProjectPhaseMatrixView() {
-  const projects = sortedByName(state.projects);
-  const phases = [...state.projectPhases].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const typeId = selectedPhaseProjectTypeId();
+  const projects = sortedByName(state.projects.filter((project) => (project.project_type_id || "") === typeId));
+  const phases = phasesForProjectType(typeId);
   const selectedProject = state.matrixProjectId ? state.projects.find((project) => project.id === state.matrixProjectId) : null;
   const selectedPhase = state.matrixPhaseId ? state.projectPhases.find((phase) => phase.id === state.matrixPhaseId) : null;
   const selectedEntry = projectPhaseEntryFor(selectedProject?.id, selectedPhase?.id);
@@ -5749,7 +5778,7 @@ function renderProjectPhaseMatrixView() {
   els.taskList.innerHTML = `
     <div class="project-phase-matrix">
       <div class="matrix-toolbar">
-        <div><strong>Project Phases</strong></div>
+        ${phaseProjectTypeControl()}
         <div class="matrix-legend">${state.phaseStatuses.map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
       </div>
       ${selectedProject && selectedPhase ? `
@@ -9307,6 +9336,7 @@ els.taskList.addEventListener("submit", async (event) => {
       const option = normalizeNamedOption({
         name: latestForm.get("name").trim(),
         color: latestForm.get("color") || "",
+        ...(type === "project-phases" ? { project_type_id: selectedPhaseProjectTypeId() || null } : {}),
         sort_order: nextNamedOptionSortOrder(state[config.stateKey])
       });
       await persistNamedOption(type, option, { render: false });
@@ -9609,6 +9639,13 @@ els.taskList.addEventListener("input", (event) => {
 });
 
 els.taskList.addEventListener("change", (event) => {
+  if (event.target.name === "phaseProjectType") {
+    state.phaseProjectTypeId = event.target.value;
+    state.matrixProjectId = "";
+    state.matrixPhaseId = "";
+    renderTasks();
+    return;
+  }
   if (event.target.closest(".taxonomy-add-select")) return;
   const eventFocusForm = event.target.closest("[data-event-focus-id]");
   if (eventFocusForm) {

@@ -646,8 +646,11 @@ create table if not exists planner_project_phases (
   updated_at timestamptz not null default now()
 );
 
-create unique index if not exists planner_project_phases_user_name_idx
-on planner_project_phases (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
+alter table planner_project_phases add column if not exists project_type_id uuid
+  references planner_project_types(id) on delete restrict;
+drop index if exists planner_project_phases_user_name_idx;
+create unique index if not exists planner_project_phases_type_name_idx
+on planner_project_phases (user_id, coalesce(project_type_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
 create index if not exists planner_project_phases_user_id_idx on planner_project_phases(user_id);
 create index if not exists planner_project_phases_sort_order_idx on planner_project_phases(sort_order);
 

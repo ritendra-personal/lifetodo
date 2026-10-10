@@ -1414,10 +1414,13 @@ body.resizing .resize-handle::before {
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 .matrix-toolbar strong { font-size: 1.15rem; }
+.phase-type-control { display: grid; gap: 4px; width: 220px; max-width: 100%; margin-bottom: 12px; }
+.matrix-toolbar .phase-type-control { margin-bottom: 0; flex-shrink: 0; }
 .matrix-help { display: block; color: var(--muted); font-size: .82rem; margin-top: 3px; }
-.matrix-legend { display: flex; gap: 14px; color: var(--muted); font-size: .78rem; white-space: nowrap; }
+.matrix-legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: .78rem; }
 .matrix-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .matrix-legend-dot, .matrix-cell-status { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: #ef4444; }
 .matrix-legend-dot.not-started, .matrix-cell.not-started .matrix-cell-status { background: #ef4444; }
