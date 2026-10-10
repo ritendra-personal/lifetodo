@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.11.02";
+const APP_VERSION = "1.12.00";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -1128,6 +1128,8 @@ function normalizeProjectPhaseLink(link) {
     project_id: link.project_id || link.projectId || "",
     phase_id: link.phase_id || link.phaseId || "",
     task_id: link.task_id || link.taskId || "",
+    status_id: link.status_id || link.statusId || "",
+    notes: link.notes || "",
     created_at: link.created_at || nowIso()
   };
 }
@@ -1930,6 +1932,8 @@ function projectPhaseLinkPayload(link) {
     project_id: link.project_id,
     phase_id: link.phase_id,
     task_id: link.task_id,
+    status_id: link.status_id || null,
+    notes: link.notes || "",
     user_id: state.user.id,
     created_at: link.created_at || nowIso()
   };
@@ -2538,7 +2542,7 @@ async function persistTask(task) {
     ensureSortOrders(state.tasks);
     saveLocal();
     render();
-    return;
+    return normalizedTask;
   }
 
   const payload = databasePayload(normalizedTask);
@@ -2559,6 +2563,7 @@ async function persistTask(task) {
     else state.tasks.unshift(saved);
     ensureSortOrders(state.tasks);
     render();
+    return saved;
   } catch (error) {
     state.syncError = error.message;
     state.syncMessage = "";
@@ -3962,6 +3967,13 @@ function projectStatusName(project) {
 
 function projectStatusNameForId(id) {
   return state.projectStatuses.find((status) => status.id === id)?.name || "";
+}
+
+function phaseStatusIdForLink(link, task) {
+  if (link?.status_id) return link.status_id;
+  if (task?.status === "done") return projectStatusIdForName("Completed");
+  if (link) return projectStatusIdForName("In progress");
+  return projectStatusIdForName("Not started");
 }
 
 function projectStatusIdForName(name) {
@@ -5624,6 +5636,60 @@ function projectPhaseLinksFor(projectId, phaseId) {
   return state.projectPhaseLinks.filter((link) => link.project_id === projectId && link.phase_id === phaseId);
 }
 
+function phaseStatusTone(statusName) {
+  const normalized = String(statusName || "").toLowerCase();
+  if (normalized === "completed" || normalized === "complete") return "complete";
+  if (normalized === "in progress" || normalized === "in-progress") return "active";
+  if (normalized === "not started" || normalized === "not-started") return "not-started";
+  return "neutral";
+}
+
+async function saveProjectPhaseCell(form) {
+  const projectId = form.dataset.matrixProjectId;
+  const phaseId = form.dataset.matrixPhaseId;
+  const project = state.projects.find((item) => item.id === projectId);
+  const existingLink = projectPhaseLinksFor(projectId, phaseId)[0];
+  const existingTask = existingLink ? state.tasks.find((item) => item.id === existingLink.task_id) : null;
+  const title = form.querySelector("[name='phaseTaskTitle']")?.value.trim() || "";
+  const notes = form.querySelector("[name='phaseTaskNotes']")?.value.trim() || "";
+  const statusId = form.querySelector("[name='phaseStatusId']")?.value || "";
+  if (!project || !title) throw new Error("Enter a title for this phase task.");
+  if (isSupabaseReady() && !state.projectPhaseLinksCloudReady) {
+    throw new Error("Project phase entries were not saved to database: run migration 025_project_phase_entries.sql.");
+  }
+  const savedTask = await persistTask(normalizeTask({
+    ...(existingTask || {}),
+    title,
+    notes,
+    project_id: projectId,
+    area_id: existingTask?.area_id || "",
+    area: existingTask?.area || "",
+    priority: existingTask?.priority || "Medium",
+    status: existingTask?.status || "open",
+    created_at: existingTask?.created_at || nowIso()
+  }));
+  if (!savedTask || state.syncError) throw new Error(state.syncError || "Phase task was not saved.");
+  const nextLink = normalizeProjectPhaseLink({
+    ...(existingLink || {}),
+    project_id: projectId,
+    phase_id: phaseId,
+    task_id: savedTask.id,
+    status_id: statusId,
+    notes
+  });
+  const previousLinks = state.projectPhaseLinks;
+  state.projectPhaseLinks = existingLink
+    ? previousLinks.map((link) => link.id === existingLink.id ? nextLink : link)
+    : [...previousLinks, nextLink];
+  saveLocal({ silent: true });
+  if (isSupabaseReady()) {
+    const savedLink = normalizeProjectPhaseLink(await upsertRowDirect("planner_project_phase_tasks", projectPhaseLinkPayload(nextLink), null, "project phase entry"));
+    state.projectPhaseLinks = state.projectPhaseLinks.map((link) => link.id === nextLink.id ? savedLink : link);
+  }
+  state.syncError = "";
+  state.syncMessage = `Saved phase task at ${savedAtLabel()}.`;
+}
+
 function renderProjectPhaseMatrixView() {
   const projects = sortedByName(state.projects);
   const phases = [...state.projectPhases].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
@@ -5632,25 +5698,18 @@ function renderProjectPhaseMatrixView() {
   els.taskList.innerHTML = `
     <div class="project-phase-matrix">
       <div class="matrix-toolbar">
-        <div><strong>Project Phase Matrix</strong><span class="matrix-help">Projects are rows; configurable phases are columns. Click a cell to assign tasks.</span></div>
-        <div class="matrix-legend"><span><i class="matrix-legend-dot not-started"></i>Not started</span><span><i class="matrix-legend-dot active"></i>In progress</span><span><i class="matrix-legend-dot complete"></i>Completed</span></div>
+        <div><strong>Project Phases</strong><span class="matrix-help">Projects are rows; configurable phases are columns. Each cell is one editable phase task.</span></div>
+        <div class="matrix-legend"><span><i class="matrix-legend-dot not-started"></i>Not started</span><span><i class="matrix-legend-dot active"></i>In progress</span><span><i class="matrix-legend-dot complete"></i>Completed</span><span><i class="matrix-legend-dot neutral"></i>Other</span></div>
       </div>
       ${selectedProject && selectedPhase ? `
         <section class="matrix-assignment-panel">
-          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span><small class="matrix-assignment-help">Assign existing project tasks to this phase. This does not create a new task.</small></div>
-          <div class="matrix-add-row">
-            <select name="matrixTaskId" aria-label="Task to add">
-              <option value="">Assign existing task...</option>
-              ${state.tasks.filter((task) => task.project_id === selectedProject.id && !projectPhaseLinksFor(selectedProject.id, selectedPhase.id).some((link) => link.task_id === task.id)).sort((a, b) => sortByLabel(a.title, b.title)).map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")}
-            </select>
-            <button class="primary-button matrix-add-task-button" type="button">Assign</button>
-          </div>
-          <div class="matrix-assigned-tasks">
-            ${projectPhaseLinksFor(selectedProject.id, selectedPhase.id).map((link) => {
-              const task = state.tasks.find((item) => item.id === link.task_id);
-              return task ? `<div class="matrix-task-row"><button class="link-button matrix-task-link" type="button" data-matrix-task-id="${task.id}">${escapeHtml(task.title)}</button><button class="danger-button matrix-remove-task-button" type="button" data-matrix-link-id="${link.id}">Remove</button></div>` : "";
-            }).join("") || `<span class="muted">No tasks assigned to this phase yet.</span>`}
-          </div>
+          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span><small class="matrix-assignment-help">Each cell contains exactly one phase task. Edit it here.</small></div>
+          <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
+            <label>Task title<input name="phaseTaskTitle" type="text" placeholder="What needs to happen in this phase?" value="${escapeHtml((state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)?.title) || "")}" required></label>
+            <label>Status<select name="phaseStatusId"><option value="">No status</option>${sortedByName(state.projectStatuses).map((status) => `<option value="${status.id}"${status.id === phaseStatusIdForLink(projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0], state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
+            <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Notes for this project phase">${escapeHtml(projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.notes || "")}</textarea></label>
+            <div class="matrix-cell-actions"><button class="primary-button" type="submit">Save phase task</button>${projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id ? `<button class="link-button matrix-task-link" type="button" data-matrix-task-id="${projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0].task_id}">Open full task</button>` : ""}</div>
+          </form>
         </section>
       ` : ""}
       <div class="project-phase-matrix-scroll">
@@ -5661,11 +5720,11 @@ function renderProjectPhaseMatrixView() {
               const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
               const assignedIds = new Set(state.projectPhaseLinks.filter((link) => link.project_id === project.id).map((link) => link.task_id));
               return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
-                const links = projectPhaseLinksFor(project.id, phase.id);
-                const tasks = links.map((link) => state.tasks.find((task) => task.id === link.task_id)).filter(Boolean);
-                const status = !tasks.length ? "not-started" : tasks.every((task) => task.status === "done") ? "complete" : "active";
-                const statusLabel = status === "not-started" ? "Not started" : status === "active" ? "In progress" : "Completed";
-                return `<td><button class="matrix-cell ${status}" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${tasks.length ? `${statusLabel}: ${tasks.length} task${tasks.length === 1 ? "" : "s"}` : "Not started: assign a task"}"><span class="matrix-cell-status"></span><strong>${tasks.length ? `${tasks.filter((task) => task.status === "done").length}/${tasks.length}` : "0"}</strong><small>${statusLabel}</small></button></td>`;
+                const link = projectPhaseLinksFor(project.id, phase.id)[0];
+                const task = link ? state.tasks.find((item) => item.id === link.task_id) : null;
+                const status = phaseStatusTone(projectStatusNameForId(phaseStatusIdForLink(link, task)));
+                const statusLabel = status === "not-started" ? "Not started" : status === "active" ? "In progress" : status === "complete" ? "Completed" : "Other";
+                return `<td><button class="matrix-cell ${status}" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${task ? `${statusLabel}: ${task.title}` : "Not started: create phase task"}"><span class="matrix-cell-status"></span><strong>${task ? "1/1" : "0/1"}</strong><small>${statusLabel}</small></button></td>`;
               }).join("")}<td class="matrix-unassigned">${Math.max(0, projectTasks.filter((task) => !assignedIds.has(task.id)).length)}</td></tr>`;
             }).join("") || `<tr><td colspan="${phases.length + 2}" class="empty-state">Create a project to start mapping phases.</td></tr>`}
           </tbody>
@@ -8976,10 +9035,24 @@ els.taskList.addEventListener("submit", async (event) => {
   const eventForm = event.target.closest("#event-form");
   const eventFocusForm = event.target.closest("[data-event-focus-id]");
   const projectTaskQuickAdd = event.target.closest("[data-project-task-create-project-id]");
-  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taxonomyForm && !taskFocusForm && !projectTaskQuickAdd && !eventForm && !eventFocusForm) return;
+  const matrixCellForm = event.target.closest(".matrix-cell-form");
+  if (!goalForm && !ideaForm && !areasForm && !personForm && !projectForm && !namedSettingsForm && !taxonomyForm && !taskFocusForm && !projectTaskQuickAdd && !eventForm && !eventFocusForm && !matrixCellForm) return;
   event.preventDefault();
   const form = new FormData(event.target);
-  if (eventForm || eventFocusForm) {
+  if (matrixCellForm) {
+    setFormSaving(event.target, true);
+    showSyncMessage("Saving phase task...");
+    try {
+      await saveProjectPhaseCell(event.target);
+      render();
+    } catch (error) {
+      state.syncError = state.syncError || error.message || "Phase task was not saved to database.";
+      state.syncMessage = "";
+      renderSyncStatus();
+    } finally {
+      setFormSaving(event.target, false);
+    }
+  } else if (eventForm || eventFocusForm) {
     setFormSaving(event.target, true);
     showSyncMessage("Saving event...");
     try {

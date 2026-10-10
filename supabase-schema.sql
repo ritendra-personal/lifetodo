@@ -657,6 +657,8 @@ create table if not exists planner_project_phase_tasks (
   project_id uuid not null references planner_projects(id) on delete cascade,
   phase_id uuid not null references planner_project_phases(id) on delete cascade,
   task_id uuid not null references planner_tasks(id) on delete cascade,
+  status_id uuid references planner_project_statuses(id) on delete set null,
+  notes text not null default '',
   created_at timestamptz not null default now(),
   unique (user_id, project_id, phase_id, task_id)
 );
@@ -665,6 +667,8 @@ create index if not exists planner_project_phase_tasks_user_id_idx on planner_pr
 create index if not exists planner_project_phase_tasks_project_id_idx on planner_project_phase_tasks(project_id);
 create index if not exists planner_project_phase_tasks_phase_id_idx on planner_project_phase_tasks(phase_id);
 create index if not exists planner_project_phase_tasks_task_id_idx on planner_project_phase_tasks(task_id);
+create unique index if not exists planner_project_phase_tasks_one_per_cell_idx on planner_project_phase_tasks(user_id, project_id, phase_id);
+create index if not exists planner_project_phase_tasks_status_id_idx on planner_project_phase_tasks(status_id);
 
 alter table planner_project_phases enable row level security;
 alter table planner_project_phase_tasks enable row level security;

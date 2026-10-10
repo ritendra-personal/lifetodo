@@ -1423,6 +1423,7 @@ body.resizing .resize-handle::before {
 .matrix-legend-dot.not-started, .matrix-cell.not-started .matrix-cell-status { background: #ef4444; }
 .matrix-legend-dot.active, .matrix-cell.active .matrix-cell-status { background: #eab308; }
 .matrix-legend-dot.complete, .matrix-cell.complete .matrix-cell-status { background: #22c55e; }
+.matrix-legend-dot.neutral, .matrix-cell.neutral .matrix-cell-status { background: #94a3b8; }
 .matrix-assignment-panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: #fff; }
 .matrix-assignment-panel > div:first-child { margin-bottom: 9px; }
 .matrix-assignment-panel > div:first-child span { color: var(--muted); }
@@ -1432,6 +1433,11 @@ body.resizing .resize-handle::before {
 .matrix-assigned-tasks { display: grid; gap: 5px; margin-top: 9px; }
 .matrix-task-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--line-soft); padding-top: 5px; }
 .matrix-task-row .danger-button { padding: 3px 8px; font-size: .75rem; }
+.matrix-cell-form { display: grid; grid-template-columns: minmax(200px, 1.4fr) 180px minmax(220px, 2fr) auto; gap: 8px; align-items: end; }
+.matrix-cell-form label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: .76rem; font-weight: 800; text-transform: uppercase; }
+.matrix-cell-form input, .matrix-cell-form select, .matrix-cell-form textarea { width: 100%; min-width: 0; }
+.matrix-cell-form textarea { min-height: 42px; resize: vertical; }
+.matrix-cell-actions { display: flex; gap: 8px; align-items: center; }
 .project-phase-matrix-scroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .project-phase-matrix-table { border-collapse: collapse; min-width: max-content; width: 100%; }
 .project-phase-matrix-table th, .project-phase-matrix-table td { border: 1px solid #cbd5e1; padding: 7px; text-align: center; vertical-align: middle; }
@@ -1450,6 +1456,7 @@ body.matrix-resizing, body.matrix-resizing * { cursor: col-resize !important; us
 .matrix-cell.not-started { background: #fef2f2; border-color: #fca5a5; }
 .matrix-cell.active { background: #fefce8; border-color: #facc15; }
 .matrix-cell.complete { background: #f0fdf4; border-color: #86efac; }
+.matrix-cell.neutral { background: #f1f5f9; border-color: #cbd5e1; }
 .matrix-cell-status { grid-row: 1 / span 2; }
 .matrix-cell strong { font-size: .85rem; line-height: 1; }
 .matrix-cell small { font-size: .63rem; line-height: 1; white-space: nowrap; }
@@ -1457,6 +1464,8 @@ body.matrix-resizing, body.matrix-resizing * { cursor: col-resize !important; us
 @media (max-width: 760px) {
   .matrix-toolbar { align-items: flex-start; flex-direction: column; gap: 8px; }
   .matrix-legend { flex-wrap: wrap; white-space: normal; }
+  .matrix-cell-form { grid-template-columns: 1fr; }
+  .matrix-cell-actions { justify-content: flex-start; }
 }
 
 .project-tasks-toolbar {
