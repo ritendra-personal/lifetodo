@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.10.98";
+const APP_VERSION = "1.10.99";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5601,7 +5601,7 @@ function renderProjectPhaseMatrixView() {
     <div class="project-phase-matrix">
       <div class="matrix-toolbar">
         <div><strong>Project Phase Matrix</strong><span class="matrix-help">Projects are rows; configurable phases are columns. Click a cell to assign tasks.</span></div>
-        <div class="matrix-legend"><span><i class="matrix-legend-dot empty"></i>No tasks</span><span><i class="matrix-legend-dot active"></i>In progress</span><span><i class="matrix-legend-dot complete"></i>Completed</span></div>
+        <div class="matrix-legend"><span><i class="matrix-legend-dot not-started"></i>Not started</span><span><i class="matrix-legend-dot active"></i>In progress</span><span><i class="matrix-legend-dot complete"></i>Completed</span></div>
       </div>
       ${selectedProject && selectedPhase ? `
         <section class="matrix-assignment-panel">
@@ -5631,8 +5631,9 @@ function renderProjectPhaseMatrixView() {
               return `<tr><th class="matrix-project-name"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
                 const links = projectPhaseLinksFor(project.id, phase.id);
                 const tasks = links.map((link) => state.tasks.find((task) => task.id === link.task_id)).filter(Boolean);
-                const status = !tasks.length ? "empty" : tasks.every((task) => task.status === "done") ? "complete" : "active";
-                return `<td><button class="matrix-cell ${status}" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${tasks.length ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : "Assign a task"}"><span class="matrix-cell-status"></span><span>${tasks.length ? `${tasks.filter((task) => task.status === "done").length}/${tasks.length}` : "—"}</span></button></td>`;
+                const status = !tasks.length ? "not-started" : tasks.every((task) => task.status === "done") ? "complete" : "active";
+                const statusLabel = status === "not-started" ? "Not started" : status === "active" ? "In progress" : "Completed";
+                return `<td><button class="matrix-cell ${status}" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${tasks.length ? `${statusLabel}: ${tasks.length} task${tasks.length === 1 ? "" : "s"}` : "Not started: assign a task"}"><span class="matrix-cell-status"></span><strong>${tasks.length ? `${tasks.filter((task) => task.status === "done").length}/${tasks.length}` : "0"}</strong><small>${statusLabel}</small></button></td>`;
               }).join("")}<td class="matrix-unassigned">${Math.max(0, projectTasks.filter((task) => !assignedIds.has(task.id)).length)}</td></tr>`;
             }).join("") || `<tr><td colspan="${phases.length + 2}" class="empty-state">Create a project to start mapping phases.</td></tr>`}
           </tbody>

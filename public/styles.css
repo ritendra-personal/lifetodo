@@ -1419,9 +1419,10 @@ body.resizing .resize-handle::before {
 .matrix-help { display: block; color: var(--muted); font-size: .82rem; margin-top: 3px; }
 .matrix-legend { display: flex; gap: 14px; color: var(--muted); font-size: .78rem; white-space: nowrap; }
 .matrix-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.matrix-legend-dot, .matrix-cell-status { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: #cbd5e1; }
-.matrix-legend-dot.active, .matrix-cell.active .matrix-cell-status { background: #3b82f6; }
-.matrix-legend-dot.complete, .matrix-cell.complete .matrix-cell-status { background: #2f855a; }
+.matrix-legend-dot, .matrix-cell-status { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: #ef4444; }
+.matrix-legend-dot.not-started, .matrix-cell.not-started .matrix-cell-status { background: #ef4444; }
+.matrix-legend-dot.active, .matrix-cell.active .matrix-cell-status { background: #eab308; }
+.matrix-legend-dot.complete, .matrix-cell.complete .matrix-cell-status { background: #22c55e; }
 .matrix-assignment-panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: #fff; }
 .matrix-assignment-panel > div:first-child { margin-bottom: 9px; }
 .matrix-assignment-panel > div:first-child span { color: var(--muted); }
@@ -1432,16 +1433,20 @@ body.resizing .resize-handle::before {
 .matrix-task-row .danger-button { padding: 3px 8px; font-size: .75rem; }
 .project-phase-matrix-scroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .project-phase-matrix-table { border-collapse: collapse; min-width: max-content; width: 100%; }
-.project-phase-matrix-table th, .project-phase-matrix-table td { border-bottom: 1px solid var(--line-soft); border-right: 1px solid var(--line-soft); padding: 8px; text-align: center; vertical-align: middle; }
+.project-phase-matrix-table th, .project-phase-matrix-table td { border: 1px solid #cbd5e1; padding: 7px; text-align: center; vertical-align: middle; }
 .project-phase-matrix-table thead th { position: sticky; top: 0; z-index: 2; background: #f8fafc; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
 .project-phase-matrix-table thead th:first-child, .project-phase-matrix-table tbody th { text-align: left; }
 .project-phase-matrix-table thead th:first-child, .project-phase-matrix-table tbody th:first-child { position: sticky; left: 0; z-index: 3; background: #fff; min-width: 190px; }
 .project-phase-matrix-table thead th:first-child { background: #f8fafc; }
 .matrix-project-name small { display: block; color: var(--muted); font-weight: 400; font-size: .75rem; margin-top: 2px; }
-.matrix-cell { min-width: 76px; min-height: 42px; border: 1px solid transparent; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #f8fafc; color: var(--text); cursor: pointer; }
+.matrix-cell { width: 100%; min-width: 96px; min-height: 52px; border: 1px solid transparent; border-radius: 4px; display: grid; grid-template-columns: 9px 1fr; grid-template-rows: 1fr 1fr; align-items: center; justify-items: center; gap: 0 5px; background: #fef2f2; color: var(--text); cursor: pointer; }
 .matrix-cell:hover { border-color: var(--accent); transform: translateY(-1px); }
-.matrix-cell.active { background: #eff6ff; border-color: #93c5fd; }
-.matrix-cell.complete { background: #ecfdf3; border-color: #86efac; }
+.matrix-cell.not-started { background: #fef2f2; border-color: #fca5a5; }
+.matrix-cell.active { background: #fefce8; border-color: #facc15; }
+.matrix-cell.complete { background: #f0fdf4; border-color: #86efac; }
+.matrix-cell-status { grid-row: 1 / span 2; }
+.matrix-cell strong { font-size: .85rem; line-height: 1; }
+.matrix-cell small { font-size: .63rem; line-height: 1; white-space: nowrap; }
 .matrix-unassigned { color: var(--muted); font-weight: 600; }
 @media (max-width: 760px) {
   .matrix-toolbar { align-items: flex-start; flex-direction: column; gap: 8px; }
