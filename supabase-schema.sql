@@ -651,13 +651,28 @@ on planner_project_phases (user_id, lower(regexp_replace(btrim(name), '\s+', ' '
 create index if not exists planner_project_phases_user_id_idx on planner_project_phases(user_id);
 create index if not exists planner_project_phases_sort_order_idx on planner_project_phases(sort_order);
 
+create table if not exists planner_phase_statuses (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  color text not null default '#667085',
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists planner_phase_statuses_user_name_idx
+on planner_phase_statuses (user_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')));
+create index if not exists planner_phase_statuses_user_id_idx on planner_phase_statuses(user_id);
+create index if not exists planner_phase_statuses_sort_order_idx on planner_phase_statuses(sort_order);
+
 create table if not exists planner_project_phase_tasks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   project_id uuid not null references planner_projects(id) on delete cascade,
   phase_id uuid not null references planner_project_phases(id) on delete cascade,
   task_id uuid not null references planner_tasks(id) on delete cascade,
-  status_id uuid references planner_project_statuses(id) on delete set null,
+  status_id uuid references planner_phase_statuses(id) on delete set null,
   notes text not null default '',
   created_at timestamptz not null default now(),
   unique (user_id, project_id, phase_id, task_id)
@@ -671,7 +686,14 @@ create unique index if not exists planner_project_phase_tasks_one_per_cell_idx o
 create index if not exists planner_project_phase_tasks_status_id_idx on planner_project_phase_tasks(status_id);
 
 alter table planner_project_phases enable row level security;
+alter table planner_phase_statuses enable row level security;
 alter table planner_project_phase_tasks enable row level security;
+
+drop policy if exists "planner_phase_statuses_all_for_authenticated_user" on planner_phase_statuses;
+create policy "planner_phase_statuses_all_for_authenticated_user"
+on planner_phase_statuses for all to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 drop policy if exists "planner_project_phases_all_for_authenticated_user" on planner_project_phases;
 create policy "planner_project_phases_all_for_authenticated_user"

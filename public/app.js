@@ -35,6 +35,13 @@ const defaultRelationshipTypes = [
 ].map((item, index) => ({ ...item, sort_order: (index + 1) * 1000 }));
 const defaultProjectTypes = ["Play", "Short Film", "Performance"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultProjectStatuses = ["Not started", "In progress", "Completed", "Deprioritized"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
+const defaultPhaseStatuses = [
+  { name: "Not started", color: "#d85b49" },
+  { name: "In progress", color: "#d6a21e" },
+  { name: "Completed", color: "#2f855a" },
+  { name: "Not relevant", color: "#667085" },
+  { name: "Blocked", color: "#7b5ea7" }
+].map((item, index) => ({ ...item, sort_order: (index + 1) * 1000 }));
 const defaultRoles = ["Director", "Producer", "Writer", "Actor"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
 const defaultVenues = [];
 const defaultProjectPhases = ["Conception", "Writing", "Casting", "Shooting", "Direction", "Post-production", "Release"].map((name, index) => ({ name, sort_order: (index + 1) * 1000 }));
@@ -90,6 +97,7 @@ const state = {
   relationshipTypes: loadNamedOptions("planner-relationship-types", defaultRelationshipTypes),
   projectTypes: loadNamedOptions("planner-project-types", defaultProjectTypes),
   projectStatuses: loadNamedOptions("planner-project-statuses", defaultProjectStatuses),
+  phaseStatuses: loadNamedOptions("planner-phase-statuses", defaultPhaseStatuses),
   roles: loadNamedOptions("planner-roles", defaultRoles),
   venues: loadNamedOptions("planner-venues", defaultVenues),
   projectPhases: loadNamedOptions("planner-project-phases", defaultProjectPhases),
@@ -244,6 +252,7 @@ const counts = {
   relationships: document.querySelector("#count-relationships"),
   projectTypes: document.querySelector("#count-project-types"),
   projectStatuses: document.querySelector("#count-project-statuses"),
+  phaseStatuses: document.querySelector("#count-phase-statuses"),
   roles: document.querySelector("#count-roles"),
   venues: document.querySelector("#count-venues"),
   projectPhases: document.querySelector("#count-project-phases"),
@@ -286,6 +295,7 @@ function saveNamedOptions() {
   localStorage.setItem("planner-relationship-types", JSON.stringify(state.relationshipTypes));
   localStorage.setItem("planner-project-types", JSON.stringify(state.projectTypes));
   localStorage.setItem("planner-project-statuses", JSON.stringify(state.projectStatuses));
+  localStorage.setItem("planner-phase-statuses", JSON.stringify(state.phaseStatuses));
   localStorage.setItem("planner-roles", JSON.stringify(state.roles));
   localStorage.setItem("planner-venues", JSON.stringify(state.venues));
   localStorage.setItem("planner-project-phases", JSON.stringify(state.projectPhases));
@@ -508,6 +518,7 @@ function validView(view) {
     "relationships",
     "project-types",
     "project-statuses",
+    "phase-statuses",
     "roles",
     "venues",
     "taxonomies",
@@ -1566,6 +1577,7 @@ function backupData() {
       relationship_types: state.relationshipTypes,
       project_types: state.projectTypes,
       project_statuses: state.projectStatuses,
+      phase_statuses: state.phaseStatuses,
       roles: state.roles,
       venues: state.venues,
       project_phases: state.projectPhases,
@@ -1619,6 +1631,7 @@ function normalizeBackupData(fileData) {
     relationshipTypes: (data.relationship_types || data.relationshipTypes || defaultRelationshipTypes).map(normalizeNamedOption),
     projectTypes: (data.project_types || data.projectTypes || defaultProjectTypes).map(normalizeNamedOption),
     projectStatuses: (data.project_statuses || data.projectStatuses || defaultProjectStatuses).map(normalizeNamedOption),
+    phaseStatuses: (data.phase_statuses || data.phaseStatuses || defaultPhaseStatuses).map(normalizeNamedOption),
     roles: (data.roles?.length ? data.roles : defaultRoles).map(normalizeNamedOption),
     venues: (data.venues?.length ? data.venues : defaultVenues).map(normalizeNamedOption),
     projectPhases: (data.project_phases || data.projectPhases || defaultProjectPhases).map(normalizeNamedOption),
@@ -1643,6 +1656,7 @@ function applyBackupData(data) {
   state.relationshipTypes = data.relationshipTypes;
   state.projectTypes = data.projectTypes;
   state.projectStatuses = data.projectStatuses;
+  state.phaseStatuses = data.phaseStatuses;
   state.roles = data.roles;
   state.venues = data.venues;
   state.projectPhases = data.projectPhases;
@@ -1978,6 +1992,7 @@ async function replaceCloudWithBackup(data) {
     "planner_relationship_types",
     "planner_project_types",
     "planner_project_statuses",
+    "planner_phase_statuses",
     "planner_roles",
     "planner_venues"
     ,"planner_project_phases"
@@ -1992,6 +2007,7 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_relationship_types", optionRows(data.relationshipTypes), "relationships");
   await insertBackupRows("planner_project_types", optionRows(data.projectTypes), "project types");
   await insertBackupRows("planner_project_statuses", optionRows(data.projectStatuses), "project statuses");
+  await insertBackupRows("planner_phase_statuses", optionRows(data.phaseStatuses), "phase statuses");
   await insertBackupRows("planner_roles", optionRows(data.roles), "roles");
   await insertBackupRows("planner_venues", optionRows(data.venues), "venues");
   await insertBackupRows("planner_project_phases", optionRows(data.projectPhases), "project phases");
@@ -2337,17 +2353,23 @@ async function loadTasksNow() {
 
 async function loadProjectPhaseData() {
   try {
-    const [{ data: phases, error: phasesError }, { data: links, error: linksError }] = await Promise.all([
+    const [{ data: phases, error: phasesError }, { data: links, error: linksError }, { data: phaseStatuses, error: phaseStatusesError }] = await Promise.all([
       state.supabase.from("planner_project_phases").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true }),
-      state.supabase.from("planner_project_phase_tasks").select("*").eq("user_id", state.user.id).order("created_at", { ascending: true })
+      state.supabase.from("planner_project_phase_tasks").select("*").eq("user_id", state.user.id).order("created_at", { ascending: true }),
+      state.supabase.from("planner_phase_statuses").select("*").eq("user_id", state.user.id).order("sort_order", { ascending: true })
     ]);
-    if (phasesError || linksError) throw phasesError || linksError;
+    if (phasesError || linksError || phaseStatusesError) throw phasesError || linksError || phaseStatusesError;
     state.projectPhasesCloudReady = true;
     state.projectPhaseLinksCloudReady = true;
     const normalizedPhases = (phases || []).map(normalizeNamedOption);
+    const normalizedPhaseStatuses = (phaseStatuses || []).map(normalizeNamedOption);
     if (!normalizedPhases.length) {
       await Promise.all(state.projectPhases.map((phase) => persistNamedOption("project-phases", phase, { render: false })));
     }
+    if (!normalizedPhaseStatuses.length) {
+      await Promise.all(state.phaseStatuses.map((status) => persistNamedOption("phase-statuses", status, { render: false })));
+    }
+    state.phaseStatuses = normalizedPhaseStatuses.length ? normalizedPhaseStatuses : state.phaseStatuses;
     return {
       phases: normalizedPhases.length ? normalizedPhases : state.projectPhases,
       links: (links || []).map(normalizeProjectPhaseLink)
@@ -2355,7 +2377,7 @@ async function loadProjectPhaseData() {
   } catch (error) {
     state.projectPhasesCloudReady = false;
     state.projectPhaseLinksCloudReady = false;
-    state.syncMessage = state.syncMessage || "Project phases are local until you run migration 024.";
+    state.syncMessage = state.syncMessage || "Project phases are local until you run migration 026_phase_statuses.sql.";
     console.warn("Supabase project phases unavailable; keeping project phases local", error);
     return null;
   }
@@ -3242,6 +3264,9 @@ function optionConfig(type) {
   if (type === "project-statuses") {
     return { table: "planner_project_statuses", stateKey: "projectStatuses", label: "project status", cloudFlag: "projectsCloudReady" };
   }
+  if (type === "phase-statuses") {
+    return { table: "planner_phase_statuses", stateKey: "phaseStatuses", label: "phase status", cloudFlag: "projectPhasesCloudReady" };
+  }
   if (type === "roles") {
     return { table: "planner_roles", stateKey: "roles", label: "role", cloudFlag: "projectsCloudReady" };
   }
@@ -3268,23 +3293,23 @@ async function persistNamedOption(type, option, options = {}) {
   }
   try {
     const payload = { ...normalized, user_id: state.user.id };
-    if (type !== "relationships") delete payload.color;
+    if (type !== "relationships" && type !== "phase-statuses") delete payload.color;
     let fallbackColorLocal = false;
     let data;
     try {
       data = await upsertRowDirect(config.table, payload, null, config.label);
     } catch (error) {
-      if (!(type === "relationships" && String(error.message || "").toLowerCase().includes("color"))) throw error;
+      if (!(type === "relationships" || type === "phase-statuses") || !String(error.message || "").toLowerCase().includes("color")) throw error;
       const fallbackPayload = { ...payload };
       delete fallbackPayload.color;
       data = await upsertRowDirect(config.table, fallbackPayload, null, config.label);
       fallbackColorLocal = true;
     }
     const saved = normalizeNamedOption(data);
-    const savedWithLocalColor = type === "relationships" && normalized.color ? { ...saved, color: normalized.color } : saved;
+    const savedWithLocalColor = ["relationships", "phase-statuses"].includes(type) && normalized.color ? { ...saved, color: normalized.color } : saved;
     state[config.stateKey] = state[config.stateKey].map((item) => (item.id === saved.id ? savedWithLocalColor : item));
     saveNamedOptions();
-    state.syncMessage = fallbackColorLocal ? "Relationship color is local until you run migration 013." : `Saved ${config.label} for ${keyLabel()}.`;
+    state.syncMessage = fallbackColorLocal ? `${config.label} color is local until the color migration is run.` : `Saved ${config.label} for ${keyLabel()}.`;
     state.syncError = "";
     if (options.render !== false) render();
   } catch (error) {
@@ -3299,6 +3324,7 @@ function namedOptionUsage(type, id) {
   if (type === "age-categories") return state.people.filter((person) => person.age_category_id === id).length;
   if (type === "project-types") return state.projects.filter((project) => project.project_type_id === id).length;
   if (type === "project-statuses") return state.projects.filter((project) => project.project_status_id === id).length;
+  if (type === "phase-statuses") return state.projectPhaseLinks.filter((link) => link.status_id === id).length;
   if (type === "venues") return state.projects.filter((project) => project.venue_id === id).length;
   if (type === "project-phases") return state.projectPhaseLinks.filter((link) => link.phase_id === id).length;
   if (type === "roles") return state.projectAssignments.filter((assignment) => assignment.role_ids.includes(id)).length;
@@ -3737,6 +3763,7 @@ function renderCounts() {
   counts.relationships.textContent = state.relationshipTypes.length;
   counts.projectTypes.textContent = state.projectTypes.length;
   counts.projectStatuses.textContent = state.projectStatuses.length;
+  if (counts.phaseStatuses) counts.phaseStatuses.textContent = state.phaseStatuses.length;
   counts.roles.textContent = state.roles.length;
   counts.venues.textContent = state.venues.length;
   counts.projectPhases.textContent = state.projectPhases.length;
@@ -3971,9 +3998,17 @@ function projectStatusNameForId(id) {
 
 function phaseStatusIdForLink(link, task) {
   if (link?.status_id) return link.status_id;
-  if (task?.status === "done") return projectStatusIdForName("Completed");
-  if (link) return projectStatusIdForName("In progress");
-  return projectStatusIdForName("Not started");
+  if (task?.status === "done") return phaseStatusIdForName("Completed");
+  if (link) return phaseStatusIdForName("In progress");
+  return phaseStatusIdForName("Not started");
+}
+
+function phaseStatusIdForName(name) {
+  return state.phaseStatuses.find((status) => status.name === name)?.id || "";
+}
+
+function phaseStatusNameForId(id) {
+  return state.phaseStatuses.find((status) => status.id === id)?.name || "";
 }
 
 function projectStatusIdForName(name) {
@@ -4584,6 +4619,10 @@ function renderTasks() {
   }
   if (state.view === "project-statuses") {
     renderNamedSettingsView("project-statuses");
+    return;
+  }
+  if (state.view === "phase-statuses") {
+    renderNamedSettingsView("phase-statuses");
     return;
   }
   if (state.view === "roles") {
@@ -5417,13 +5456,13 @@ function renderAreasView() {
 
 function renderNamedSettingsView(type) {
   const config = optionConfig(type);
-  const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", roles: "Roles", venues: "Venues", "project-phases": "Project Phases" };
+  const titles = { skills: "Skills", "age-categories": "Age Categories", relationships: "Relationships", "project-types": "Project Types", "project-statuses": "Project Statuses", "phase-statuses": "Phase Statuses", roles: "Roles", venues: "Venues", "project-phases": "Project Phases" };
   const title = titles[type] || "Settings";
   const items = type === "project-phases"
     ? [...state[config.stateKey]].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
     : state[config.stateKey];
   const fieldLabel = config.label.charAt(0).toUpperCase() + config.label.slice(1);
-  const supportsColor = type === "relationships";
+  const supportsColor = type === "relationships" || type === "phase-statuses";
   els.taskList.innerHTML = `
     <form id="named-settings-form" class="planning-form named-settings-form${supportsColor ? " named-settings-form-with-color" : ""}" data-option-type="${type}">
       <label class="field-label">${fieldLabel}
@@ -5461,7 +5500,7 @@ function renderNamedSettingsView(type) {
       <button class="danger-button delete-option-button" type="button">Delete</button>
     `;
     row.querySelector(".named-option-input").value = item.name;
-    if (supportsColor) row.querySelector(".named-option-color-input").value = item.color || relationshipTone(item.name).color;
+    if (supportsColor) row.querySelector(".named-option-color-input").value = item.color || (type === "phase-statuses" ? phaseStatusTone(item.name).color : relationshipTone(item.name).color);
     const usage = namedOptionUsage(type, item.id);
     row.querySelector(".area-usage").textContent = `${usage} ${["project-types", "project-statuses", "venues"].includes(type) ? "project" : type === "roles" ? "assignment" : type === "project-phases" ? "link" : "person"}${usage === 1 ? "" : "s"}`;
     list.append(row);
@@ -5644,10 +5683,15 @@ function projectPhaseLinksFor(projectId, phaseId) {
 
 function phaseStatusTone(statusName) {
   const normalized = String(statusName || "").toLowerCase();
-  if (normalized === "completed" || normalized === "complete") return "complete";
-  if (normalized === "in progress" || normalized === "in-progress") return "active";
-  if (normalized === "not started" || normalized === "not-started") return "not-started";
-  return "neutral";
+  const configured = state.phaseStatuses.find((status) => String(status.name || "").toLowerCase() === normalized);
+  const fallback = normalized === "completed" || normalized === "complete"
+    ? { color: "#22c55e", className: "complete" }
+    : normalized === "in progress" || normalized === "in-progress"
+      ? { color: "#eab308", className: "active" }
+      : normalized === "not started" || normalized === "not-started"
+        ? { color: "#ef4444", className: "not-started" }
+        : { color: "#94a3b8", className: "neutral" };
+  return { ...fallback, color: configured?.color || fallback.color };
 }
 
 async function saveProjectPhaseCell(form) {
@@ -5712,7 +5756,7 @@ function renderProjectPhaseMatrixView() {
           <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span><small class="matrix-assignment-help">This is one regular task for this project phase. It also appears under Tasks → Backlog when it has no due date.</small></div>
           <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
             <label>Phase task<input name="phaseTaskTitle" type="text" placeholder="What needs to happen in this phase?" value="${escapeHtml((state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)?.title) || "")}" required></label>
-            <label>Status<select name="phaseStatusId"><option value="">No status</option>${sortedByName(state.projectStatuses).map((status) => `<option value="${status.id}"${status.id === phaseStatusIdForLink(projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0], state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
+            <label>Phase status<select name="phaseStatusId"><option value="">No status</option>${sortedByName(state.phaseStatuses).map((status) => `<option value="${status.id}"${status.id === phaseStatusIdForLink(projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0], state.tasks.find((item) => item.id === projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id)) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
             <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Notes for this project phase">${escapeHtml(projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.notes || "")}</textarea></label>
             <div class="matrix-cell-actions"><button class="primary-button" type="submit">Save phase task</button>${projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0]?.task_id ? `<button class="link-button matrix-task-link" type="button" data-matrix-task-id="${projectPhaseLinksFor(selectedProject.id, selectedPhase.id)[0].task_id}">Open full task</button>` : ""}</div>
           </form>
@@ -5727,9 +5771,9 @@ function renderProjectPhaseMatrixView() {
               return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
                 const link = projectPhaseLinksFor(project.id, phase.id)[0];
                 const task = link ? state.tasks.find((item) => item.id === link.task_id) : null;
-                const status = phaseStatusTone(projectStatusNameForId(phaseStatusIdForLink(link, task)));
-                const statusLabel = status === "not-started" ? "Not started" : status === "active" ? "In progress" : status === "complete" ? "Completed" : "Other";
-                return `<td><button class="matrix-cell ${status}" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${task ? `${statusLabel}: ${task.title}` : "Not started: create phase task"}"><span class="matrix-cell-status"></span><strong>${task ? "1/1" : "0/1"}</strong><small>${statusLabel}</small></button></td>`;
+                const status = phaseStatusTone(phaseStatusNameForId(phaseStatusIdForLink(link, task)));
+                const statusLabel = phaseStatusNameForId(phaseStatusIdForLink(link, task)) || "Not started";
+                return `<td><button class="matrix-cell ${status.className}" style="--phase-status-color:${status.color};" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${task ? `${statusLabel}: ${task.title}` : "Not started: create phase task"}"><span class="matrix-cell-status"></span><strong>${task ? "1/1" : "0/1"}</strong><small>${escapeHtml(statusLabel)}</small></button></td>`;
               }).join("")}</tr>`;
             }).join("") || `<tr><td colspan="${phases.length + 1}" class="empty-state">Create a project to start mapping phases.</td></tr>`}
           </tbody>
@@ -8318,7 +8362,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
+  const detailHiddenViews = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -8380,6 +8424,7 @@ function render() {
     relationships: "Relationships",
     "project-types": "Project Types",
     "project-statuses": "Project Status",
+    "phase-statuses": "Phase Status",
     roles: "Roles",
     venues: "Venues",
     taxonomies: "Taxonomies",
@@ -8395,7 +8440,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
