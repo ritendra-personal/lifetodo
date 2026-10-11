@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.13.04";
+const APP_VERSION = "1.13.05";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5804,6 +5804,10 @@ function phaseProjectTypeControl() {
 }
 
 function renderProjectPhaseMatrixView() {
+  const previousForm = els.taskList.querySelector(".matrix-cell-form");
+  const draft = previousForm?.dataset.matrixProjectId === state.matrixProjectId && previousForm?.dataset.matrixPhaseId === state.matrixPhaseId
+    ? { notes: previousForm.querySelector("[name='phaseTaskNotes']").value, status_id: previousForm.querySelector("[name='phaseStatusId']").value }
+    : null;
   const typeId = selectedPhaseProjectTypeId();
   const phases = phasesForProjectType(typeId);
   const projects = state.projects.filter((project) => (project.project_type_id || "") === typeId).sort((a, b) => {
@@ -5819,7 +5823,7 @@ function renderProjectPhaseMatrixView() {
   });
   const selectedProject = state.matrixProjectId ? state.projects.find((project) => project.id === state.matrixProjectId) : null;
   const selectedPhase = state.matrixPhaseId ? state.projectPhases.find((phase) => phase.id === state.matrixPhaseId) : null;
-  const selectedEntry = projectPhaseEntryFor(selectedProject?.id, selectedPhase?.id);
+  const selectedEntry = draft || projectPhaseEntryFor(selectedProject?.id, selectedPhase?.id);
   const selectedLinks = projectPhaseLinksFor(selectedProject?.id, selectedPhase?.id);
   const availableTasks = state.tasks.filter((task) => task.project_id === selectedProject?.id && !selectedLinks.some((link) => link.task_id === task.id)).sort((a, b) => a.title.localeCompare(b.title));
   els.taskList.innerHTML = `
@@ -5830,19 +5834,20 @@ function renderProjectPhaseMatrixView() {
         <div class="matrix-legend">${orderedPhaseStatuses().map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
       </div>
       ${selectedProject && selectedPhase ? `
-        <section class="matrix-assignment-panel">
-          <div><strong>${escapeHtml(selectedProject.name)}</strong><span> · ${escapeHtml(selectedPhase.name)}</span></div>
+        <dialog class="matrix-assignment-panel phase-cell-dialog" aria-labelledby="phase-dialog-title">
+          <div class="phase-dialog-header"><strong id="phase-dialog-title">${escapeHtml(selectedProject.name)} · ${escapeHtml(selectedPhase.name)}</strong><button class="phase-dialog-close" type="button" aria-label="Close phase editor" title="Close">×</button></div>
+          <div class="phase-dialog-error" role="alert"${state.syncError ? "" : " hidden"}>${escapeHtml(state.syncError || "")}</div>
           <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
             <label>Phase status<select name="phaseStatusId" required>${orderedPhaseStatuses().map((status) => `<option value="${status.id}"${status.id === (selectedEntry?.status_id || phaseStatusIdForName("Not started")) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
             <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Notes for this project phase">${escapeHtml(selectedEntry?.notes || "")}</textarea></label>
             <div class="matrix-cell-actions"><button class="primary-button" type="submit">Save phase</button></div>
           </form>
-          <div class="matrix-add-row"><select name="matrixTaskId" aria-label="Existing project task"><option value="">Select existing project task...</option>${availableTasks.map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")}</select><button class="matrix-add-task-button" type="button"${availableTasks.length ? "" : " disabled"}>Link task</button></div>
+          <details class="phase-dialog-tasks"><summary>Linked tasks (${selectedLinks.length})</summary><div class="matrix-add-row"><select name="matrixTaskId" aria-label="Existing project task"><option value="">Select existing project task...</option>${availableTasks.map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")}</select><button class="matrix-add-task-button" type="button"${availableTasks.length ? "" : " disabled"}>Link task</button></div>
           <div class="matrix-assigned-tasks">${selectedLinks.map((link) => {
             const task = state.tasks.find((item) => item.id === link.task_id);
             return task ? `<div class="matrix-task-row"><button class="link-button matrix-task-link" type="button" data-matrix-task-id="${task.id}">${escapeHtml(task.title)}</button><button class="matrix-remove-task-button" type="button" data-matrix-link-id="${link.id}">Unlink</button></div>` : "";
-          }).join("")}</div>
-        </section>
+          }).join("")}</div></details>
+        </dialog>
       ` : ""}
       <div class="project-phase-matrix-scroll">
         <table class="project-phase-matrix-table">
@@ -5864,6 +5869,15 @@ function renderProjectPhaseMatrixView() {
       </div>
     </div>
   `;
+  const dialog = els.taskList.querySelector(".phase-cell-dialog");
+  if (dialog) {
+    dialog.addEventListener("close", () => {
+      state.matrixProjectId = "";
+      state.matrixPhaseId = "";
+    });
+    dialog.querySelector(".phase-dialog-close").addEventListener("click", () => dialog.close());
+    dialog.showModal();
+  }
 }
 
 function projectTaskMatches(task) {
@@ -9174,10 +9188,17 @@ els.taskList.addEventListener("submit", async (event) => {
     showSyncMessage("Saving phase...");
     try {
       await saveProjectPhaseCell(event.target);
+      state.matrixProjectId = "";
+      state.matrixPhaseId = "";
       render();
     } catch (error) {
       state.syncError = error.message || "Phase was not saved to database.";
       state.syncMessage = "";
+      const errorArea = event.target.closest(".phase-cell-dialog")?.querySelector(".phase-dialog-error");
+      if (errorArea) {
+        errorArea.hidden = false;
+        errorArea.textContent = state.syncError;
+      }
       renderSyncStatus();
     } finally {
       setFormSaving(event.target, false);

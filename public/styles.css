@@ -1430,6 +1430,18 @@ body.resizing .resize-handle::before {
 .matrix-assignment-panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; background: #fff; }
 .matrix-assignment-panel > div:first-child { margin-bottom: 9px; }
 .matrix-assignment-panel > div:first-child span { color: var(--muted); }
+.phase-cell-dialog { position: fixed; inset: 0; margin: auto; width: 520px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 48px); overflow: auto; padding: 18px; box-sizing: border-box; }
+.phase-cell-dialog::backdrop { background: rgb(0 0 0 / 28%); }
+.phase-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.phase-dialog-header strong { min-width: 0; overflow-wrap: anywhere; }
+.phase-dialog-close { flex: 0 0 32px; width: 32px; height: 32px; padding: 0; }
+.phase-cell-dialog .matrix-cell-form { grid-template-columns: 1fr; }
+.phase-cell-dialog textarea { min-height: 100px; }
+.phase-cell-dialog .matrix-cell-actions { justify-content: flex-end; }
+.phase-dialog-tasks { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.phase-dialog-tasks summary { cursor: pointer; margin-bottom: 8px; }
+.phase-dialog-error:not([hidden]) { margin-bottom: 12px; color: #991b1b; background: #fef2f2; border: 1px solid #fca5a5; padding: 10px; }
+.phase-cell-dialog .matrix-task-row .link-button { min-width: 0; overflow-wrap: anywhere; }
 .matrix-assignment-help { display: block; color: var(--muted); font-size: .78rem; margin-top: 3px; }
 .matrix-add-row { display: flex; gap: 8px; }
 .matrix-add-row select { flex: 1; min-width: 0; }

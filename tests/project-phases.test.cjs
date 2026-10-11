@@ -26,7 +26,7 @@ const state = {
   projectPhaseEntriesCloudReady: true, user: { id: "user" }
 };
 const context = vm.createContext({
-  state, els: { taskList: { innerHTML: "" } },
+  state, els: { taskList: { innerHTML: "", querySelector: () => null } },
   makeId: () => "entry", nowIso: () => "2026-01-01T00:00:00Z",
   isSupabaseReady: () => cloud, saveLocal: () => {}, savedAtLabel: () => "now",
   sortedByName: (items) => [...items].sort((a, b) => a.name.localeCompare(b.name)),
@@ -46,6 +46,8 @@ const form = {
   assert.match(context.els.taskList.innerHTML, /Not started/);
   assert.match(context.els.taskList.innerHTML, /2 tasks/);
   assert.doesNotMatch(context.els.taskList.innerHTML, /phaseTaskTitle|Save phase task/);
+  assert.match(context.els.taskList.innerHTML, /<dialog/);
+  assert.match(context.els.taskList.innerHTML, /<details class="phase-dialog-tasks">/);
   await context.saveProjectPhaseCell(form);
   assert.equal(state.projectPhaseEntries.length, 1);
   assert.equal(state.tasks.length, 2);
