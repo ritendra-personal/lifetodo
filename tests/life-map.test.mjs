@@ -97,3 +97,13 @@ test('upgrading reviewed categories preserves existing answers, task links and c
  assert.equal(coverageStatsForTest(),2);
  function coverageStatsForTest(){return topics.filter(t=>!t.group&&!t.kind&&data.answers[t.id]).length;}
 });
+
+test('link search separates record types and excludes linked tasks and subtasks',async()=>{
+ const {linkCandidates}=await import('../public/life-map.js');
+ const records=[['person',{id:'p',first_name:'Rajiv',last_name:'Example'}],['project',{id:'j',title:'Rajiv project'}],['task',{id:'t',title:'Call Rajiv'}],['task',{id:'child',title:'Prepare call',parent_id:'t'}]];
+ assert.deepEqual(linkCandidates(records,'person',[],'RAJIV').map(([,x])=>x.id),['p']);
+ assert.deepEqual(linkCandidates(records,'task',[],'call').map(([,x])=>x.id),['t']);
+ assert.equal(linkCandidates(records,'task',['task:t'],'call').length,0);
+ assert.equal(linkCandidates(records,'person',[],'missing').length,0);
+ assert.deepEqual(linkCandidates(records,'project',[],'rajiv').map(([,x])=>x.id),['j']);
+});

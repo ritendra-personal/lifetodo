@@ -1,5 +1,9 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.25';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.23';
+export function linkCandidates(records,type,linked=[],query='') {
+ const needle=query.trim().toLocaleLowerCase();
+ return records.filter(([kind,item])=>kind===type && !(type==='task'&&item.parent_id) && !linked.includes(`${type}:${item.id}`) && labelFor(item).toLocaleLowerCase().includes(needle)).sort((a,b)=>labelFor(a[1]).localeCompare(labelFor(b[1])));
+}
 export const baseTopics = [
  ['home','Home and everyday life','Home','How well is your home supporting everyday life?','Identify the home issue causing the most friction and one practical next step.'],
  ['money','Financial wellbeing','Finances','How confident do you feel about your financial responsibilities and plans?','Identify one financial question or responsibility that needs attention.'],
@@ -201,10 +205,18 @@ export function renderLifeMap(root,api){
   return r;
  }
  const recs=topics.filter(t=>t.parent&&!t.group&&!t.kind).map(suggestion).filter(Boolean).sort((a,b)=>b.score-a.score);
- const linksMarkup=`<details class="lm-secondary"><summary>Link existing people, projects, or tasks</summary><label>Existing item<select id="lm-existing"><option value="">Choose an item…</option>${records.map(([type,item])=>`<option value="${esc(type+':'+item.id)}">${esc(type)}: ${esc(labelFor(item))}</option>`).join('')}</select></label><button id="lm-link">Link</button><ul>${(data.links[current.id]||[]).map(ref=>{const record=records.find(([type,item])=>ref===type+':'+item.id);return `<li>${esc(record?labelFor(record[1]):'Unavailable record')} <button data-unlink="${esc(ref)}">Unlink</button></li>`;}).join('')}</ul></details>`;
+ function linkPicker(type,id){
+  const names={person:['People involved','Search people','Link person'],project:['Supporting projects','Search projects','Link project'],task:['Link existing task','Search top-level tasks','Link task']};
+  const [heading,searchLabel]=names[type];
+  const linked=(data.links[id]||[]).filter(ref=>ref.startsWith(type+':'));
+  const selected=type==='task'?'':linked.map(ref=>{const record=records.find(([kind,item])=>ref===kind+':'+item.id);return `<li>${esc(record?labelFor(record[1]):'Unavailable record')} <button data-unlink="${esc(ref)}" data-link-outcome="${esc(id)}">Unlink</button></li>`;}).join('');
+  return `<details class="lm-secondary lm-link-picker" data-link-type="${type}" data-link-outcome="${esc(id)}"><summary>${heading}${linked.length?' ('+linked.length+')':''}</summary>${selected?`<ul>${selected}</ul>`:''}<label>${searchLabel}<input type="search" data-link-search autocomplete="off" placeholder="Type a name or title"></label><div data-link-results role="status"><p class="lm-subtle">Type to find ${type==='person'?'a person':type==='project'?'a project':'an existing top-level task'}.</p></div></details>`;
+ }
+ const linksMarkup=!isArea&&!current.group&&!current.kind?`<div class="lm-connections">${linkPicker('person',current.id)}${linkPicker('project',current.id)}</div>`:'';
+
  const notesMarkup=`<details class="lm-secondary"><summary>Add a note</summary><form id="lm-note"><label>Note<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button>Save note</button></form></details>`;
  const addMarkup=`<details class="lm-secondary"><summary>Add something else</summary><form id="lm-custom"><label>What would you like to include?<input name="title" required maxlength="200"></label><button>Add</button></form></details>`;
- function outcomeList(items){return items.length?`<h4>Outcomes under this topic</h4>${items.map(t=>{const tasks=api.tasks.filter(task=>(data.links[t.id]||[]).includes('task:'+task.id));return `<div class="lm-outcome-item"><button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>Outcome · Review →</small></button>${tasks.length?`<p>Tasks — concrete actions</p>${tasks.map(task=>`<a class="lm-review-row" data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)} — Open task</a>`).join('')}`:`<p>No tasks yet</p>`}<details><summary>Add task</summary><form data-inline-task="${esc(t.id)}"><label>Task title<input name="title" required maxlength="300" placeholder="What concrete action will you take?"></label><button class="lm-primary">Create task</button></form></details></div>`;}).join('')}`:'';}
+ function outcomeList(items){return items.length?`<h4>Outcomes under this topic</h4>${items.map(t=>{const tasks=api.tasks.filter(task=>(data.links[t.id]||[]).includes('task:'+task.id));return `<div class="lm-outcome-item"><button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>Outcome · Review →</small></button>${tasks.length?`<p>Tasks — concrete actions</p>${tasks.map(task=>`<a class="lm-review-row" data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)} — Open task</a><button data-unlink="task:${esc(task.id)}" data-link-outcome="${esc(t.id)}">Unlink task</button>`).join('')}`:`<p>No tasks yet</p>`}<details><summary>Add task</summary><form data-inline-task="${esc(t.id)}"><label>Task title<input name="title" required maxlength="300" placeholder="What concrete action will you take?"></label><button class="lm-primary">Create task</button></form></details>${linkPicker('task',t.id)}</div>`;}).join('')}`:'';}
  const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${panel!=='map'&&area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${c.complete} taken care of${c.reviewed?' · '+c.reviewed+' reviewed':''}</small></button>`;}).join('')}</aside>`;
  const mapAreas=baseTopics.map(domain=>{
   const b=branchStats(domain.id,topics,data.answers,data.links,api.tasks);
@@ -264,7 +276,7 @@ export function renderLifeMap(root,api){
   content=`<small>${esc(current.title)}</small><h3>How soon does this need attention?</h3><div class="lm-answer-buttons">${[['week','Within a week'],['month','Within a month'],['quarter','Within a quarter (3 months)'],['year','Within a year'],['decade','Within a decade']].map(([v,l])=>`<button data-timing="${v}">${l}</button>`).join('')}</div><details class="lm-secondary"><summary>There is a specific deadline</summary><form id="lm-deadline"><label>Deadline<input type="date" name="deadline" required value="${esc(answer.deadline||'')}"></label><button>Continue</button></form></details>`;
  }else if(step==='action'){
   const r=suggestion(current);const already=api.tasks.some(t=>(data.links[current.id]||[]).includes('task:'+t.id)&&t.title===r?.action);
-  content=`<small>${esc(current.title)}</small><h3>${answer.timing==='unknown'?'Let’s clarify the next step':'A manageable next step'}</h3><form id="lm-create"><label>Suggested action<input name="title" required value="${esc(already?'':r?.action||current.action)}" placeholder="A concrete action you can take"></label><button class="lm-primary"  >Add task</button></form><button class="lm-next-prompt" id="lm-next">Continue without adding a task →</button>${linksMarkup}${notesMarkup}`;
+  content=`<small>${esc(current.title)}</small><h3>${answer.timing==='unknown'?'Let’s clarify the next step':'A manageable next step'}</h3><form id="lm-create"><label>Suggested action<input name="title" required value="${esc(already?'':r?.action||current.action)}" placeholder="A concrete action you can take"></label><button class="lm-primary"  >Add task</button></form>${linkPicker('task',current.id)}<button class="lm-next-prompt" id="lm-next">Continue without adding a task →</button>${linksMarkup}${notesMarkup}`;
  }else{
   content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
  }
@@ -334,8 +346,21 @@ export function renderLifeMap(root,api){
  root.querySelector('#lm-note')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,notes:new FormData(e.target).get('notes')};await save();});
  root.querySelector('#lm-next')?.addEventListener('click',next);
  root.querySelector('#lm-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`What is the status of ${title.toLowerCase()}?`,action:`Choose one next step for ${title.toLowerCase()}.`});selected=id;step='question';await save();});
- root.querySelector('#lm-link')?.addEventListener('click',async()=>{const ref=root.querySelector('#lm-existing').value;if(!ref)return;data.links[current.id]=[...new Set([...(data.links[current.id]||[]),ref])];await save();});
- root.querySelectorAll('[data-unlink]').forEach(b=>b.onclick=async()=>{data.links[current.id]=(data.links[current.id]||[]).filter(x=>x!==b.dataset.unlink);await save();});
+ root.querySelectorAll('.lm-link-picker').forEach(picker=>{
+  const type=picker.dataset.linkType,id=picker.dataset.linkOutcome,input=picker.querySelector('[data-link-search]'),results=picker.querySelector('[data-link-results]');
+  input.addEventListener('input',()=>{
+   if(!input.value.trim()){results.innerHTML='<p class="lm-subtle">Type a name or title to search.</p>';return;}
+   const matches=linkCandidates(records,type,data.links[id]||[],input.value);
+   results.innerHTML=matches.length?matches.slice(0,8).map(([,item])=>`<button type="button" class="lm-review-row" data-link-record="${esc(type+':'+item.id)}">${esc(labelFor(item))}<small>Link ${type==='person'?'person':type}</small></button>`).join('')+(matches.length>8?'<p class="lm-subtle">Keep typing to narrow the results.</p>':''):'<p class="lm-subtle">No matching unlinked records.</p>';
+  });
+  results.addEventListener('click',async e=>{
+   const button=e.target.closest('[data-link-record]');if(!button)return;
+   const ref=button.dataset.linkRecord;
+   if(!linkCandidates(records,type,data.links[id]||[]).some(([kind,item])=>ref===kind+':'+item.id))return;
+   button.disabled=true;data.links[id]=[...new Set([...(data.links[id]||[]),ref])];await save();
+  });
+ });
+ root.querySelectorAll('[data-unlink]').forEach(b=>b.onclick=async()=>{const id=b.dataset.linkOutcome||current.id;data.links[id]=(data.links[id]||[]).filter(x=>x!==b.dataset.unlink);await save();});
  root.querySelectorAll('[data-plan]').forEach(b=>b.onclick=()=>{selected=b.dataset.plan;panel='explore';step='action';api.render();});
  root.querySelector('#lm-create')?.addEventListener('submit',async e=>{
   e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;
