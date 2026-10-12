@@ -5821,8 +5821,16 @@ function renderProjectPhaseMatrixView() {
     }
     return a.name.localeCompare(b.name);
   });
-  const completedProjects = projects.filter((project) => projectPhaseCompletion(project.id, phases).fraction === 1);
-  const activeProjects = projects.filter((project) => projectPhaseCompletion(project.id, phases).fraction !== 1);
+  state.phaseProjectOrders ||= {};
+  let order = state.phaseProjectOrders[typeId];
+  if (!order) {
+    order = { ids: projects.map((project) => project.id), completed: projects.filter((project) => projectPhaseCompletion(project.id, phases).fraction === 1).map((project) => project.id) };
+    state.phaseProjectOrders[typeId] = order;
+  }
+  for (const project of projects) if (!order.ids.includes(project.id)) order.ids.push(project.id);
+  projects.sort((a, b) => order.ids.indexOf(a.id) - order.ids.indexOf(b.id));
+  const completedProjects = projects.filter((project) => order.completed.includes(project.id));
+  const activeProjects = projects.filter((project) => !order.completed.includes(project.id));
   const sections = [{ title: "Active projects", projects: activeProjects }, ...(completedProjects.length ? [{ title: "Completed projects", projects: completedProjects }] : [])];
   const selectedProject = state.matrixProjectId ? state.projects.find((project) => project.id === state.matrixProjectId) : null;
   const selectedPhase = state.matrixPhaseId ? state.projectPhases.find((phase) => phase.id === state.matrixPhaseId) : null;
@@ -5834,6 +5842,7 @@ function renderProjectPhaseMatrixView() {
       <div class="matrix-toolbar">
         ${phaseProjectTypeControl()}
         <label class="field-label">Sort<select name="phaseProjectSort"><option value="least"${state.phaseProjectSort === "least" ? " selected" : ""}>Least complete first</option><option value="most"${state.phaseProjectSort === "most" ? " selected" : ""}>Most complete first</option><option value="name"${state.phaseProjectSort === "name" ? " selected" : ""}>Name</option></select></label>
+        <button type="button" class="phase-apply-sort">Sort now</button>
         <div class="matrix-legend">${orderedPhaseStatuses().map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
       </div>
       ${selectedProject && selectedPhase ? `
@@ -8709,6 +8718,11 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", async (event) => {
+  if (event.target.closest(".phase-apply-sort")) {
+    delete (state.phaseProjectOrders || {})[selectedPhaseProjectTypeId()];
+    renderTasks();
+    return;
+  }
   if (suppressAssignmentClick) {
     suppressAssignmentClick = false;
     return;
@@ -9722,7 +9736,6 @@ els.taskList.addEventListener("input", (event) => {
 els.taskList.addEventListener("change", (event) => {
   if (event.target.name === "phaseProjectSort") {
     state.phaseProjectSort = event.target.value;
-    renderTasks();
     return;
   }
   if (event.target.name === "phaseProjectType") {

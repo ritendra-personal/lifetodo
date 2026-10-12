@@ -85,6 +85,7 @@ const form = {
   state.projects.push({ id: "unfinished", name: "Unfinished", project_type_id: "film" });
   state.phaseProjectTypeId = "film";
   state.phaseProjectSort = "least";
+  state.phaseProjectOrders = {};
   context.renderProjectPhaseMatrixView();
   assert.ok(context.els.taskList.innerHTML.indexOf(">Unfinished</button>") < context.els.taskList.innerHTML.indexOf(">Movie</button>"));
   assert.match(context.els.taskList.innerHTML, /100% complete/);
@@ -93,6 +94,9 @@ const form = {
   assert.ok(context.els.taskList.innerHTML.indexOf(">Unfinished</button>") < context.els.taskList.innerHTML.indexOf("Completed projects"));
   assert.ok(context.els.taskList.innerHTML.indexOf("Completed projects") < context.els.taskList.innerHTML.indexOf(">Movie</button>"));
   state.projectPhaseEntries.find((entry) => entry.project_id === "movie" && entry.phase_id === "write").status_id = "";
+  context.renderProjectPhaseMatrixView();
+  assert.match(context.els.taskList.innerHTML, /Completed projects/);
+  state.phaseProjectOrders = {};
   context.renderProjectPhaseMatrixView();
   assert.doesNotMatch(context.els.taskList.innerHTML, /Completed projects/);
   assert.match(context.els.taskList.innerHTML, />Movie<\/button>/);
