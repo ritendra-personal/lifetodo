@@ -4730,3 +4730,6 @@ dialog::backdrop {
 }
 .phase-apply-sort:hover { background: #f8fafc; }
 .project-phase-matrix-scroll { width: fit-content; max-width: 100%; box-sizing: border-box; }
+
+/* Retired goal controls retain their values for existing saved associations. */
+[data-view="goals"],[data-view="goal-assignments"],[data-home-view="goals"],label:has(#goal-id),label:has(#detail-goal),label:has([name="goalId"]),label:has([name="goalIds"]){display:none!important}

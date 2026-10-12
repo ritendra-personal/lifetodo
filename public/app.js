@@ -1,7 +1,7 @@
-import {renderLifeMap} from './life-map.js?v=1.14.21';
+import {renderLifeMap} from './life-map.js?v=1.14.22';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.21";
+const APP_VERSION = "1.14.22";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -644,7 +644,7 @@ function plannerLoadSummary() {
     pluralCount(state.projects.length, "project"),
     pluralCount(state.people.length, "person", "people"),
     pluralCount(state.ideas.length, "idea"),
-    pluralCount(state.goals.length, "goal")
+
   ].join(", ")} for ${keyLabel()}.`;
 }
 
@@ -3783,7 +3783,7 @@ function renderCounts() {
   for (const task of state.tasks) bucketCounts[taskBucket(task)] += 1;
 
   counts.tasks.textContent = state.tasks.length;
-  counts.home.textContent = state.tasks.length + state.events.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
+  counts.home.textContent = state.tasks.length + state.events.length + state.projects.length + state.people.length + state.ideas.length;
   counts.today.textContent = bucketCounts.today;
   counts.upcoming.textContent = bucketCounts.upcoming;
   counts.backlog.textContent = bucketCounts.backlog;
@@ -6448,7 +6448,7 @@ function renderSearchView() {
     if (haystack.toLowerCase().includes(query)) results.push({ type, id, title, meta, view });
   };
   for (const task of state.tasks) add("Task", task.id, task.title, [areaNameFor(task), projectNameForId(task.project_id)].filter(Boolean).join(" · "), `${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")} ${projectNameForId(task.project_id)}`);
-  for (const goal of state.goals) add("Goal", goal.id, goal.name, goal.description, `${goal.name} ${goal.description}`);
+
   for (const project of state.projects) add("Project", project.id, project.name, [projectTypeName(project), projectStatusName(project), venueName(project)].filter(Boolean).join(" · "), `${project.name} ${project.description} ${projectTypeName(project)} ${projectStatusName(project)} ${venueName(project)}`);
   for (const person of state.people) add("Person", person.id, personFullName(person), [person.skill_ids.map(skillNameForId).join(", "), relationshipNameForId(person.relationship_type_id)].filter(Boolean).join(" · "), `${personFullName(person)} ${person.skill_ids.map(skillNameForId).join(" ")} ${relationshipNameForId(person.relationship_type_id)}`);
   for (const idea of state.ideas) add("Idea", idea.id, idea.text, areaNameFor(idea), `${idea.text} ${areaNameFor(idea)}`);
@@ -6629,7 +6629,7 @@ function renderTaxonomiesView() {
 }
 
 function renderBackupView() {
-  const totalItems = state.tasks.length + state.goals.length + state.projects.length + state.people.length + state.ideas.length;
+  const totalItems = state.tasks.length + state.projects.length + state.people.length + state.ideas.length;
   els.taskList.innerHTML = `
     <section class="backup-grid">
       <article class="backup-card">
@@ -6639,7 +6639,7 @@ function renderBackupView() {
         </div>
         <dl class="backup-stats">
           <div><dt>Tasks</dt><dd>${state.tasks.length}</dd></div>
-          <div><dt>Goals</dt><dd>${state.goals.length}</dd></div>
+          
           <div><dt>Projects</dt><dd>${state.projects.length}</dd></div>
           <div><dt>People</dt><dd>${state.people.length}</dd></div>
           <div><dt>Ideas</dt><dd>${state.ideas.length}</dd></div>
@@ -8545,6 +8545,7 @@ function renderDetail() {
 }
 
 function render() {
+  if (["goals","goal-assignments","focus-goal"].includes(state.view)) state.view="life-map";
   const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
   const titles = {
     "life-map":"Life map",
@@ -8591,7 +8592,7 @@ function render() {
     backup: "Backup"
   };
   const keyObjectSubtitles = {
-    tasks: "Actions we need to take to move toward Goals and finish Projects.",
+    tasks: "Concrete actions that support outcomes and projects.",
     goals: "Long term goals an objectives we want to move towards.",
     projects: "Concrete, time-sensitive outcomes or artifacts driven by execution of tasks.",
     people: "Humans associated with each project, and also tasks.",
@@ -8649,6 +8650,8 @@ function render() {
   renderParentControls();
   renderTasks();
   renderDetail();
+  document.querySelectorAll('[data-view="goals"],[data-view="goal-assignments"],[data-home-view="goals"]').forEach(el=>el.hidden=true);
+  document.querySelectorAll('#goal-id,#detail-goal,[name="goalId"],[name="goalIds"]').forEach(el=>{const label=el.closest('label');if(label)label.hidden=true;});
   syncBrowserHistory();
 }
 
