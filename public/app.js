@@ -1,7 +1,7 @@
-import {renderLifeMap} from './life-map.js?v=1.14.22';
+import {renderLifeMap} from './life-map.js?v=1.14.23';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.22";
+const APP_VERSION = "1.14.23";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -4561,7 +4561,7 @@ function renderParentControls() {
 }
 
 function renderTasks() {
-  if(state.view === "life-map"){renderLifeMap(els.taskList,{userKey:state.user?.id||state.plannerKey||"local",userId:state.user?.id,client:state.supabase,tasks:state.tasks,projects:state.projects,goals:state.goals,people:state.people,createTask:persistTask,openTask:id=>focusObject("task",id,"life-map"),createPerson:person=>persistPerson(person,{requireCloud:Boolean(state.user),render:false}),render});return;}
+  if(["life-map","graph"].includes(state.view)){renderLifeMap(els.taskList,{outcomeTaskGraph:state.view==="graph",openOutcome:()=>{state.view="life-map";render();},userKey:state.user?.id||state.plannerKey||"local",userId:state.user?.id,client:state.supabase,tasks:state.tasks,projects:state.projects,goals:state.goals,people:state.people,createTask:persistTask,openTask:id=>focusObject("task",id,state.view),createPerson:person=>persistPerson(person,{requireCloud:Boolean(state.user),render:false}),render});return;}
   if (state.view === "focus-task") {
     renderFocusedTaskView();
     return;
@@ -8520,7 +8520,7 @@ function openProjectFromTimeline(projectId) {
 function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
-  const detailHiddenViews = ["life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
+  const detailHiddenViews = ["graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   if (!task || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
@@ -8565,7 +8565,7 @@ function render() {
     "project-filter": "Project Filter",
     "project-charts": "Project charts",
     ideas: "Ideas",
-    graph: "Task Graph",
+    graph: "Outcome to task graph",
     timeline: "Timeline",
     "tasks-by-taxonomy": "Tasks by Taxonomy",
     "project-tasks": "Project Tasks",
@@ -8600,11 +8600,11 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
-  els.plannerGrid.classList.toggle("graph-mode", state.view === "graph");
+  els.plannerGrid.classList.toggle("graph-mode", false);
   els.plannerGrid.classList.toggle("timeline-mode", state.view === "timeline");
   els.plannerGrid.classList.toggle("planning-mode", isPlanningView);
   els.plannerGrid.classList.toggle("focus-mode", isFocusView);
@@ -8613,7 +8613,7 @@ function render() {
   els.viewTitle.textContent = titles[state.view] || "Planner";
   els.viewSubtitle.textContent = keyObjectSubtitles[state.view] || "";
   els.viewSubtitle.classList.toggle("hidden", !keyObjectSubtitles[state.view]);
-  els.boardTitle.textContent = state.view === "graph" ? "Task Graph" : state.view === "timeline" ? "Task timeline" : titles[state.view] || "Planner";
+  els.boardTitle.textContent = state.view === "graph" ? "Outcome to task graph" : state.view === "timeline" ? "Task timeline" : titles[state.view] || "Planner";
   els.storageStatus.textContent = isSupabaseReady() ? state.user.email : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.keyButton.textContent = state.user ? "Sign out" : "Google";

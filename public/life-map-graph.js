@@ -65,7 +65,7 @@ export function layoutLifeGraph(root,collapsed=new Set()) {
 }
 let collapsed=new Set(),initializedOutcomes=new Set(),zoom=0.8,graphScroll=null;
 export function graphMarkup(root){
- function initialize(node){if(node.kind==='outcome'&&node.children.some(child=>child.kind==='task')&&!initializedOutcomes.has(node.id)){collapsed.add(node.id);initializedOutcomes.add(node.id);}node.children.forEach(initialize);}
+ function initialize(node){if(!root.expandTasks&&node.kind==='outcome'&&node.children.some(child=>child.kind==='task')&&!initializedOutcomes.has(node.id)){collapsed.add(node.id);initializedOutcomes.add(node.id);}node.children.forEach(initialize);}
  initialize(root);
  const layout=layoutLifeGraph(root,collapsed);
  const nodes=layout.nodes.map(n=>`<div class="lm-graph-node lm-graph-${escapeHtml(n.kind)} lm-graph-state-${escapeHtml(n.state||'unknown')}" style="left:${n.x}px;top:${n.y}px" data-node="${escapeHtml(n.id)}"><button class="lm-graph-label" ${n.sourceId?`data-go="${escapeHtml(n.sourceId)}"`:n.taskId?`data-graph-task="${escapeHtml(n.taskId)}"`:'disabled'} aria-label="${escapeHtml(n.label)}${n.sourceId?' — open guided review':''}"><strong>${escapeHtml(n.label)}</strong><small>${escapeHtml((n.status||'Life areas → outcomes → actions')+(n.kind==='outcome'&&n.children.some(c=>c.kind==='task')?' · '+n.children.filter(c=>c.kind==='task').length+' tasks':''))}</small></button>${n.children.length?`<button class="lm-graph-toggle" data-collapse="${escapeHtml(n.id)}" aria-label="${collapsed.has(n.id)?'Expand':'Collapse'} ${escapeHtml(n.label)}" aria-expanded="${!collapsed.has(n.id)}">${collapsed.has(n.id)?'+':'−'}</button>`:''}</div>`).join('');
@@ -83,4 +83,14 @@ export function bindGraph(root,tree,rerender,tasks){
  root.querySelector('#lm-expand-all').onclick=()=>{collapsed.clear();graphScroll=null;rerender();};
  root.querySelector('#lm-collapse-areas').onclick=()=>{collapsed=new Set(tree.children.map(n=>n.id));graphScroll=null;rerender();};
  root.querySelectorAll('[data-graph-task]').forEach(b=>b.onclick=()=>{const task=tasks.find(t=>t.id===b.dataset.graphTask);const detail=root.querySelector('.lm-graph-task-detail');detail.innerHTML=`<strong>${escapeHtml(task?.title)}</strong><p>${escapeHtml(task?.notes||'')}</p><button data-toggle="${escapeHtml(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button>`;detail.querySelector('button').onclick=()=>root.dispatchEvent(new CustomEvent('life-map-task-toggle',{detail:task.id}));});
+}
+
+export function buildOutcomeTaskGraph({topics,answers={},links={},tasks=[],stateFor}){
+ const chosen=topics.filter(t=>t.parent&&!t.group&&!t.kind&&(answers[t.id]?.status||(links[t.id]||[]).length||!t.suggested));
+ const leaves=chosen.filter(t=>!chosen.some(other=>{let node=other;const seen=new Set();while(node?.parent&&!seen.has(node.id)){seen.add(node.id);if(node.parent===t.id)return true;node=topics.find(x=>x.id===node.parent);}return false;}));
+ return {id:'outcome-task-root',expandTasks:true,label:'Outcomes and tasks',kind:'root',children:leaves.map(t=>{
+  const state=stateFor?.(t,answers[t.id]||{},[])||{label:'Not reviewed',key:'unknown'};
+  const linked=tasks.filter(task=>!task.parent_id&&(links[t.id]||[]).includes('task:'+task.id));
+  return {id:'focused-outcome:'+t.id,label:t.title,kind:'outcome',sourceId:t.id,status:'Outcome · '+state.label,state:state.key,children:linked.map(task=>({id:t.id+':task:'+task.id,label:task.title,kind:'task',taskId:task.id,status:'Task',children:tasks.filter(child=>child.parent_id===task.id).map(child=>({id:t.id+':subtask:'+child.id,label:child.title,kind:'task',taskId:child.id,status:'Subtask',children:[]}))}))};
+ })};
 }

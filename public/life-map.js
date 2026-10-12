@@ -1,4 +1,4 @@
-import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.20';
+import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.23';
 export const baseTopics = [
  ['home','Home and everyday life','Home','How well is your home supporting everyday life?','Identify the home issue causing the most friction and one practical next step.'],
  ['money','Financial wellbeing','Finances','How confident do you feel about your financial responsibilities and plans?','Identify one financial question or responsibility that needs attention.'],
@@ -213,6 +213,14 @@ export function renderLifeMap(root,api){
  const mapped=mapAreas.flatMap(a=>a.outcomes);
  const allTasks=[...new Map(mapAreas.flatMap(a=>a.branch.tasks).map(t=>[t.id,t])).values()];
  let content='';
+ if(api.outcomeTaskGraph){
+  const tree=buildOutcomeTaskGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,stateFor:mapState});
+  root.innerHTML=`<div class="life-map lm-guided"><p>Leaf outcomes → tasks → subtasks. Click a task to edit it.</p>${graphMarkup(tree)}</div>`;
+  bindGraph(root,tree,api.render,api.tasks);
+  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{selected=b.dataset.go;panel='explore';step='question';api.openOutcome();});
+  root.querySelectorAll('[data-graph-task]').forEach(b=>b.onclick=()=>api.openTask(b.dataset.graphTask));
+  return;
+ }
  const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState});
  if(panel==='map'){
   content=graphMarkup(graph);
