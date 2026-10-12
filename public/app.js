@@ -5819,7 +5819,7 @@ function renderProjectPhaseMatrixView() {
       const difference = (left ?? 0) - (right ?? 0) || projectPhaseCompletion(a.id, phases).rank - projectPhaseCompletion(b.id, phases).rank;
       if (difference) return state.phaseProjectSort === "most" ? -difference : difference;
     }
-    return a.name.localeCompare(b.name);
+    return a.name.localeCompare(b.name) * (state.phaseProjectSort === "name" && state.phaseNameDescending ? -1 : 1);
   });
   state.phaseProjectOrders ||= {};
   let order = state.phaseProjectOrders[typeId];
@@ -5865,7 +5865,7 @@ function renderProjectPhaseMatrixView() {
       <h3>${section.title} <small>(${section.projects.length})</small></h3>
       <div class="project-phase-matrix-scroll">
         <table class="project-phase-matrix-table">
-          <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button phase-sort-name" type="button" title="Sort projects by name">Project ↕</button><span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}</tr></thead>
+          <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button phase-sort-name" type="button" title="Sort projects by name">Project ${state.phaseProjectSort === "name" ? (state.phaseNameDescending ? "↓" : "↑") : "↕"}</button><span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}</tr></thead>
           <tbody>
             ${section.projects.map((project) => {
               const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
@@ -8718,6 +8718,7 @@ els.taskForm.addEventListener("submit", async (event) => {
 
 els.taskList.addEventListener("click", async (event) => {
   if (event.target.closest(".phase-sort-name")) {
+    state.phaseNameDescending = state.phaseProjectSort === "name" ? !state.phaseNameDescending : false;
     state.phaseProjectSort = "name";
     delete (state.phaseProjectOrders || {})[selectedPhaseProjectTypeId()];
     renderTasks();
