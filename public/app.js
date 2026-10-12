@@ -147,7 +147,7 @@ const state = {
   projectPhaseEntriesCloudReady: false,
   projectPhaseTypesCloudReady: false,
   phaseProjectTypeId: null,
-  phaseProjectSort: "least",
+  phaseProjectSort: "most",
   taxonomiesCloudReady: false,
   taskTaxonomyLinksCloudReady: false,
   projectTaxonomyLinksCloudReady: false,
