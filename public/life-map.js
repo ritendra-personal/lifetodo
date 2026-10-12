@@ -1,4 +1,4 @@
-import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.05';
+import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.08';
 export const baseTopics = [
  ['home','Home and everyday life','Home','How well is your home supporting everyday life?','Identify the home issue causing the most friction and one practical next step.'],
  ['money','Financial wellbeing','Finances','How confident do you feel about your financial responsibilities and plans?','Identify one financial question or responsibility that needs attention.'],
@@ -138,7 +138,7 @@ export function discoveryTopics(){
   items.push({id:parent,parent:learning.id,area:learning.area,title:labels[category],group:'learning',question:'What interests you?'});
   for(const subject of subjects)items.push({id:parent+':'+subject.toLowerCase().replaceAll(' ','-'),parent,area:learning.area,title:subject,kind:'learning-choice',question:`What would you like to do with ${subject.toLowerCase()}?`});
  }
- return items;
+ return items.map(item=>({...item,suggested:true}));
 }
 export function coverageStats(id,topics,answers){
  const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group&&!t.kind);

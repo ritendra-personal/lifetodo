@@ -15,3 +15,11 @@ test('collapsing a branch preserves data and removes only its visible descendant
  assert(full.width>collapsed.width);assert.equal(tree.children[0].children.length,1);
  for(const edge of full.edges)assert(edge.x2>edge.x1);
 });
+
+test('suggested learning branches appear only for a selected outcome',()=>{
+ const topics=[{id:'growth',title:'Learning'},{id:'learn:arts',parent:'growth',title:'Arts',suggested:true},{id:'learn:dance',parent:'learn:arts',title:'Dance',suggested:true},{id:'learn:garden',parent:'growth',title:'Gardening',suggested:true}];
+ assert.equal(buildLifeGraph({topics}).children.length,0);
+ const graph=buildLifeGraph({topics:[...topics,{id:'my-dance',parent:'learn:dance',title:'Learn dance'}]});
+ const labels=layoutLifeGraph(graph).nodes.map(n=>n.label);
+ assert.deepEqual(labels,['My life outside work','Learning','Arts','Dance','Learn dance']);
+});

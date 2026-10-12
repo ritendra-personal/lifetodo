@@ -4,7 +4,7 @@ const nameFor = item => item?.title || item?.name || [item?.first_name,item?.las
 export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],goals=[],people=[],stateFor}) {
  const root={id:'life-root',label:'My life outside work',kind:'root',status:'',children:[]};
  const nodes=new Map();
- const included=new Set(topics.filter(t=>!t.parent || answers[t.id]?.status || (links[t.id]||[]).length || !t.id.startsWith('check:')).map(t=>t.id));
+ const included=new Set(topics.filter(t=>(answers[t.id]?.status && answers[t.id].status!=='irrelevant') || (links[t.id]||[]).length || (t.parent && !t.suggested && !t.id.startsWith('check:') && !t.id.startsWith('learn:'))).map(t=>t.id));
  for(const id of [...included]){let t=topics.find(t=>t.id===id);const seen=new Set();while(t?.parent&&!seen.has(t.id)){seen.add(t.id);included.add(t.parent);t=topics.find(x=>x.id===t.parent);}}
  for(const t of topics.filter(t=>included.has(t.id))){const state=stateFor?.(t,answers[t.id]||{},[])||{key:'unknown',label:'Not reviewed'};nodes.set(t.id,{id:'topic:'+t.id,label:t.title,kind:!t.parent?'area':t.group||t.kind?'group':'outcome',sourceId:t.id,status:state.label,state:state.key,children:[]});}
  for(const t of topics.filter(t=>included.has(t.id))){
