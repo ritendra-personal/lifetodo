@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Seven Lives</title>
-    <link rel="stylesheet" href="/life-map.css?v=1.14.27">
+    <link rel="stylesheet" href="/life-map.css?v=1.14.28">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?v=1.13.05">
+    <link rel="stylesheet" href="/styles.css?v=1.14.28">
   </head>
   <body>
     <div class="shell">
@@ -43,7 +43,9 @@
           <button class="view-button nested" data-view="people-charts" type="button">People charts <span id="count-people-charts">0</span></button>
           <button class="view-button nested" data-view="project-filter" type="button">Project Filter <span id="count-project-filter">0</span></button>
           <button class="view-button nested" data-view="project-charts" type="button">Project charts <span id="count-project-charts">0</span></button>
-          <div class="nav-group-label">Annotations</div>
+          <details class="nav-annotations">
+            <summary class="nav-group-label">Annotations</summary>
+            <div class="nav-annotation-items">
           <button class="view-button nested" data-view="areas" type="button">Areas <span id="count-areas">0</span></button>
           <button class="view-button nested" data-view="skills" type="button">Skills <span id="count-skills">0</span></button>
           <button class="view-button nested" data-view="age-categories" type="button">Age Categories <span id="count-age-categories">0</span></button>
@@ -55,6 +57,8 @@
           <button class="view-button nested" data-view="venues" type="button">Venues <span id="count-venues">0</span></button>
           <button class="view-button nested" data-view="taxonomies" type="button">Taxonomies <span id="count-taxonomies">0</span></button>
           <button class="view-button nested" data-view="project-phases" type="button">Project Phases <span id="count-project-phases">0</span></button>
+            </div>
+          </details>
           <button class="view-button" data-view="backup" type="button">Backup <span id="count-backup">0</span></button>
         </nav>
 
@@ -277,6 +281,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=1.14.27" type="module"></script>
+    <script src="/app.js?v=1.14.28" type="module"></script>
   </body>
 </html>

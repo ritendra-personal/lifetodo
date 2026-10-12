@@ -4733,3 +4733,11 @@ dialog::backdrop {
 
 /* Retired goal controls retain their values for existing saved associations. */
 [data-view="goals"],[data-view="goal-assignments"],[data-home-view="goals"],label:has(#goal-id),label:has(#detail-goal),label:has([name="goalId"]),label:has([name="goalIds"]){display:none!important}
+
+/* Auxiliary collections stay out of the way until requested. */
+.nav-annotations { min-width: 0; margin-top: 11px; }
+.nav-annotations > summary.nav-group-label { margin: 0; padding: 6px 12px; cursor: pointer; }
+.nav-annotations > summary:hover { color: #fff; }
+.nav-annotations > summary:focus-visible { outline: 2px solid #a2ead1; outline-offset: 2px; border-radius: 4px; }
+.nav-annotation-items { display: grid; gap: 1px; }
+.nav-annotation-items .view-button { width: 100%; }
