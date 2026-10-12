@@ -220,7 +220,7 @@ export function renderLifeMap(root,api){
   }else if(step==='relationship-custom'){
    content=`<h3>What would you like to do with ${esc(supportDraft.personName)}?</h3><form id="lm-relationship-custom"><label>Outcome<input name="title" required maxlength="200"></label><button>Continue</button></form>`;
   }else{
-   content=`<h3>Who is this about?</h3><form id="lm-relationship-person"><label>Choose an existing person<select name="personId"><option value="">Choose a person…</option>${(api.people||[]).map(p=>`<option value="${esc(p.id)}">${esc(labelFor(p))}</option>`).join('')}</select></label><label>Or enter a name<input name="personName" maxlength="120"></label><button class="lm-primary">Continue</button></form>${children.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)}</button>`).join('')}<button id="lm-next">Skip for now</button>`;
+   content=`<h3>Who is this about?</h3><form id="lm-relationship-person"><label>Choose an existing person<select name="personId"><option value="">Choose a person…</option>${(api.people||[]).map(p=>`<option value="${esc(p.id)}">${esc(labelFor(p))}</option>`).join('')}</select></label><fieldset><legend>Or create a person</legend><label>First name<input name="firstName" maxlength="120"></label><label>Last name (optional)<input name="lastName" maxlength="120"></label></fieldset><p class="lm-subtle">Continue creates a People record. You can add other details in People later.</p><button class="lm-primary">Continue</button></form>${children.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)}</button>`).join('')}<button id="lm-next">Skip for now</button>`;
   }
  }else if(current.kind==='support-discovery'){
   const outcomes=children.filter(t=>!t.kind);
@@ -261,7 +261,14 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
- root.querySelector('#lm-relationship-person')?.addEventListener('submit',e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));const person=(api.people||[]).find(p=>p.id===values.personId);const personName=person?labelFor(person):values.personName.trim();if(!personName){notice='Choose a person or enter a name.';api.render();return;}supportDraft={personId:person?.id||null,personName};step='relationship-action';api.render();});
+ root.querySelector('#lm-relationship-person')?.addEventListener('submit',async e=>{
+  e.preventDefault();const values=Object.fromEntries(new FormData(e.target));let person=(api.people||[]).find(p=>p.id===values.personId);
+  if(!person){const first_name=values.firstName.trim(),last_name=values.lastName.trim();if(!first_name){notice='Choose a person or enter their first name.';api.render();return;}
+   const normalize=value=>value.trim().replace(/\s+/g,' ').toLowerCase();person=(api.people||[]).find(p=>normalize(labelFor(p))===normalize(`${first_name} ${last_name}`));
+   if(!person){const button=e.target.querySelector('button');button.disabled=true;button.textContent='Saving person…';try{const result=await api.createPerson({id:crypto.randomUUID(),first_name,last_name,created_at:new Date().toISOString()});if(!result?.person)throw new Error('Not saved');person=result.person;}catch{notice='Person could not be saved. Your name fields are still here; please retry.';button.disabled=false;button.textContent='Continue';root.querySelector('.lm-storage').textContent=notice;return;}}
+  }
+  supportDraft={personId:person.id,personName:labelFor(person)};step='relationship-action';api.render();
+ });
  async function createRelationship(title){const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,personId:supportDraft.personId,personName:supportDraft.personName,question:`Where are you with “${title}”?`,action:title});if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];selected=id;step='timing';data.answers[id]={status:'unstarted'};await save();}
  root.querySelectorAll('[data-relationship-action]').forEach(b=>b.onclick=async()=>{const action=b.dataset.relationshipAction;if(action==='Something else'){step='relationship-custom';api.render();return;}b.disabled=true;await createRelationship(`${action} — ${supportDraft.personName}`);});
  root.querySelector('#lm-relationship-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(title){e.target.querySelector('button').disabled=true;await createRelationship(title);}});
