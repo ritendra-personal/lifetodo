@@ -6,7 +6,7 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
  const nodes=new Map();
  const included=new Set(topics.filter(t=>(answers[t.id]?.status && answers[t.id].status!=='irrelevant') || (links[t.id]||[]).length || (t.parent && !t.suggested && !t.id.startsWith('check:') && !t.id.startsWith('learn:'))).map(t=>t.id));
  for(const id of [...included]){let t=topics.find(t=>t.id===id);const seen=new Set();while(t?.parent&&!seen.has(t.id)){seen.add(t.id);included.add(t.parent);t=topics.find(x=>x.id===t.parent);}}
- for(const t of topics.filter(t=>included.has(t.id))){const state=stateFor?.(t,answers[t.id]||{},[])||{key:'unknown',label:'Not reviewed'};nodes.set(t.id,{id:'topic:'+t.id,label:t.title,kind:!t.parent?'area':t.group||t.kind?'group':'outcome',sourceId:t.id,status:state.label,state:state.key,children:[]});}
+ for(const t of topics.filter(t=>included.has(t.id))){const state=stateFor?.(t,answers[t.id]||{},[])||{key:'unknown',label:'Not reviewed'};nodes.set(t.id,{id:'topic:'+t.id,label:t.title,kind:!t.parent?'area':t.group||t.kind?'group':'outcome',sourceId:t.id,status:(!t.group&&!t.kind&&t.parent?'Outcome · ':'')+state.label,state:state.key,children:[]});}
  for(const t of topics.filter(t=>included.has(t.id))){
   const node=nodes.get(t.id),parent=nodes.get(t.parent)||root;
   const sourceParent=topics.find(x=>x.id===t.parent);
@@ -18,7 +18,7 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
   }else parent.children.push(node);
  }
  function taskTree(list,prefix){
-  const taskNodes=new Map(list.map(t=>[t.id,{id:prefix+':task:'+t.id,label:t.title,kind:'task',taskId:t.id,status:t.status==='done'?'Completed action':'Action',state:t.status==='done'?'complete':t.due_date&&Date.parse(t.due_date+'T23:59:59')<Date.now()?'attention':'planned',children:[]}]));
+  const taskNodes=new Map(list.map(t=>[t.id,{id:prefix+':task:'+t.id,label:t.title,kind:'task',taskId:t.id,status:t.status==='done'?'Task · Completed':'Task · Action',state:t.status==='done'?'complete':t.due_date&&Date.parse(t.due_date+'T23:59:59')<Date.now()?'attention':'planned',children:[]}]));
   const roots=[];
   for(const t of list){const node=taskNodes.get(t.id);let parent=taskNodes.get(t.parent_id);const seen=new Set([t.id]);let cursor=t;
    while(parent&&cursor.parent_id){if(seen.has(cursor.parent_id)){parent=null;break;}seen.add(cursor.parent_id);cursor=list.find(x=>x.id===cursor.parent_id)||{};}
