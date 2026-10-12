@@ -5770,6 +5770,31 @@ async function saveProjectPhaseCell(form) {
   state.syncMessage = `Saved phase ${isSupabaseReady() ? "to database" : "locally"} at ${savedAtLabel()}.`;
 }
 
+async function flushPhaseNotes(form) {
+  clearTimeout(form.phaseNoteTimer);
+  if (form.phaseNoteSave) {
+    await form.phaseNoteSave;
+    if (form.phaseNoteDirty) return flushPhaseNotes(form);
+    return;
+  }
+  if (!form.phaseNoteDirty) return;
+  form.phaseNoteDirty = false;
+  const feedback = form.querySelector(".phase-note-save-status");
+  if (feedback) feedback.textContent = "Saving notes…";
+  form.phaseNoteSave = saveProjectPhaseCell(form);
+  try {
+    await form.phaseNoteSave;
+    if (feedback) feedback.textContent = "Notes saved";
+  } catch (error) {
+    form.phaseNoteDirty = true;
+    if (feedback) feedback.textContent = "Notes not saved — edit again to retry.";
+    throw error;
+  } finally {
+    form.phaseNoteSave = null;
+  }
+  if (form.phaseNoteDirty) return flushPhaseNotes(form);
+}
+
 function projectPhaseEntryFor(projectId, phaseId) {
   return state.projectPhaseEntries.find((entry) => entry.project_id === projectId && entry.phase_id === phaseId);
 }
@@ -5850,6 +5875,7 @@ function renderProjectPhaseMatrixView() {
           <div class="phase-dialog-error" role="alert"${state.syncError ? "" : " hidden"}>${escapeHtml(state.syncError || "")}</div>
           <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
             <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Optional notes for this project phase">${escapeHtml(selectedEntry?.notes || "")}</textarea></label>
+            <small class="phase-note-save-status" role="status"></small>
             <input type="hidden" name="phaseStatusId" value="${selectedEntry?.status_id || phaseStatusIdForName("Not started")}">
             <fieldset class="phase-status-choices"><legend>Choose status to save</legend>${orderedPhaseStatuses().map((status) => `<button type="submit" class="phase-status-choice" name="chosenPhaseStatus" value="${status.id}" aria-pressed="${status.id === (selectedEntry?.status_id || phaseStatusIdForName("Not started"))}" style="--status-color:${phaseStatusTone(status.name).color}">${escapeHtml(status.name)}</button>`).join("")}</fieldset>
           </form>
@@ -5890,7 +5916,24 @@ function renderProjectPhaseMatrixView() {
       state.matrixProjectId = "";
       state.matrixPhaseId = "";
     });
-    dialog.querySelector(".phase-dialog-close").addEventListener("click", () => dialog.close());
+    const phaseForm = dialog.querySelector(".matrix-cell-form");
+    phaseForm.querySelector("[name=phaseTaskNotes]").addEventListener("input", () => {
+      phaseForm.phaseNoteDirty = true;
+      phaseForm.querySelector(".phase-note-save-status").textContent = "Unsaved notes…";
+      clearTimeout(phaseForm.phaseNoteTimer);
+      phaseForm.phaseNoteTimer = setTimeout(() => flushPhaseNotes(phaseForm).catch(() => {}), 400);
+    });
+    const closePhaseEditor = async () => {
+      try {
+        await flushPhaseNotes(phaseForm);
+        dialog.close();
+        state.matrixProjectId = "";
+        state.matrixPhaseId = "";
+        renderTasks();
+      } catch (_) { /* Keep unsaved notes visible for retry. */ }
+    };
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); closePhaseEditor(); });
+    dialog.querySelector(".phase-dialog-close").addEventListener("click", closePhaseEditor);
     dialog.showModal();
   }
 }
@@ -9219,6 +9262,7 @@ els.taskList.addEventListener("submit", async (event) => {
     setFormSaving(event.target, true);
     showSyncMessage("Saving phase...");
     try {
+      await flushPhaseNotes(matrixCellForm);
       await saveProjectPhaseCell(event.target);
       state.matrixProjectId = "";
       state.matrixPhaseId = "";
