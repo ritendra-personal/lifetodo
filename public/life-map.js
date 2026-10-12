@@ -228,7 +228,7 @@ export function renderLifeMap(root,api){
  }else if(current.kind==='support-discovery'){
   const outcomes=children.filter(t=>!t.kind);
   if(step==='person'){
-   content=`<h3>Who would you like to support?</h3><form id="lm-support-person"><label>Choose an existing person<select name="personId"><option value="">Choose a person…</option>${(api.people||[]).map(p=>`<option value="${esc(p.id)}" ${supportDraft.personId===p.id?'selected':''}>${esc(labelFor(p))}</option>`).join('')}</select></label><label>Or use a name or relationship<input name="personName" placeholder="For example: Mom" value="${esc(supportDraft.personName||'')}" maxlength="120"></label><button class="lm-primary">Continue</button></form><p class="lm-subtle">Using a name here does not create a new person record.</p>`;
+   content=`<h3>Who would you like to support?</h3><form id="lm-support-person"><label>Choose an existing person<select name="personId"><option value="">Choose a person…</option>${(api.people||[]).map(p=>`<option value="${esc(p.id)}" ${supportDraft.personId===p.id?'selected':''}>${esc(labelFor(p))}</option>`).join('')}</select></label><fieldset><legend>Or create a person</legend><label>First name<input name="firstName" maxlength="120"></label><label>Last name (optional)<input name="lastName" maxlength="120"></label></fieldset><button class="lm-primary">Continue</button></form><p class="lm-subtle">Continue creates a People record. You can add other details in People later.</p>`;
   }else if(step==='support-kind'){
    content=`<small>${esc(supportDraft.personName)}</small><h3>What kind of help do they need?</h3><div class="lm-topic-menu">${Object.entries(supportKinds).map(([id,item])=>`<button data-support-kind="${id}"><strong>${esc(item.label)}</strong><small>${esc(item.hint)}</small></button>`).join('')}</div><button data-support-back="person" class="lm-next-prompt">← Change person</button>`;
   }else if(step==='support-outcome'){
@@ -265,14 +265,17 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
  root.querySelector('#lm-milestone')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Identify one project or measurable step you can influence toward: ${title}.`});selected=id;step='question';await save();});
- root.querySelector('#lm-relationship-person')?.addEventListener('submit',async e=>{
+ async function savePersonSelection(e,nextStep){
   e.preventDefault();const values=Object.fromEntries(new FormData(e.target));let person=(api.people||[]).find(p=>p.id===values.personId);
   if(!person){const first_name=values.firstName.trim(),last_name=values.lastName.trim();if(!first_name){notice='Choose a person or enter their first name.';api.render();return;}
    const normalize=value=>value.trim().replace(/\s+/g,' ').toLowerCase();person=(api.people||[]).find(p=>normalize(labelFor(p))===normalize(`${first_name} ${last_name}`));
    if(!person){const button=e.target.querySelector('button');button.disabled=true;button.textContent='Saving person…';try{const result=await api.createPerson({id:crypto.randomUUID(),first_name,last_name,created_at:new Date().toISOString()});if(!result?.person)throw new Error('Not saved');person=result.person;}catch{notice='Person could not be saved. Your name fields are still here; please retry.';button.disabled=false;button.textContent='Continue';root.querySelector('.lm-storage').textContent=notice;return;}}
   }
-  supportDraft={personId:person.id,personName:labelFor(person)};step='relationship-action';api.render();
- });
+  supportDraft={personId:person.id,personName:labelFor(person)};step=nextStep;api.render();
+ }
+ root.querySelector('#lm-relationship-person')?.addEventListener('submit',e=>savePersonSelection(e,'relationship-action'));
+ root.querySelector('#lm-support-person')?.addEventListener('submit',e=>savePersonSelection(e,'support-kind'));
+
  async function createRelationship(title){const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,personId:supportDraft.personId,personName:supportDraft.personName,question:`Where are you with “${title}”?`,action:title});if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];selected=id;step='timing';data.answers[id]={status:'unstarted'};await save();}
  root.querySelectorAll('[data-relationship-action]').forEach(b=>b.onclick=async()=>{const action=b.dataset.relationshipAction;if(action==='Something else'){step='relationship-custom';api.render();return;}b.disabled=true;await createRelationship(`${action} — ${supportDraft.personName}`);});
  root.querySelector('#lm-relationship-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(title){e.target.querySelector('button').disabled=true;await createRelationship(title);}});
@@ -282,7 +285,7 @@ export function renderLifeMap(root,api){
  root.querySelector('#lm-support-unsure')?.addEventListener('click',()=>{step='support-think';api.render();});
  root.querySelectorAll('[data-support-answer]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,status:b.dataset.supportAnswer,updatedAt:new Date().toISOString()};await save();next();});
  root.querySelectorAll('[data-support-back]').forEach(b=>b.onclick=()=>{step=b.dataset.supportBack;api.render();});
- root.querySelector('#lm-support-person')?.addEventListener('submit',e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));const person=(api.people||[]).find(p=>p.id===values.personId);const personName=person?labelFor(person):values.personName.trim();if(!personName){notice='Choose a person or enter a name.';api.render();return;}supportDraft={personId:person?.id||null,personName};step='support-kind';api.render();});
+
  root.querySelectorAll('[data-support-kind]').forEach(b=>b.onclick=()=>{supportDraft.kind=b.dataset.supportKind;step='support-outcome';api.render();});
  root.querySelector('#lm-support-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();const outcome=supportOutcome({...supportDraft,id,title,parent:current.id,area:area.area});data.concerns.push(outcome);if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];data.answers[current.id]={...answer,status:'progress'};selected=id;step='question';await save();});
  root.querySelectorAll('[data-answer]').forEach(b=>b.onclick=async()=>{
