@@ -1,0 +1,84 @@
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nameFor = item => item?.title || item?.name || [item?.first_name,item?.last_name].filter(Boolean).join(' ') || 'Unavailable item';
+
+export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],goals=[],people=[],stateFor}) {
+ const root={id:'life-root',label:'My life outside work',kind:'root',status:'',children:[]};
+ const nodes=new Map();
+ const included=new Set(topics.filter(t=>!t.parent || answers[t.id]?.status || (links[t.id]||[]).length || !t.id.startsWith('check:')).map(t=>t.id));
+ for(const id of [...included]){let t=topics.find(t=>t.id===id);const seen=new Set();while(t?.parent&&!seen.has(t.id)){seen.add(t.id);included.add(t.parent);t=topics.find(x=>x.id===t.parent);}}
+ for(const t of topics.filter(t=>included.has(t.id))){const state=stateFor?.(t,answers[t.id]||{},[])||{key:'unknown',label:'Not reviewed'};nodes.set(t.id,{id:'topic:'+t.id,label:t.title,kind:!t.parent?'area':t.group||t.kind?'group':'outcome',sourceId:t.id,status:state.label,state:state.key,children:[]});}
+ for(const t of topics.filter(t=>included.has(t.id))){
+  const node=nodes.get(t.id),parent=nodes.get(t.parent)||root;
+  const sourceParent=topics.find(x=>x.id===t.parent);
+  if(sourceParent?.kind==='support-discovery'&&t.personName){
+   const key=`support-person:${t.parent}:${t.personId||t.personName.toLowerCase()}`;
+   let person=parent.children.find(x=>x.id===key);
+   if(!person){person={id:key,label:t.personName,kind:'person',status:'Person you support',children:[]};parent.children.push(person);}
+   person.children.push(node);
+  }else parent.children.push(node);
+ }
+ function taskTree(list,prefix){
+  const taskNodes=new Map(list.map(t=>[t.id,{id:prefix+':task:'+t.id,label:t.title,kind:'task',taskId:t.id,status:t.status==='done'?'Completed action':'Action',state:t.status==='done'?'complete':t.due_date&&Date.parse(t.due_date+'T23:59:59')<Date.now()?'attention':'planned',children:[]}]));
+  const roots=[];
+  for(const t of list){const node=taskNodes.get(t.id);let parent=taskNodes.get(t.parent_id);const seen=new Set([t.id]);let cursor=t;
+   while(parent&&cursor.parent_id){if(seen.has(cursor.parent_id)){parent=null;break;}seen.add(cursor.parent_id);cursor=list.find(x=>x.id===cursor.parent_id)||{};}
+   if(parent)parent.children.push(node);else roots.push(node);
+  }
+  return roots;
+ }
+ for(const t of topics.filter(t=>included.has(t.id))){
+  const node=nodes.get(t.id),refs=links[t.id]||[];
+  node.children.push(...taskTree(tasks.filter(task=>refs.includes('task:'+task.id)),node.id));
+  for(const ref of refs){const [type,id]=ref.split(':');
+   if(type==='task')continue;
+   const record=(type==='project'?projects:type==='goal'?goals:people).find(x=>x.id===id);if(!record)continue;
+   if(type==='person'&&id===t.personId)continue;
+   const related={id:node.id+':'+ref,label:nameFor(record),kind:type,status:`Linked ${type}`,children:[]};
+   if(type==='project')related.children=taskTree(tasks.filter(task=>task.project_id===id),related.id);
+   if(type==='goal')related.children=taskTree(tasks.filter(task=>(task.goal_ids||[task.goal_id]).includes(id)),related.id);
+   node.children.push(related);
+  }
+ }
+ function summarize(node){
+  const own=node.kind==='outcome'?{total:1,attention:node.state==='attention'?1:0,progress:node.state==='progress'?1:0,complete:node.state==='complete'?1:0}:{total:0,attention:0,progress:0,complete:0};
+  for(const child of node.children){const counts=summarize(child);for(const key of Object.keys(own))own[key]+=counts[key];}
+  if(['root','area','group','person'].includes(node.kind)&&own.total){node.status=`${own.total} outcomes · ${own.attention} attention · ${own.complete} complete`;node.state=own.attention?'attention':own.progress?'progress':'unknown';}
+  return own;
+ }
+ summarize(root);
+ return root;
+}
+
+export function layoutLifeGraph(root,collapsed=new Set()) {
+ const nodes=[],edges=[];let row=0,maxDepth=0;
+ function visit(node,depth){
+  const children=collapsed.has(node.id)?[]:node.children;
+  const start=row;
+  const placed={...node,x:depth*278+20,y:0,hiddenCount:collapsed.has(node.id)?node.children.length:0};
+  nodes.push(placed);maxDepth=Math.max(maxDepth,depth);
+  if(!children.length){placed.y=row*94+20;row++;}
+  else{const childNodes=children.map(child=>visit(child,depth+1));placed.y=(childNodes[0].y+childNodes.at(-1).y)/2;for(const child of childNodes)edges.push({from:placed.id,to:child.id,x1:placed.x+230,y1:placed.y+34,x2:child.x,y2:child.y+34});}
+  return placed;
+ }
+ visit(root,0);
+ return {nodes,edges,width:(maxDepth+1)*278+20,height:Math.max(row*94+30,240)};
+}
+let collapsed=new Set(),zoom=0.8,graphScroll=null;
+export function graphMarkup(root){
+ const layout=layoutLifeGraph(root,collapsed);
+ const nodes=layout.nodes.map(n=>`<div class="lm-graph-node lm-graph-${escapeHtml(n.kind)} lm-graph-state-${escapeHtml(n.state||'unknown')}" style="left:${n.x}px;top:${n.y}px" data-node="${escapeHtml(n.id)}"><button class="lm-graph-label" ${n.sourceId?`data-go="${escapeHtml(n.sourceId)}"`:n.taskId?`data-graph-task="${escapeHtml(n.taskId)}"`:'disabled'} aria-label="${escapeHtml(n.label)}${n.sourceId?' — open guided review':''}"><strong>${escapeHtml(n.label)}</strong><small>${escapeHtml(n.status||'Life areas → outcomes → actions')}</small></button>${n.children.length?`<button class="lm-graph-toggle" data-collapse="${escapeHtml(n.id)}" aria-label="${collapsed.has(n.id)?'Expand':'Collapse'} ${escapeHtml(n.label)}" aria-expanded="${!collapsed.has(n.id)}">${collapsed.has(n.id)?'+':'−'}</button>`:''}</div>`).join('');
+ const edges=layout.edges.map(e=>`<path d="M ${e.x1} ${e.y1} C ${e.x1+24} ${e.y1}, ${e.x2-24} ${e.y2}, ${e.x2} ${e.y2}"/>`).join('');
+ return `<div class="lm-graph-controls"><button data-graph-zoom="out" aria-label="Zoom out">−</button><output id="lm-zoom-label">${Math.round(zoom*100)}%</output><button data-graph-zoom="in" aria-label="Zoom in">+</button><button data-graph-zoom="fit">Fit graph</button><button data-graph-zoom="reset">100%</button><button id="lm-expand-all">Expand all</button><button id="lm-collapse-areas">Life areas only</button></div><p class="lm-graph-help">Follow the lines from left to right. Use + / − on a branch to expand or collapse. Click an outcome to review it.</p><div class="lm-graph-scroll" tabindex="0" aria-label="Life hierarchy graph, scroll to explore"><div class="lm-graph-space" style="width:${layout.width*zoom}px;height:${layout.height*zoom}px"><div class="lm-graph-stage" style="width:${layout.width}px;height:${layout.height}px;transform:scale(${zoom})"><svg width="${layout.width}" height="${layout.height}" aria-hidden="true">${edges}</svg>${nodes}</div></div></div><div class="lm-graph-task-detail" role="status"></div>`;
+}
+export function bindGraph(root,tree,rerender,tasks){
+ const viewport=root.querySelector('.lm-graph-scroll');if(!viewport)return;
+ const layout=layoutLifeGraph(tree,collapsed);
+ if(graphScroll){viewport.scrollLeft=graphScroll.x;viewport.scrollTop=graphScroll.y;}else viewport.scrollTop=Math.max(0,layout.nodes[0].y*zoom-viewport.clientHeight/2+34*zoom);
+ viewport.onscroll=()=>{graphScroll={x:viewport.scrollLeft,y:viewport.scrollTop};};
+ function setZoom(value){zoom=Math.max(.2,Math.min(1.6,value));const stage=root.querySelector('.lm-graph-stage'),space=root.querySelector('.lm-graph-space');stage.style.transform=`scale(${zoom})`;space.style.width=layout.width*zoom+'px';space.style.height=layout.height*zoom+'px';root.querySelector('#lm-zoom-label').textContent=Math.round(zoom*100)+'%';}
+ root.querySelectorAll('[data-graph-zoom]').forEach(b=>b.onclick=()=>{const action=b.dataset.graphZoom;setZoom(action==='fit'?Math.min((viewport.clientWidth-24)/layout.width,(viewport.clientHeight-24)/layout.height):action==='reset'?1:zoom+(action==='in'?.15:-.15));});
+ root.querySelectorAll('[data-collapse]').forEach(b=>b.onclick=()=>{const id=b.dataset.collapse;collapsed.has(id)?collapsed.delete(id):collapsed.add(id);rerender();});
+ root.querySelector('#lm-expand-all').onclick=()=>{collapsed.clear();graphScroll=null;rerender();};
+ root.querySelector('#lm-collapse-areas').onclick=()=>{collapsed=new Set(tree.children.map(n=>n.id));graphScroll=null;rerender();};
+ root.querySelectorAll('[data-graph-task]').forEach(b=>b.onclick=()=>{const task=tasks.find(t=>t.id===b.dataset.graphTask);const detail=root.querySelector('.lm-graph-task-detail');detail.innerHTML=`<strong>${escapeHtml(task?.title)}</strong><p>${escapeHtml(task?.notes||'')}</p><button data-toggle="${escapeHtml(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button>`;detail.querySelector('button').onclick=()=>root.dispatchEvent(new CustomEvent('life-map-task-toggle',{detail:task.id}));});
+}

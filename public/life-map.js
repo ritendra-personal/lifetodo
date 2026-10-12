@@ -1,3 +1,4 @@
+import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.05';
 export const baseTopics = [
  ['home','Home and everyday life','Home','How well is your home supporting everyday life?','Identify the home issue causing the most friction and one practical next step.'],
  ['money','Financial wellbeing','Finances','How confident do you feel about your financial responsibilities and plans?','Identify one financial question or responsibility that needs attention.'],
@@ -194,8 +195,9 @@ export function renderLifeMap(root,api){
  const mapped=mapAreas.flatMap(a=>a.outcomes);
  const allTasks=[...new Map(mapAreas.flatMap(a=>a.branch.tasks).map(t=>[t.id,t])).values()];
  let content='';
+ const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState});
  if(panel==='map'){
-  content=`<div class="lm-map-root"><h3>My life outside work</h3><div class="lm-map-totals"><span><strong>${mapped.filter(o=>o.state.key==='attention').length}</strong> need attention</span><span><strong>${mapped.filter(o=>o.state.key==='progress').length}</strong> in progress</span><span><strong>${mapped.filter(o=>o.state.key==='complete').length}</strong> taken care of</span></div>${allTasks.length?`<small>${allTasks.filter(t=>t.status==='done').length} of ${allTasks.length} linked actions complete</small>`:''}</div><div class="lm-map-legend"><span class="lm-dot attention">Needs attention</span><span class="lm-dot progress">In progress</span><span class="lm-dot complete">Taken care of</span><span class="lm-dot unknown">Not reviewed</span></div><div class="lm-life-tree">${[...mapAreas].sort((a,b)=>Number(b.outcomes.length>0)-Number(a.outcomes.length>0)).map(({domain,branch:b,outcomes})=>`<article class="lm-life-branch"><button class="lm-domain-title" data-go="${domain.id}">${esc(domain.title)} <span>↗</span></button>${outcomes.length?`<ul>${outcomes.map(({topic:t,tasks,state})=>`<li class="lm-node lm-node-${state.key}"><button data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong>${t.personName?`<small>${esc(t.personName)}</small>`:''}<span class="lm-node-status">${esc(state.label)}</span>${tasks.length?`<small>${tasks.filter(task=>task.status==='done').length}/${tasks.length} actions complete</small>`:''}</button>${tasks.length?`<details><summary>${tasks.length} linked ${tasks.length===1?'action':'actions'}</summary><ul>${tasks.map(task=>`<li><span>${task.status==='done'?'✓':'○'} ${esc(task.title)}</span> <button data-toggle="${esc(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button></li>`).join('')}</ul></details>`:''}</li>`).join('')}</ul>`:`<p class="lm-unmapped">${data.answers[domain.id]?.status?esc(statuses[data.answers[domain.id].status]):'Not explored yet'}</p>`}${b.total?`<progress aria-label="${esc(domain.title)} linked action progress" max="${b.total}" value="${b.done}"></progress>`:''}<button class="lm-explore-branch" data-go="${domain.id}">${outcomes.length?'Explore more':'Explore this area'} →</button></article>`).join('')}</div>`;
+  content=graphMarkup(graph);
  }else if(current.kind==='support-discovery'){
   const outcomes=children.filter(t=>!t.kind);
   if(step==='person'){
@@ -272,5 +274,10 @@ export function renderLifeMap(root,api){
  });
  root.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=async()=>{const task=api.tasks.find(t=>t.id===b.dataset.toggle);b.disabled=true;const saved=await api.createTask({...task,status:task.status==='done'?'active':'done',completed_at:task.status==='done'?null:new Date().toISOString()});notice=saved?'Task updated.':'Task update failed.';api.render();});
  root.querySelector('#lm-export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='seven-lives-life-map.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+ bindGraph(root,graph,api.render,api.tasks);
+ root.onlifemaptoggle=null;
+ root.onLifeMapToggle && root.removeEventListener('life-map-task-toggle',root.onLifeMapToggle);
+ root.onLifeMapToggle=async e=>{const task=api.tasks.find(t=>t.id===e.detail);if(!task)return;const saved=await api.createTask({...task,status:task.status==='done'?'active':'done',completed_at:task.status==='done'?null:new Date().toISOString()});notice=saved?'Task updated.':'Task update failed.';api.render();};
+ root.addEventListener('life-map-task-toggle',root.onLifeMapToggle);
  if(loading)root.querySelectorAll('button,input,select,textarea').forEach(x=>x.disabled=true);
 }
