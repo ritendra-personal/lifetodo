@@ -125,9 +125,18 @@ export function discoveryTopics(){
    const id=`check:${area.id}:${group||index}`;
    items.push(area.id==='care'&&index===0
     ?{id,parent:area.id,area:area.area,title:'People you want to support',question:'Does someone close to you need your help with something?',kind:'support-discovery'}
-    :{id,parent:area.id,area:area.area,title,question,action,group});
+    :{id,parent:area.id,area:area.area,title,question,action,group,...(area.id==='growth'?{kind:'learning-discovery'}:{})});
    if(group==='documents')for(const [slug,title,question,action] of documentReminders)items.push({id:`check:admin:${slug}`,parent:id,area:area.area,title,question,action});
   });
+ }
+ const learning=items.find(t=>t.id==='check:growth:0');
+ Object.assign(learning,{title:'Learn a skill or subject',kind:null,group:'learning',question:'What would you like to explore?'});
+ const categories={arts:['Dance','Singing','An instrument','Drawing and painting','Photography','Writing','Acting'],academic:['History','Science','Mathematics','Literature','Philosophy'],languages:['A new language','Improve a language I know'],practical:['Cooking','Gardening','Technology','Home repairs','Personal finance']};
+ const labels={arts:'Arts',academic:'Academic subjects',languages:'Languages',practical:'Practical skills'};
+ for(const [category,subjects] of Object.entries(categories)){
+  const parent='learn:'+category;
+  items.push({id:parent,parent:learning.id,area:learning.area,title:labels[category],group:'learning',question:'What interests you?'});
+  for(const subject of subjects)items.push({id:parent+':'+subject.toLowerCase().replaceAll(' ','-'),parent,area:learning.area,title:subject,kind:'learning-choice',question:`What would you like to do with ${subject.toLowerCase()}?`});
  }
  return items;
 }
@@ -198,6 +207,12 @@ export function renderLifeMap(root,api){
  const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState});
  if(panel==='map'){
   content=graphMarkup(graph);
+ }else if(current.kind==='learning-choice'){
+  content=`<h3>${esc(current.question)}</h3><div class="lm-answer-buttons"><button data-learning-intent="Explore">Explore it</button><button data-learning-intent="Learn">Start learning</button><button data-learning-intent="Improve">Improve my skills</button></div>${children.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)}</button>`).join('')}${addMarkup}`;
+ }else if(current.kind==='learning-discovery'){
+  const prompts=[['What would you like to learn?','For example: Learn to dance'],['What habit would you like to develop?','For example: Read regularly'],['What qualification would you like to work toward?','Name a course or qualification'],['What would you like to feel more confident about?','Describe a change that matters to you'],['What interest would you like to try?','For example: Try pottery'],['What would you like to stop pursuing?','Name something you want to let go of']];
+  const [question,placeholder]=prompts[Number(current.id.split(':').at(-1))]||prompts[0];
+  content=`<h3>${question}</h3><form id="lm-learning-outcome"><label>Your goal<input name="title" required maxlength="200" placeholder="${placeholder}"></label><button class="lm-primary">Continue</button></form><p class="lm-subtle">Start with a few words. Next we’ll work out where you are and a manageable next step.</p>${children.length?`<h4>Your goals</h4>${children.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>${esc(statuses[data.answers[t.id]?.status]||'Continue →')}</small></button>`).join('')}`:''}${linksMarkup}`;
  }else if(current.kind==='support-discovery'){
   const outcomes=children.filter(t=>!t.kind);
   if(step==='person'){
@@ -211,7 +226,7 @@ export function renderLifeMap(root,api){
    content=`<h3>${esc(current.question)}</h3><div class="lm-answer-buttons"><button id="lm-support-yes">Yes — choose a person</button><button data-support-answer="well">Everyone is supported for now</button><button id="lm-support-unsure">Help me think</button><button data-support-answer="defer">Come back to this later</button></div>${step==='support-think'?'<p>Think about a parent managing a change, a partner pursuing a goal, a child needing guidance, or a friend who could use practical help. Is there someone you want to check in with?</p>':''}${outcomes.length?`<h4>Support you have identified</h4>${outcomes.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>${esc(t.personName||'')} · ${esc(statuses[data.answers[t.id]?.status]||'Continue →')}</small></button>`).join('')}`:''}`;
   }
  }else if(isArea||current.group){
-  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Guide me through ${isArea?'this area':'these documents'}</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id]?.status]||'Review →')}</small></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
+  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Guide me through ${isArea?'this area':'these options'}</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id]?.status]||'Review →')}</small></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
  }else if(step==='timing'){
   content=`<small>${esc(current.title)}</small><h3>How soon does this need attention?</h3><div class="lm-answer-buttons">${[['soon','Soon'],['month','This month'],['later','Later'],['unknown','Help me decide']].map(([v,l])=>`<button data-timing="${v}">${l}</button>`).join('')}</div><details class="lm-secondary"><summary>There is a specific deadline</summary><form id="lm-deadline"><label>Deadline<input type="date" name="deadline" required value="${esc(answer.deadline||'')}"></label><button>Continue</button></form></details>`;
  }else if(step==='action'){
@@ -228,7 +243,7 @@ export function renderLifeMap(root,api){
  }
  function go(id){selected=id;panel='explore';step='question';api.render();}
  function next(){
-  if(topics.find(t=>t.id===current.parent)?.kind==='support-discovery'){go(current.parent);return;}
+  if(topics.find(t=>t.id===current.parent)?.kind?.endsWith('discovery')){go(current.parent);return;}
   const siblings=topics.filter(t=>t.parent===current.parent&&!t.group);
   const index=siblings.findIndex(t=>t.id===current.id);
   const candidate=[...siblings.slice(index+1),...siblings.slice(0,index)].find(t=>!data.answers[t.id]?.status);
@@ -237,6 +252,8 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
+ root.querySelectorAll('[data-learning-intent]').forEach(b=>b.onclick=async()=>{b.disabled=true;const intent=b.dataset.learningIntent;const title=`${intent} ${current.title.toLowerCase()}`;const existing=children.find(t=>t.title===title);if(existing){go(existing.id);return;}const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:intent==='Explore'?`Try one introductory ${current.title.toLowerCase()} session to see if you enjoy it.`:intent==='Improve'?`Choose one ${current.title.toLowerCase()} skill to practise this week.`:`Find a beginner ${current.title.toLowerCase()} lesson and choose a first session.`});selected=id;step='question';await save();});
+ root.querySelector('#lm-learning-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Choose one small practice session, introductory lesson, or resource to begin: ${title}.`});selected=id;step='question';await save();});
  root.querySelector('#lm-support-yes')?.addEventListener('click',()=>{supportDraft={};step='person';api.render();});
  root.querySelector('#lm-support-unsure')?.addEventListener('click',()=>{step='support-think';api.render();});
  root.querySelectorAll('[data-support-answer]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,status:b.dataset.supportAnswer,updatedAt:new Date().toISOString()};await save();next();});
@@ -245,13 +262,6 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-support-kind]').forEach(b=>b.onclick=()=>{supportDraft.kind=b.dataset.supportKind;step='support-outcome';api.render();});
  root.querySelector('#lm-support-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();const outcome=supportOutcome({...supportDraft,id,title,parent:current.id,area:area.area});data.concerns.push(outcome);if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];data.answers[current.id]={...answer,status:'progress'};selected=id;step='question';await save();});
  root.querySelectorAll('[data-answer]').forEach(b=>b.onclick=async()=>{
-  root.querySelector('#lm-support-yes')?.addEventListener('click',()=>{supportDraft={};step='person';api.render();});
- root.querySelector('#lm-support-unsure')?.addEventListener('click',()=>{step='support-think';api.render();});
- root.querySelectorAll('[data-support-answer]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,status:b.dataset.supportAnswer,updatedAt:new Date().toISOString()};await save();next();});
- root.querySelectorAll('[data-support-back]').forEach(b=>b.onclick=()=>{step=b.dataset.supportBack;api.render();});
- root.querySelector('#lm-support-person')?.addEventListener('submit',e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));const person=(api.people||[]).find(p=>p.id===values.personId);const personName=person?labelFor(person):values.personName.trim();if(!personName){notice='Choose a person or enter a name.';api.render();return;}supportDraft={personId:person?.id||null,personName};step='support-kind';api.render();});
- root.querySelectorAll('[data-support-kind]').forEach(b=>b.onclick=()=>{supportDraft.kind=b.dataset.supportKind;step='support-outcome';api.render();});
- root.querySelector('#lm-support-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();const outcome=supportOutcome({...supportDraft,id,title,parent:current.id,area:area.area});data.concerns.push(outcome);if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];data.answers[current.id]={...answer,status:'progress'};selected=id;step='question';await save();});
  root.querySelectorAll('[data-answer]').forEach(x=>x.disabled=true);
   const status=b.dataset.answer;data.answers[current.id]={...answer,status,updatedAt:new Date().toISOString(),completedAt:status==='done'?(answer.completedAt||new Date().toISOString()):null};
   if(['unstarted','progress','unsure'].includes(status))step='timing';
