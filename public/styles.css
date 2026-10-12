@@ -4710,3 +4710,5 @@ dialog::backdrop {
 .phase-project-section + .phase-project-section { margin-top: 28px; }
 .phase-project-section > h3 { margin: 12px 0; font-size: 15px; }
 .phase-project-section > h3 small { font-weight: 400; opacity: .65; }
+
+.phase-note-indicator { display: inline-block; margin-left: 5px; font-size: 11px; opacity: .7; vertical-align: middle; }

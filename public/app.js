@@ -5867,7 +5867,7 @@ function renderProjectPhaseMatrixView() {
                 const statusLabel = phaseStatusNameForId(entry?.status_id) || "Not started";
                 const status = phaseStatusTone(statusLabel);
                 const count = projectPhaseLinksFor(project.id, phase.id).length;
-                return `<td><button class="matrix-cell ${status.className}" style="--phase-status-color:${status.color};" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${escapeHtml(entry?.notes || statusLabel)}"><span class="matrix-cell-status"></span><strong>${escapeHtml(statusLabel)}</strong><small>${count} task${count === 1 ? "" : "s"}</small></button></td>`;
+                return `<td><button class="matrix-cell ${status.className}" style="--phase-status-color:${status.color};" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${escapeHtml(entry?.notes || statusLabel)}"><span class="matrix-cell-status"></span><strong>${escapeHtml(statusLabel)}${entry?.notes?.trim() ? '<span class="phase-note-indicator" aria-label="Has note">▤</span>' : ""}</strong><small>${count} task${count === 1 ? "" : "s"}</small></button></td>`;
               }).join("")}</tr>`;
             }).join("") || `<tr><td colspan="${phases.length + 1}" class="empty-state">${projects.length ? "All projects in this type are complete." : "Create a project to start mapping phases."}</td></tr>`}
           </tbody>
