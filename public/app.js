@@ -5841,8 +5841,7 @@ function renderProjectPhaseMatrixView() {
     <div class="project-phase-matrix">
       <div class="matrix-toolbar">
         ${phaseProjectTypeControl()}
-        <label class="field-label">Sort<select name="phaseProjectSort"><option value="least"${state.phaseProjectSort === "least" ? " selected" : ""}>Least complete first</option><option value="most"${state.phaseProjectSort === "most" ? " selected" : ""}>Most complete first</option><option value="name"${state.phaseProjectSort === "name" ? " selected" : ""}>Name</option></select></label>
-        <button type="button" class="phase-apply-sort">Sort now</button>
+        <button type="button" class="phase-apply-sort">Sort by ${state.phaseNextSort === "least" ? "least" : "most"} complete first</button>
         <div class="matrix-legend">${orderedPhaseStatuses().map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
       </div>
       ${selectedProject && selectedPhase ? `
@@ -8725,6 +8724,8 @@ els.taskList.addEventListener("click", async (event) => {
     return;
   }
   if (event.target.closest(".phase-apply-sort")) {
+    state.phaseProjectSort = state.phaseNextSort || "most";
+    state.phaseNextSort = state.phaseProjectSort === "most" ? "least" : "most";
     delete (state.phaseProjectOrders || {})[selectedPhaseProjectTypeId()];
     renderTasks();
     return;
