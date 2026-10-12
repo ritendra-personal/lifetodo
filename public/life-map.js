@@ -134,16 +134,28 @@ export function coverageStats(id,topics,answers){
  const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group&&!t.kind);
  return {reviewed:branch.filter(t=>answers[t.id]?.status).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
 }
+export function mapState(topic,answer={},tasks=[],now=Date.now()){
+ if(['done','well'].includes(answer.status))return {key:'complete',label:'Taken care of'};
+ if(answer.status==='irrelevant')return {key:'inactive',label:'Not relevant'};
+ const deadline=answer.deadline?Date.parse(answer.deadline+'T23:59:59'):NaN;
+ if((Number.isFinite(deadline)&&deadline<now)||tasks.some(t=>t.status!=='done'&&t.due_date&&Date.parse(t.due_date+'T23:59:59')<now))return {key:'attention',label:'Overdue'};
+ if(answer.status==='stuck')return {key:'attention',label:'Blocked'};
+ if(['unstarted','review','unsure'].includes(answer.status))return {key:'attention',label:answer.status==='unsure'?'Needs clarification':'Needs attention'};
+ if(answer.status==='defer')return {key:'inactive',label:'Later'};
+ if(answer.status==='progress')return {key:'progress',label:'In progress'};
+ if(tasks.length)return {key:'planned',label:tasks.every(t=>t.status==='done')?'Actions done · review outcome':'Actions planned'};
+ return {key:'unknown',label:'Not reviewed'};
+}
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let supportDraft={};
 let loadedKey='',data={answers:{},links:{},concerns:[]},notice='',loading=false;
-let selected='admin',panel='explore',step='question',saveQueue=Promise.resolve();
+let selected='admin',panel='map',step='question',saveQueue=Promise.resolve();
 const labelFor=(item)=>item?.title||item?.name||[item?.first_name,item?.last_name].filter(Boolean).join(' ')||'Unavailable record';
 
 export function renderLifeMap(root,api){
  const key='seven-lives-map:'+api.userKey;
  if(loadedKey!==key){
-  loadedKey=key;supportDraft={};selected='admin';panel='explore';step='question';
+  loadedKey=key;supportDraft={};selected='admin';panel='map';step='question';
   try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{},concerns:[]};}catch{data={answers:{},links:{},concerns:[]};}
   notice='Saved in this browser.';
   if(api.client&&api.userId){loading=true;api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle().then(({data:row,error})=>{
@@ -173,15 +185,17 @@ export function renderLifeMap(root,api){
  const linksMarkup=`<details class="lm-secondary"><summary>Link existing people, projects, goals, or tasks</summary><label>Existing item<select id="lm-existing"><option value="">Choose an item…</option>${records.map(([type,item])=>`<option value="${esc(type+':'+item.id)}">${esc(type)}: ${esc(labelFor(item))}</option>`).join('')}</select></label><button id="lm-link">Link</button><ul>${(data.links[current.id]||[]).map(ref=>{const record=records.find(([type,item])=>ref===type+':'+item.id);return `<li>${esc(record?labelFor(record[1]):'Unavailable record')} <button data-unlink="${esc(ref)}">Unlink</button></li>`;}).join('')}</ul></details>`;
  const notesMarkup=`<details class="lm-secondary"><summary>Add a note</summary><form id="lm-note"><label>Note<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button>Save note</button></form></details>`;
  const addMarkup=`<details class="lm-secondary"><summary>Add something else</summary><form id="lm-custom"><label>What would you like to include?<input name="title" required maxlength="200"></label><button>Add</button></form></details>`;
- const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${c.complete} taken care of${c.reviewed?' · '+c.reviewed+' reviewed':''}</small></button>`;}).join('')}</aside>`;
+ const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${panel!=='map'&&area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${c.complete} taken care of${c.reviewed?' · '+c.reviewed+' reviewed':''}</small></button>`;}).join('')}</aside>`;
+ const mapAreas=baseTopics.map(domain=>{
+  const b=branchStats(domain.id,topics,data.answers,data.links,api.tasks);
+  const outcomes=b.topics.filter(t=>t.id!==domain.id&&!t.group&&!t.kind&&(data.answers[t.id]?.status||data.concerns.some(c=>c.id===t.id)||(data.links[t.id]||[]).length));
+  return {domain,branch:b,outcomes:outcomes.map(t=>{const tasks=branchStats(t.id,topics,data.answers,data.links,api.tasks).tasks;return {topic:t,tasks,state:mapState(t,data.answers[t.id],tasks)};})};
+ });
+ const mapped=mapAreas.flatMap(a=>a.outcomes);
+ const allTasks=[...new Map(mapAreas.flatMap(a=>a.branch.tasks).map(t=>[t.id,t])).values()];
  let content='';
- if(panel==='progress'){
-  const completed=branch.topics.filter(t=>t.parent&&!t.kind&&['well','done'].includes(data.answers[t.id]?.status));
-  const attention=branch.topics.filter(t=>t.parent&&!t.kind&&['unstarted','stuck','review','progress','unsure'].includes(data.answers[t.id]?.status));
-  content=`<h3>${esc(area.title)}</h3><div class="lm-progress-summary"><strong>${coverage.complete}</strong> taken care of <span>· ${coverage.reviewed} reviewed · ${coverage.notRelevant} not relevant</span></div>${branch.total?`<p>${branch.done} of ${branch.total} linked actions completed</p><progress value="${branch.done}" max="${branch.total}"></progress>`:''}<h4>Taken care of</h4>${completed.length?completed.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">✓ ${esc(t.title)} <small>${data.answers[t.id].completedAt?'Recorded '+esc(data.answers[t.id].completedAt.slice(0,10)):'Recorded as already in place'}</small></button>`).join(''):'<p>Mark something “Already taken care of” to record it here.</p>'}<h4>Needs attention</h4>${attention.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id].status])}</small></button>`).join('')||'<p>No gaps recorded yet.</p>'}<details><summary>Other answers</summary>${branch.topics.filter(t=>['irrelevant','defer'].includes(data.answers[t.id]?.status)).map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)} · ${esc(statuses[data.answers[t.id].status])}</button>`).join('')}</details>`;
- }else if(panel==='actions'){
-  const areaRecs=recs.filter(r=>branch.topics.some(t=>t.id===r.topic.id));
-  content=`<h3>Next actions · ${esc(area.title)}</h3>${branch.tasks.length?`<ul class="lm-action-list">${branch.tasks.map(task=>`<li><span>${task.status==='done'?'✓':'○'} ${esc(task.title)}</span><button data-toggle="${esc(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button></li>`).join('')}</ul>`:''}${areaRecs.map(r=>`<article class="lm-proposal"><small>${esc(r.topic.title)}</small><h4>${esc(r.action)}</h4><p>${esc(r.reason)}</p><button data-plan="${esc(r.topic.id)}">Review action</button></article>`).join('')||'<p>Review reminders to find a useful next step.</p>'}`;
+ if(panel==='map'){
+  content=`<div class="lm-map-root"><h3>My life outside work</h3><div class="lm-map-totals"><span><strong>${mapped.filter(o=>o.state.key==='attention').length}</strong> need attention</span><span><strong>${mapped.filter(o=>o.state.key==='progress').length}</strong> in progress</span><span><strong>${mapped.filter(o=>o.state.key==='complete').length}</strong> taken care of</span></div>${allTasks.length?`<small>${allTasks.filter(t=>t.status==='done').length} of ${allTasks.length} linked actions complete</small>`:''}</div><div class="lm-map-legend"><span class="lm-dot attention">Needs attention</span><span class="lm-dot progress">In progress</span><span class="lm-dot complete">Taken care of</span><span class="lm-dot unknown">Not reviewed</span></div><div class="lm-life-tree">${[...mapAreas].sort((a,b)=>Number(b.outcomes.length>0)-Number(a.outcomes.length>0)).map(({domain,branch:b,outcomes})=>`<article class="lm-life-branch"><button class="lm-domain-title" data-go="${domain.id}">${esc(domain.title)} <span>↗</span></button>${outcomes.length?`<ul>${outcomes.map(({topic:t,tasks,state})=>`<li class="lm-node lm-node-${state.key}"><button data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong>${t.personName?`<small>${esc(t.personName)}</small>`:''}<span class="lm-node-status">${esc(state.label)}</span>${tasks.length?`<small>${tasks.filter(task=>task.status==='done').length}/${tasks.length} actions complete</small>`:''}</button>${tasks.length?`<details><summary>${tasks.length} linked ${tasks.length===1?'action':'actions'}</summary><ul>${tasks.map(task=>`<li><span>${task.status==='done'?'✓':'○'} ${esc(task.title)}</span> <button data-toggle="${esc(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button></li>`).join('')}</ul></details>`:''}</li>`).join('')}</ul>`:`<p class="lm-unmapped">${data.answers[domain.id]?.status?esc(statuses[data.answers[domain.id].status]):'Not explored yet'}</p>`}${b.total?`<progress aria-label="${esc(domain.title)} linked action progress" max="${b.total}" value="${b.done}"></progress>`:''}<button class="lm-explore-branch" data-go="${domain.id}">${outcomes.length?'Explore more':'Explore this area'} →</button></article>`).join('')}</div>`;
  }else if(current.kind==='support-discovery'){
   const outcomes=children.filter(t=>!t.kind);
   if(step==='person'){
@@ -204,7 +218,7 @@ export function renderLifeMap(root,api){
  }else{
   content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
  }
- root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['explore','Explore'],['progress','Progress'],['actions','Actions']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout">${nav}<section class="lm-interview"><nav class="lm-breadcrumb"><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
+ root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout">${nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
  async function save(){
   const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;
   const write=async()=>{try{localStorage.setItem(key,JSON.stringify(snapshot));notice='Saved in this browser.';if(client&&owner){const {error}=await client.from('planner_life_map').upsert({user_id:owner,data:snapshot,updated_at:new Date().toISOString()});notice=error?'Saved here; account sync failed.':'Saved.';}if(loadedKey===key)api.render();}catch{notice='Save failed. Please retry.';api.render();}};

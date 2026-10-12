@@ -46,3 +46,13 @@ test('support discovery separates people and needs before asking completion stat
  const counts=coverageStats('care',topics,{[hub.id]:{status:'well'},a:{status:'done'}});
  assert.equal(counts.complete,1,'Broad support category must not count as a completed outcome');
 });
+
+test('visual map distinguishes attention, progress, completion and unknown',async()=>{
+ const {mapState}=await import('../public/life-map.js');
+ assert.equal(mapState({}).key,'unknown');
+ assert.equal(mapState({},{status:'progress'}).key,'progress');
+ assert.equal(mapState({},{status:'stuck'}).label,'Blocked');
+ assert.equal(mapState({},{status:'done',deadline:'2000-01-01'}).key,'complete');
+ assert.equal(mapState({},{status:'progress'},[{status:'active',due_date:'2000-01-01'}]).label,'Overdue');
+ assert.equal(mapState({},{},[{status:'done'}]).key,'planned','Completing an action does not silently complete an outcome');
+});
