@@ -1,7 +1,7 @@
-import {renderLifeMap} from './life-map.js?v=1.14.23';
+import {renderLifeMap} from './life-map.js?v=1.14.24';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.23";
+const APP_VERSION = "1.14.24";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -8565,7 +8565,7 @@ function render() {
     "project-filter": "Project Filter",
     "project-charts": "Project charts",
     ideas: "Ideas",
-    graph: "Outcome to task graph",
+    graph: "Outcome to Task",
     timeline: "Timeline",
     "tasks-by-taxonomy": "Tasks by Taxonomy",
     "project-tasks": "Project Tasks",
@@ -8613,7 +8613,7 @@ function render() {
   els.viewTitle.textContent = titles[state.view] || "Planner";
   els.viewSubtitle.textContent = keyObjectSubtitles[state.view] || "";
   els.viewSubtitle.classList.toggle("hidden", !keyObjectSubtitles[state.view]);
-  els.boardTitle.textContent = state.view === "graph" ? "Outcome to task graph" : state.view === "timeline" ? "Task timeline" : titles[state.view] || "Planner";
+  els.boardTitle.textContent = state.view === "graph" ? "Outcome to Task" : state.view === "timeline" ? "Task timeline" : titles[state.view] || "Planner";
   els.storageStatus.textContent = isSupabaseReady() ? state.user.email : "Local storage";
   els.appVersion.textContent = `Version ${APP_VERSION}`;
   els.keyButton.textContent = state.user ? "Sign out" : "Google";
