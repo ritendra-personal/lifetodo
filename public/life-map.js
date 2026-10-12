@@ -1,4 +1,4 @@
-import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.17';
+import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.20';
 export const baseTopics = [
  ['home','Home and everyday life','Home','How well is your home supporting everyday life?','Identify the home issue causing the most friction and one practical next step.'],
  ['money','Financial wellbeing','Finances','How confident do you feel about your financial responsibilities and plans?','Identify one financial question or responsibility that needs attention.'],
