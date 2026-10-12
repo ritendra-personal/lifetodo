@@ -33,3 +33,16 @@ test('discovery offers document reminders and tracks accomplishments without tas
  assert.equal(stats.complete,1);assert.equal(stats.reviewed,2);assert.equal(stats.notRelevant,1);
  assert.equal(recommendation(topics.find(t=>t.id==='check:admin:real-id'),answers['check:admin:real-id']),null);
 });
+
+test('support discovery separates people and needs before asking completion status',async()=>{
+ const {discoveryTopics,coverageStats,supportOutcome}=await import('../public/life-map.js');
+ const hub=discoveryTopics().find(t=>t.id==='check:care:0');
+ assert.equal(hub.kind,'support-discovery');
+ const one=supportOutcome({id:'a',parent:hub.id,area:hub.area,personName:'Parent',kind:'housing',title:'Help with a house sale'});
+ const two=supportOutcome({id:'b',parent:hub.id,area:hub.area,personId:'existing-person',personName:'Partner',kind:'career',title:'Support a job change'});
+ assert.equal(two.personId,'existing-person');assert.equal(one.personId,null);
+ assert.match(one.action,/housing/);assert.match(two.action,/job or learning/);
+ const topics=[...baseTopics,...discoveryTopics(),one,two];
+ const counts=coverageStats('care',topics,{[hub.id]:{status:'well'},a:{status:'done'}});
+ assert.equal(counts.complete,1,'Broad support category must not count as a completed outcome');
+});

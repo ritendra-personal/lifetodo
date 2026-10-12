@@ -98,6 +98,17 @@ const reminders = {
   ['Recurring renewals','Are there recurring renewals you tend to remember at the last minute?','Record the next known renewal date.']
  ]
 };
+export const supportKinds={
+ housing:{label:'Home or housing',hint:'For example: a move, repairs, or selling a home',action:name=>`Talk with ${name} about the desired outcome, timing, and the help they want with housing.`},
+ career:{label:'Job search or learning',hint:'For example: choosing a direction, applications, or training',action:name=>`Agree with ${name} on their job or learning goal and one useful next step.`},
+ care:{label:'Health or everyday care',hint:'For example: appointments, transport, or daily routines',action:name=>`Ask ${name} what practical support would help most and agree on the next step.`},
+ paperwork:{label:'Paperwork or finances',hint:'For example: an application, documents, or organizing bills',action:name=>`Identify the specific paperwork or financial task ${name} wants help with and its next deadline.`},
+ connection:{label:'Emotional support or connection',hint:'For example: listening, checking in, or spending time together',action:name=>`Arrange time with ${name} and ask what kind of support would feel helpful.`},
+ other:{label:'Something else',hint:'Describe the outcome in your own words',action:name=>`Agree with ${name} on the first useful step and who will do it.`}
+};
+export function supportOutcome({id,parent,area,personId,personName,kind,title}){
+ return {id,parent,area,title,personId:personId||null,personName,supportKind:kind,question:`Where are you with “${title}”?`,action:(supportKinds[kind]||supportKinds.other).action(personName)};
+}
 const documentReminders = [
  ['passport','Passport','If you use a passport, is it current and suitable for your planned travel?','Check the passport details and any trip-specific requirements.'],
  ['real-id','REAL ID','Do you already have a REAL ID, or is it something you want to arrange?','Check the official issuing agency’s REAL ID application guidance.'],
@@ -111,17 +122,20 @@ export function discoveryTopics(){
   const rows=reminders[area.id]||probes[area.id].map(label=>[label,`Is “${label.toLowerCase()}” something you would like to address, or is it already taken care of?`,`Identify one manageable next step for ${label.toLowerCase()}.`]);
   rows.forEach(([title,question,action,group],index)=>{
    const id=`check:${area.id}:${group||index}`;
-   items.push({id,parent:area.id,area:area.area,title,question,action,group});
+   items.push(area.id==='care'&&index===0
+    ?{id,parent:area.id,area:area.area,title:'People you want to support',question:'Does someone close to you need your help with something?',kind:'support-discovery'}
+    :{id,parent:area.id,area:area.area,title,question,action,group});
    if(group==='documents')for(const [slug,title,question,action] of documentReminders)items.push({id:`check:admin:${slug}`,parent:id,area:area.area,title,question,action});
   });
  }
  return items;
 }
 export function coverageStats(id,topics,answers){
- const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group);
+ const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group&&!t.kind);
  return {reviewed:branch.filter(t=>answers[t.id]?.status).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
 }
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let supportDraft={};
 let loadedKey='',data={answers:{},links:{},concerns:[]},notice='',loading=false;
 let selected='admin',panel='explore',step='question',saveQueue=Promise.resolve();
 const labelFor=(item)=>item?.title||item?.name||[item?.first_name,item?.last_name].filter(Boolean).join(' ')||'Unavailable record';
@@ -129,7 +143,7 @@ const labelFor=(item)=>item?.title||item?.name||[item?.first_name,item?.last_nam
 export function renderLifeMap(root,api){
  const key='seven-lives-map:'+api.userKey;
  if(loadedKey!==key){
-  loadedKey=key;selected='admin';panel='explore';step='question';
+  loadedKey=key;supportDraft={};selected='admin';panel='explore';step='question';
   try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{},concerns:[]};}catch{data={answers:{},links:{},concerns:[]};}
   notice='Saved in this browser.';
   if(api.client&&api.userId){loading=true;api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle().then(({data:row,error})=>{
@@ -155,19 +169,31 @@ export function renderLifeMap(root,api){
   if(people.length&&a.support==='person'&&!a.next)r.action=`Arrange a conversation with ${people.join(', ')} about ${topic.title.toLowerCase()}.`;
   return r;
  }
- const recs=topics.filter(t=>t.parent&&!t.group).map(suggestion).filter(Boolean).sort((a,b)=>b.score-a.score);
+ const recs=topics.filter(t=>t.parent&&!t.group&&!t.kind).map(suggestion).filter(Boolean).sort((a,b)=>b.score-a.score);
  const linksMarkup=`<details class="lm-secondary"><summary>Link existing people, projects, goals, or tasks</summary><label>Existing item<select id="lm-existing"><option value="">Choose an item…</option>${records.map(([type,item])=>`<option value="${esc(type+':'+item.id)}">${esc(type)}: ${esc(labelFor(item))}</option>`).join('')}</select></label><button id="lm-link">Link</button><ul>${(data.links[current.id]||[]).map(ref=>{const record=records.find(([type,item])=>ref===type+':'+item.id);return `<li>${esc(record?labelFor(record[1]):'Unavailable record')} <button data-unlink="${esc(ref)}">Unlink</button></li>`;}).join('')}</ul></details>`;
  const notesMarkup=`<details class="lm-secondary"><summary>Add a note</summary><form id="lm-note"><label>Note<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button>Save note</button></form></details>`;
  const addMarkup=`<details class="lm-secondary"><summary>Add something else</summary><form id="lm-custom"><label>What would you like to include?<input name="title" required maxlength="200"></label><button>Add</button></form></details>`;
  const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${c.complete} taken care of${c.reviewed?' · '+c.reviewed+' reviewed':''}</small></button>`;}).join('')}</aside>`;
  let content='';
  if(panel==='progress'){
-  const completed=branch.topics.filter(t=>t.parent&&['well','done'].includes(data.answers[t.id]?.status));
-  const attention=branch.topics.filter(t=>t.parent&&['unstarted','stuck','review','progress','unsure'].includes(data.answers[t.id]?.status));
+  const completed=branch.topics.filter(t=>t.parent&&!t.kind&&['well','done'].includes(data.answers[t.id]?.status));
+  const attention=branch.topics.filter(t=>t.parent&&!t.kind&&['unstarted','stuck','review','progress','unsure'].includes(data.answers[t.id]?.status));
   content=`<h3>${esc(area.title)}</h3><div class="lm-progress-summary"><strong>${coverage.complete}</strong> taken care of <span>· ${coverage.reviewed} reviewed · ${coverage.notRelevant} not relevant</span></div>${branch.total?`<p>${branch.done} of ${branch.total} linked actions completed</p><progress value="${branch.done}" max="${branch.total}"></progress>`:''}<h4>Taken care of</h4>${completed.length?completed.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">✓ ${esc(t.title)} <small>${data.answers[t.id].completedAt?'Recorded '+esc(data.answers[t.id].completedAt.slice(0,10)):'Recorded as already in place'}</small></button>`).join(''):'<p>Mark something “Already taken care of” to record it here.</p>'}<h4>Needs attention</h4>${attention.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id].status])}</small></button>`).join('')||'<p>No gaps recorded yet.</p>'}<details><summary>Other answers</summary>${branch.topics.filter(t=>['irrelevant','defer'].includes(data.answers[t.id]?.status)).map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)} · ${esc(statuses[data.answers[t.id].status])}</button>`).join('')}</details>`;
  }else if(panel==='actions'){
   const areaRecs=recs.filter(r=>branch.topics.some(t=>t.id===r.topic.id));
   content=`<h3>Next actions · ${esc(area.title)}</h3>${branch.tasks.length?`<ul class="lm-action-list">${branch.tasks.map(task=>`<li><span>${task.status==='done'?'✓':'○'} ${esc(task.title)}</span><button data-toggle="${esc(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button></li>`).join('')}</ul>`:''}${areaRecs.map(r=>`<article class="lm-proposal"><small>${esc(r.topic.title)}</small><h4>${esc(r.action)}</h4><p>${esc(r.reason)}</p><button data-plan="${esc(r.topic.id)}">Review action</button></article>`).join('')||'<p>Review reminders to find a useful next step.</p>'}`;
+ }else if(current.kind==='support-discovery'){
+  const outcomes=children.filter(t=>!t.kind);
+  if(step==='person'){
+   content=`<h3>Who would you like to support?</h3><form id="lm-support-person"><label>Choose an existing person<select name="personId"><option value="">Choose a person…</option>${(api.people||[]).map(p=>`<option value="${esc(p.id)}" ${supportDraft.personId===p.id?'selected':''}>${esc(labelFor(p))}</option>`).join('')}</select></label><label>Or use a name or relationship<input name="personName" placeholder="For example: Mom" value="${esc(supportDraft.personName||'')}" maxlength="120"></label><button class="lm-primary">Continue</button></form><p class="lm-subtle">Using a name here does not create a new person record.</p>`;
+  }else if(step==='support-kind'){
+   content=`<small>${esc(supportDraft.personName)}</small><h3>What kind of help do they need?</h3><div class="lm-topic-menu">${Object.entries(supportKinds).map(([id,item])=>`<button data-support-kind="${id}"><strong>${esc(item.label)}</strong><small>${esc(item.hint)}</small></button>`).join('')}</div><button data-support-back="person" class="lm-next-prompt">← Change person</button>`;
+  }else if(step==='support-outcome'){
+   const kind=supportKinds[supportDraft.kind];
+   content=`<small>${esc(supportDraft.personName)} · ${esc(kind.label)}</small><h3>What would you like to help them accomplish?</h3><form id="lm-support-outcome"><label>Outcome<input name="title" required maxlength="200" placeholder="${esc(supportDraft.kind==='housing'?'Help them sell their house':supportDraft.kind==='career'?'Support their next job move':'Describe the help they need')}" value="${esc(supportDraft.title||'')}"></label><button class="lm-primary">Save outcome and continue</button></form><button data-support-back="support-kind" class="lm-next-prompt">← Change kind of help</button>`;
+  }else{
+   content=`<h3>${esc(current.question)}</h3><div class="lm-answer-buttons"><button id="lm-support-yes">Yes — choose a person</button><button data-support-answer="well">Everyone is supported for now</button><button id="lm-support-unsure">Help me think</button><button data-support-answer="defer">Come back to this later</button></div>${step==='support-think'?'<p>Think about a parent managing a change, a partner pursuing a goal, a child needing guidance, or a friend who could use practical help. Is there someone you want to check in with?</p>':''}${outcomes.length?`<h4>Support you have identified</h4>${outcomes.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>${esc(t.personName||'')} · ${esc(statuses[data.answers[t.id]?.status]||'Continue →')}</small></button>`).join('')}`:''}`;
+  }
  }else if(isArea||current.group){
   content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Guide me through ${isArea?'this area':'these documents'}</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id]?.status]||'Review →')}</small></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
  }else if(step==='timing'){
@@ -176,7 +202,7 @@ export function renderLifeMap(root,api){
   const r=suggestion(current);const already=api.tasks.some(t=>(data.links[current.id]||[]).includes('task:'+t.id)&&t.title===r?.action);
   content=`<small>${esc(current.title)}</small><h3>${answer.timing==='unknown'?'Let’s clarify the next step':'A manageable next step'}</h3><form id="lm-create"><label>Suggested action<input name="title" required value="${esc(r?.action||current.action)}"></label><button class="lm-primary" ${already?'disabled':''}>${already?'Already in your tasks':'Add to my tasks'}</button></form><button class="lm-next-prompt" id="lm-next">Continue without adding a task →</button>${linksMarkup}<details class="lm-secondary"><summary>Adjust the suggestion</summary><form id="lm-context"><label>What would help?<select name="support"><option value="information">Find information</option><option value="person">Talk to someone</option><option value="decision">Make a decision</option><option value="overwhelmed">Make the first step smaller</option><option value="waiting">Follow up</option></select></label><label>Why does it matter?<select name="impact"><option value="medium">Makes life easier</option><option value="high">Protects something important</option><option value="low">Nice to have</option></select></label><button>Update suggestion</button></form></details>${notesMarkup}`;
  }else{
-  content=`<small>${esc(current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
+  content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
  }
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['explore','Explore'],['progress','Progress'],['actions','Actions']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout">${nav}<section class="lm-interview"><nav class="lm-breadcrumb"><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
  async function save(){
@@ -186,6 +212,7 @@ export function renderLifeMap(root,api){
  }
  function go(id){selected=id;panel='explore';step='question';api.render();}
  function next(){
+  if(topics.find(t=>t.id===current.parent)?.kind==='support-discovery'){go(current.parent);return;}
   const siblings=topics.filter(t=>t.parent===current.parent&&!t.group);
   const index=siblings.findIndex(t=>t.id===current.id);
   const candidate=[...siblings.slice(index+1),...siblings.slice(0,index)].find(t=>!data.answers[t.id]?.status);
@@ -194,8 +221,22 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
+ root.querySelector('#lm-support-yes')?.addEventListener('click',()=>{supportDraft={};step='person';api.render();});
+ root.querySelector('#lm-support-unsure')?.addEventListener('click',()=>{step='support-think';api.render();});
+ root.querySelectorAll('[data-support-answer]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,status:b.dataset.supportAnswer,updatedAt:new Date().toISOString()};await save();next();});
+ root.querySelectorAll('[data-support-back]').forEach(b=>b.onclick=()=>{step=b.dataset.supportBack;api.render();});
+ root.querySelector('#lm-support-person')?.addEventListener('submit',e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));const person=(api.people||[]).find(p=>p.id===values.personId);const personName=person?labelFor(person):values.personName.trim();if(!personName){notice='Choose a person or enter a name.';api.render();return;}supportDraft={personId:person?.id||null,personName};step='support-kind';api.render();});
+ root.querySelectorAll('[data-support-kind]').forEach(b=>b.onclick=()=>{supportDraft.kind=b.dataset.supportKind;step='support-outcome';api.render();});
+ root.querySelector('#lm-support-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();const outcome=supportOutcome({...supportDraft,id,title,parent:current.id,area:area.area});data.concerns.push(outcome);if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];data.answers[current.id]={...answer,status:'progress'};selected=id;step='question';await save();});
  root.querySelectorAll('[data-answer]').forEach(b=>b.onclick=async()=>{
-  root.querySelectorAll('[data-answer]').forEach(x=>x.disabled=true);
+  root.querySelector('#lm-support-yes')?.addEventListener('click',()=>{supportDraft={};step='person';api.render();});
+ root.querySelector('#lm-support-unsure')?.addEventListener('click',()=>{step='support-think';api.render();});
+ root.querySelectorAll('[data-support-answer]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,status:b.dataset.supportAnswer,updatedAt:new Date().toISOString()};await save();next();});
+ root.querySelectorAll('[data-support-back]').forEach(b=>b.onclick=()=>{step=b.dataset.supportBack;api.render();});
+ root.querySelector('#lm-support-person')?.addEventListener('submit',e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));const person=(api.people||[]).find(p=>p.id===values.personId);const personName=person?labelFor(person):values.personName.trim();if(!personName){notice='Choose a person or enter a name.';api.render();return;}supportDraft={personId:person?.id||null,personName};step='support-kind';api.render();});
+ root.querySelectorAll('[data-support-kind]').forEach(b=>b.onclick=()=>{supportDraft.kind=b.dataset.supportKind;step='support-outcome';api.render();});
+ root.querySelector('#lm-support-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();const outcome=supportOutcome({...supportDraft,id,title,parent:current.id,area:area.area});data.concerns.push(outcome);if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];data.answers[current.id]={...answer,status:'progress'};selected=id;step='question';await save();});
+ root.querySelectorAll('[data-answer]').forEach(x=>x.disabled=true);
   const status=b.dataset.answer;data.answers[current.id]={...answer,status,updatedAt:new Date().toISOString(),completedAt:status==='done'?(answer.completedAt||new Date().toISOString()):null};
   if(['unstarted','progress','unsure'].includes(status))step='timing';
   await save();
