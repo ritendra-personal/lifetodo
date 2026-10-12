@@ -4729,3 +4729,4 @@ dialog::backdrop {
   background: #fff; color: var(--text); font: inherit; cursor: pointer;
 }
 .phase-apply-sort:hover { background: #f8fafc; }
+.project-phase-matrix-scroll { width: fit-content; max-width: 100%; box-sizing: border-box; }
