@@ -4706,3 +4706,7 @@ dialog::backdrop {
 }
 
 .phase-status-choices{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:8px}.phase-status-choices legend{font-size:13px;font-weight:600;margin-bottom:8px}.phase-status-choice{border:1px solid var(--status-color);border-radius:8px;padding:10px 12px;background:color-mix(in srgb,var(--status-color) 10%,white);color:var(--text);cursor:pointer}.phase-status-choice[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--status-color);font-weight:700}.phase-status-choice:hover{background:color-mix(in srgb,var(--status-color) 24%,white)}.phase-status-choice:disabled{opacity:.55;cursor:wait}
+
+.phase-project-section + .phase-project-section { margin-top: 28px; }
+.phase-project-section > h3 { margin: 12px 0; font-size: 15px; }
+.phase-project-section > h3 small { font-weight: 400; opacity: .65; }

@@ -90,7 +90,12 @@ const form = {
   assert.match(context.els.taskList.innerHTML, /100% complete/);
   state.phaseProjectSort = "most";
   context.renderProjectPhaseMatrixView();
-  assert.ok(context.els.taskList.innerHTML.indexOf(">Movie</button>") < context.els.taskList.innerHTML.indexOf(">Unfinished</button>"));
+  assert.ok(context.els.taskList.innerHTML.indexOf(">Unfinished</button>") < context.els.taskList.innerHTML.indexOf("Completed projects"));
+  assert.ok(context.els.taskList.innerHTML.indexOf("Completed projects") < context.els.taskList.innerHTML.indexOf(">Movie</button>"));
+  state.projectPhaseEntries.find((entry) => entry.project_id === "movie" && entry.phase_id === "write").status_id = "";
+  context.renderProjectPhaseMatrixView();
+  assert.doesNotMatch(context.els.taskList.innerHTML, /Completed projects/);
+  assert.match(context.els.taskList.innerHTML, />Movie<\/button>/);
   state.projectPhaseEntries.push({ project_id: "stage", phase_id: "rehearse", status_id: "na" });
   assert.equal(context.projectPhaseCompletion("stage", context.phasesForProjectType("play")).fraction, null);
   console.log("Project phases: independent status/notes, multiple links, no task creation, cloud failure and migration guard passed.");

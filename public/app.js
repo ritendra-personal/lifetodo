@@ -5821,6 +5821,9 @@ function renderProjectPhaseMatrixView() {
     }
     return a.name.localeCompare(b.name);
   });
+  const completedProjects = projects.filter((project) => projectPhaseCompletion(project.id, phases).fraction === 1);
+  const activeProjects = projects.filter((project) => projectPhaseCompletion(project.id, phases).fraction !== 1);
+  const sections = [{ title: "Active projects", projects: activeProjects }, ...(completedProjects.length ? [{ title: "Completed projects", projects: completedProjects }] : [])];
   const selectedProject = state.matrixProjectId ? state.projects.find((project) => project.id === state.matrixProjectId) : null;
   const selectedPhase = state.matrixPhaseId ? state.projectPhases.find((phase) => phase.id === state.matrixPhaseId) : null;
   const selectedEntry = draft || projectPhaseEntryFor(selectedProject?.id, selectedPhase?.id);
@@ -5849,11 +5852,14 @@ function renderProjectPhaseMatrixView() {
           }).join("")}</div></details>
         </dialog>
       ` : ""}
+      ${sections.map((section) => `
+      <section class="phase-project-section">
+      <h3>${section.title} <small>(${section.projects.length})</small></h3>
       <div class="project-phase-matrix-scroll">
         <table class="project-phase-matrix-table">
           <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;">Project<span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}</tr></thead>
           <tbody>
-            ${projects.map((project) => {
+            ${section.projects.map((project) => {
               const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
               const completion = projectPhaseCompletion(project.id, phases);
               return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${completion.fraction === null ? "N/A" : Math.round(completion.fraction * 100) + "% complete"} · ${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
@@ -5863,10 +5869,11 @@ function renderProjectPhaseMatrixView() {
                 const count = projectPhaseLinksFor(project.id, phase.id).length;
                 return `<td><button class="matrix-cell ${status.className}" style="--phase-status-color:${status.color};" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${escapeHtml(entry?.notes || statusLabel)}"><span class="matrix-cell-status"></span><strong>${escapeHtml(statusLabel)}</strong><small>${count} task${count === 1 ? "" : "s"}</small></button></td>`;
               }).join("")}</tr>`;
-            }).join("") || `<tr><td colspan="${phases.length + 1}" class="empty-state">Create a project to start mapping phases.</td></tr>`}
+            }).join("") || `<tr><td colspan="${phases.length + 1}" class="empty-state">${projects.length ? "All projects in this type are complete." : "Create a project to start mapping phases."}</td></tr>`}
           </tbody>
         </table>
       </div>
+      </section>`).join("")}
     </div>
   `;
   const dialog = els.taskList.querySelector(".phase-cell-dialog");
