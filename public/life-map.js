@@ -139,6 +139,12 @@ export function discoveryTopics(){
   for(const subject of subjects)items.push({id:parent+':'+subject.toLowerCase().replaceAll(' ','-'),parent,area:learning.area,title:subject,kind:'learning-choice',question:`What would you like to do with ${subject.toLowerCase()}?`});
  }
  items.push({id:'check:creative:milestone',parent:'creative',area:baseTopics.find(t=>t.id==='creative').area,title:'Achieve a creative milestone',kind:'milestone-discovery'});
+ const ongoing=items.find(t=>t.id==='check:health:4');Object.assign(ongoing,{group:'care',question:'Which condition or care need would you like to organize?'});
+ for(const [slug,title] of [['diabetes','Diabetes'],['heart','Heart or blood pressure care'],['breathing','Asthma or breathing care'],['pain','Pain or mobility'],['other','Another condition or care need']]){
+  const parent='care:'+slug;items.push({id:parent,parent:ongoing.id,area:ongoing.area,title,group:'care',question:'Which part needs attention?'});
+  const needs=slug==='diabetes'?['Glucose monitoring','Medication routine','Supplies and refills','Appointments and tests','Questions for my care team','Something else']:['Monitoring or equipment','Medication routine','Supplies and refills','Appointments and follow-ups','Everyday support or accessibility','Something else'];
+  needs.forEach((need,index)=>items.push({id:parent+':'+index,parent,area:ongoing.area,title:need,kind:'care-outcome'}));
+ }
  return items.map(item=>({...item,suggested:true}));
 }
 export function coverageStats(id,topics,answers){
@@ -210,6 +216,8 @@ export function renderLifeMap(root,api){
  const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState});
  if(panel==='map'){
   content=graphMarkup(graph);
+ }else if(current.kind==='care-outcome'){
+  content=`<small>${esc(topics.find(t=>t.id===current.parent)?.title)} · ${esc(current.title)}</small><h3>What specifically do you want to have in place?</h3><form id="lm-care-outcome"><label>Outcome<input name="title" required maxlength="200" placeholder="${current.title==='Glucose monitoring'?'For example: Have my glucose monitor set up and in use':'Name one specific care need or result'}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Track each need separately, using the care plan agreed with your clinician.</p>${outcomeList(children)}`;
  }else if(current.kind==='milestone-discovery'){
   content=`<h3>What creative milestone would you like to reach?</h3><form id="lm-milestone"><label>Milestone<input name="title" required maxlength="200" placeholder="For example: Win an Oscar, publish a book, or hold a solo exhibition"></label><button class="lm-primary">Continue</button></form><p class="lm-subtle">An ambition can be uncertain. Connect it to projects and actions you can influence.</p>${outcomeList(children)}`;
  }else if(current.kind==='learning-choice'){
@@ -270,6 +278,7 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
+ root.querySelector('#lm-care-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Identify the next practical step for ${title}, following your agreed care plan.`});selected=id;step='question';await save();});
  root.querySelector('#lm-milestone')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Identify one project or measurable step you can influence toward: ${title}.`});selected=id;step='question';await save();});
  async function savePersonSelection(e,nextStep){
   e.preventDefault();const values=Object.fromEntries(new FormData(e.target));let person=(api.people||[]).find(p=>p.id===values.personId);
