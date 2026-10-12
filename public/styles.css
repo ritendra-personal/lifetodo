@@ -4712,3 +4712,20 @@ dialog::backdrop {
 .phase-project-section > h3 small { font-weight: 400; opacity: .65; }
 
 .phase-note-indicator { display: inline-block; margin-left: 5px; font-size: 11px; opacity: .7; vertical-align: middle; }
+
+/* Give the phase table an even inset and quiet, readable project controls. */
+.project-phase-matrix-scroll { padding: 8px; }
+.project-phase-matrix-table { border-spacing: 0; }
+.project-phase-matrix-table .matrix-project-header,
+.project-phase-matrix-table .matrix-project-name { padding: 12px; }
+.matrix-project-link, .phase-sort-name {
+  appearance: none; border: 0; background: transparent; padding: 0;
+  color: inherit; font: inherit; font-weight: 600; text-align: left;
+  cursor: pointer;
+}
+.matrix-project-link:hover, .phase-sort-name:hover { text-decoration: underline; }
+.phase-apply-sort {
+  padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 7px;
+  background: #fff; color: var(--text); font: inherit; cursor: pointer;
+}
+.phase-apply-sort:hover { background: #f8fafc; }
