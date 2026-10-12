@@ -1,4 +1,4 @@
-import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.08';
+import {buildLifeGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.09';
 export const baseTopics = [
  ['home','Home and everyday life','Home','How well is your home supporting everyday life?','Identify the home issue causing the most friction and one practical next step.'],
  ['money','Financial wellbeing','Finances','How confident do you feel about your financial responsibilities and plans?','Identify one financial question or responsibility that needs attention.'],
@@ -125,7 +125,7 @@ export function discoveryTopics(){
    const id=`check:${area.id}:${group||index}`;
    items.push(area.id==='care'&&index===0
     ?{id,parent:area.id,area:area.area,title:'People you want to support',question:'Does someone close to you need your help with something?',kind:'support-discovery'}
-    :{id,parent:area.id,area:area.area,title,question,action,group,...(area.id==='growth'?{kind:'learning-discovery'}:{})});
+    :{id,parent:area.id,area:area.area,title,question,action,group,...(area.id==='growth'?{kind:'learning-discovery'}:area.id==='relationships'&&index<4?{kind:'relationship-discovery'}:{})});
    if(group==='documents')for(const [slug,title,question,action] of documentReminders)items.push({id:`check:admin:${slug}`,parent:id,area:area.area,title,question,action});
   });
  }
@@ -213,6 +213,15 @@ export function renderLifeMap(root,api){
   const prompts=[['What would you like to learn?','For example: Learn to dance'],['What habit would you like to develop?','For example: Read regularly'],['What qualification would you like to work toward?','Name a course or qualification'],['What would you like to feel more confident about?','Describe a change that matters to you'],['What interest would you like to try?','For example: Try pottery'],['What would you like to stop pursuing?','Name something you want to let go of']];
   const [question,placeholder]=prompts[Number(current.id.split(':').at(-1))]||prompts[0];
   content=`<h3>${question}</h3><form id="lm-learning-outcome"><label>Your goal<input name="title" required maxlength="200" placeholder="${placeholder}"></label><button class="lm-primary">Continue</button></form><p class="lm-subtle">Start with a few words. Next we’ll work out where you are and a manageable next step.</p>${children.length?`<h4>Your goals</h4>${children.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>${esc(statuses[data.answers[t.id]?.status]||'Continue →')}</small></button>`).join('')}`:''}${linksMarkup}`;
+ }else if(current.kind==='relationship-discovery'){
+  if(step==='relationship-action'){
+   const choices=current.id.endsWith(':2')?['Have a conversation','Say thank you','Apologize','Something else']:current.id.endsWith(':3')?['Discuss a boundary','Make time for myself','Something else']:['Send a message','Arrange a call','Meet up','Something else'];
+   content=`<small>${esc(supportDraft.personName)}</small><h3>How would you like to connect?</h3><div class="lm-answer-buttons">${choices.map(label=>`<button data-relationship-action="${esc(label)}">${esc(label)}</button>`).join('')}</div>${step==='relationship-custom'?'':''}`;
+  }else if(step==='relationship-custom'){
+   content=`<h3>What would you like to do with ${esc(supportDraft.personName)}?</h3><form id="lm-relationship-custom"><label>Outcome<input name="title" required maxlength="200"></label><button>Continue</button></form>`;
+  }else{
+   content=`<h3>Who is this about?</h3><form id="lm-relationship-person"><label>Choose an existing person<select name="personId"><option value="">Choose a person…</option>${(api.people||[]).map(p=>`<option value="${esc(p.id)}">${esc(labelFor(p))}</option>`).join('')}</select></label><label>Or enter a name<input name="personName" maxlength="120"></label><button class="lm-primary">Continue</button></form>${children.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)}</button>`).join('')}<button id="lm-next">Skip for now</button>`;
+  }
  }else if(current.kind==='support-discovery'){
   const outcomes=children.filter(t=>!t.kind);
   if(step==='person'){
@@ -226,7 +235,7 @@ export function renderLifeMap(root,api){
    content=`<h3>${esc(current.question)}</h3><div class="lm-answer-buttons"><button id="lm-support-yes">Yes — choose a person</button><button data-support-answer="well">Everyone is supported for now</button><button id="lm-support-unsure">Help me think</button><button data-support-answer="defer">Come back to this later</button></div>${step==='support-think'?'<p>Think about a parent managing a change, a partner pursuing a goal, a child needing guidance, or a friend who could use practical help. Is there someone you want to check in with?</p>':''}${outcomes.length?`<h4>Support you have identified</h4>${outcomes.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>${esc(t.personName||'')} · ${esc(statuses[data.answers[t.id]?.status]||'Continue →')}</small></button>`).join('')}`:''}`;
   }
  }else if(isArea||current.group){
-  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Guide me through ${isArea?'this area':'these options'}</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id]?.status]||'Review →')}</small></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
+  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Review next topic</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id]?.status]||'Review →')}</small></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
  }else if(step==='timing'){
   content=`<small>${esc(current.title)}</small><h3>How soon does this need attention?</h3><div class="lm-answer-buttons">${[['soon','Soon'],['month','This month'],['later','Later'],['unknown','Help me decide']].map(([v,l])=>`<button data-timing="${v}">${l}</button>`).join('')}</div><details class="lm-secondary"><summary>There is a specific deadline</summary><form id="lm-deadline"><label>Deadline<input type="date" name="deadline" required value="${esc(answer.deadline||'')}"></label><button>Continue</button></form></details>`;
  }else if(step==='action'){
@@ -252,6 +261,10 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
+ root.querySelector('#lm-relationship-person')?.addEventListener('submit',e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));const person=(api.people||[]).find(p=>p.id===values.personId);const personName=person?labelFor(person):values.personName.trim();if(!personName){notice='Choose a person or enter a name.';api.render();return;}supportDraft={personId:person?.id||null,personName};step='relationship-action';api.render();});
+ async function createRelationship(title){const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,personId:supportDraft.personId,personName:supportDraft.personName,question:`Where are you with “${title}”?`,action:title});if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];selected=id;step='timing';data.answers[id]={status:'unstarted'};await save();}
+ root.querySelectorAll('[data-relationship-action]').forEach(b=>b.onclick=async()=>{const action=b.dataset.relationshipAction;if(action==='Something else'){step='relationship-custom';api.render();return;}b.disabled=true;await createRelationship(`${action} — ${supportDraft.personName}`);});
+ root.querySelector('#lm-relationship-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(title){e.target.querySelector('button').disabled=true;await createRelationship(title);}});
  root.querySelectorAll('[data-learning-intent]').forEach(b=>b.onclick=async()=>{b.disabled=true;const intent=b.dataset.learningIntent;const title=`${intent} ${current.title.toLowerCase()}`;const existing=children.find(t=>t.title===title);if(existing){go(existing.id);return;}const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:intent==='Explore'?`Try one introductory ${current.title.toLowerCase()} session to see if you enjoy it.`:intent==='Improve'?`Choose one ${current.title.toLowerCase()} skill to practise this week.`:`Find a beginner ${current.title.toLowerCase()} lesson and choose a first session.`});selected=id;step='question';await save();});
  root.querySelector('#lm-learning-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Choose one small practice session, introductory lesson, or resource to begin: ${title}.`});selected=id;step='question';await save();});
  root.querySelector('#lm-support-yes')?.addEventListener('click',()=>{supportDraft={};step='person';api.render();});

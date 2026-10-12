@@ -10,7 +10,7 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
  for(const t of topics.filter(t=>included.has(t.id))){
   const node=nodes.get(t.id),parent=nodes.get(t.parent)||root;
   const sourceParent=topics.find(x=>x.id===t.parent);
-  if(sourceParent?.kind==='support-discovery'&&t.personName){
+  if(['support-discovery','relationship-discovery'].includes(sourceParent?.kind)&&t.personName){
    const key=`support-person:${t.parent}:${t.personId||t.personName.toLowerCase()}`;
    let person=parent.children.find(x=>x.id===key);
    if(!person){person={id:key,label:t.personName,kind:'person',status:'Person you support',children:[]};parent.children.push(person);}

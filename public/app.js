@@ -1,7 +1,7 @@
-import {renderLifeMap} from './life-map.js?v=1.14.08';
+import {renderLifeMap} from './life-map.js?v=1.14.09';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.08";
+const APP_VERSION = "1.14.09";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
