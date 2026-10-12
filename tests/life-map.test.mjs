@@ -21,3 +21,15 @@ test('nested progress counts linked tasks once and excludes unrelated work',()=>
  assert.equal(result.total,3);assert.equal(result.done,2);assert.equal(result.attention,1);
  assert.equal(result.topics.length,3);
 });
+
+test('discovery offers document reminders and tracks accomplishments without tasks',async()=>{
+ const {discoveryTopics,coverageStats}=await import('../public/life-map.js');
+ const topics=[...baseTopics,...discoveryTopics()];
+ assert(topics.find(t=>t.id==='check:admin:real-id'));
+ assert(topics.find(t=>t.id==='check:admin:oci'));
+ assert.equal(new Set(topics.map(t=>t.id)).size,topics.length);
+ const answers={'check:admin:real-id':{status:'done'},'check:admin:oci':{status:'irrelevant'}};
+ const stats=coverageStats('admin',topics,answers);
+ assert.equal(stats.complete,1);assert.equal(stats.reviewed,2);assert.equal(stats.notRelevant,1);
+ assert.equal(recommendation(topics.find(t=>t.id==='check:admin:real-id'),answers['check:admin:real-id']),null);
+});

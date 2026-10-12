@@ -54,35 +54,168 @@ export function branchStats(id, topics, answers, links, tasks) {
  const linked=tasks.filter(task=>refs.has(task.id)||allRefs.has('project:'+task.project_id)||(task.goal_ids||[task.goal_id]).some(goal=>allRefs.has('goal:'+goal)));
  return {tasks:linked,topics:topics.filter(topic=>ids.has(topic.id)), total:linked.length,done:linked.filter(task=>task.status==='done').length,attention:[...ids].filter(key=>['unstarted','stuck','review'].includes(answers[key]?.status)).length};
 }
+
+// Specific reminders are possibilities to review, never assumed obligations.
+const reminders = {
+ home: [
+  ['Repairs and safety','Is there a repair, leak, broken appliance, or safety issue at home that needs attention?','List the most pressing home repair and arrange the next step.'],
+  ['Home organization','Is there a space or pile of possessions that keeps making daily life harder?','Choose one small area to clear or organize.'],
+  ['Household routines','Are groceries, meals, cleaning, and laundry manageable right now?','Choose one household routine to simplify or share.'],
+  ['Housing arrangements','Is a lease, housing decision, or move coming up?','Check the next date or decision for your housing arrangements.'],
+  ['Transport','Is vehicle maintenance, registration, or another transport arrangement due?','Check your next transport-related renewal or maintenance need.'],
+  ['Pets','If you care for pets, are their care and backup arrangements covered?','Identify the next pet-care need or backup arrangement.']
+ ],
+ money: [
+  ['Bills and taxes','Are any bills, tax paperwork, or financial deadlines still unresolved?','List the unresolved financial deadline and the next step.'],
+  ['Financial buffer','Are you comfortable with the savings available for unexpected expenses?','Review what financial buffer would feel adequate for your circumstances.'],
+  ['Debt and commitments','Is there a debt, payment plan, or ongoing commitment you want to review?','Gather the details of one financial commitment to review.'],
+  ['Insurance','Are there changes in your life that make your existing insurance worth reviewing?','List recent changes to discuss with your insurance provider.'],
+  ['Longer-term plans','Do you have a financial goal or retirement question you have been putting off?','Write down the question you want to resolve about your longer-term finances.'],
+  ['Subscriptions','Are you paying for subscriptions or services you no longer want?','Review recurring charges and identify one you no longer need.']
+ ],
+ health: [
+  ['Appointments','Is there a medical, dental, vision, or other appointment you have been meaning to arrange?','Find the contact information and arrange the outstanding appointment.'],
+  ['Follow-ups','Is there a recommended follow-up, result, or care instruction you still need to act on?','Review the follow-up instructions and contact your care team if unclear.'],
+  ['Daily wellbeing','Is sleep, food, movement, or energy making daily life difficult?','Choose one manageable wellbeing change or source of support.'],
+  ['Emotional support','Do you have enough support for how you have been feeling?','Identify one person or service you would feel comfortable asking for support.'],
+  ['Ongoing care','Are ongoing care routines, supplies, and accessibility needs manageable?','Identify one care routine or supply that needs attention.'],
+  ['Postponed concerns','Is there a health concern you keep postponing or are unsure how to address?','Write down the concern to discuss with an appropriate health professional.']
+ ],
+ relationships: [
+  ['Staying in touch','Is there someone you want to reconnect with but keep putting it off?','Choose a person and send a message suggesting time to catch up.'],
+  ['Time together','Are you making the time you want with the people closest to you?','Choose a small shared activity or time to spend together.'],
+  ['Unfinished conversations','Is there an apology, thank-you, or important conversation you want to have?','Write down what you want to communicate and choose a good time.'],
+  ['Boundaries','Is a relationship asking more of you than you can comfortably give?','Identify a boundary you would like to communicate.'],
+  ['New connections','Would you like more friendship, companionship, or a sense of belonging?','Choose one low-pressure opportunity to connect with people.'],
+  ['Life changes','Has a loss or change affected a relationship or the support you need?','Identify the kind of support or connection that would help now.']
+ ],
+ admin: [
+  ['Identity and travel documents','Would you like to check your identity and travel documents?','Review your identity and travel document needs.','documents'],
+  ['Outstanding paperwork','Is there a form, application, or official letter you have been putting off?','Find the outstanding paperwork and identify its next step.'],
+  ['Digital security','Are account recovery, important passwords, and device access arranged the way you want?','Review recovery access for one important account.'],
+  ['Records and backups','Can you find important documents and recover important files if a device is lost?','Choose one set of important records to organize or back up.'],
+  ['Bookings and follow-ups','Is there an appointment, booking, refund, or response you are waiting on?','Check the status of one outstanding request.'],
+  ['Recurring renewals','Are there recurring renewals you tend to remember at the last minute?','Record the next known renewal date.']
+ ]
+};
+const documentReminders = [
+ ['passport','Passport','If you use a passport, is it current and suitable for your planned travel?','Check the passport details and any trip-specific requirements.'],
+ ['real-id','REAL ID','Do you already have a REAL ID, or is it something you want to arrange?','Check the official issuing agency’s REAL ID application guidance.'],
+ ['oci','OCI card','If overseas ties to India are relevant to you, is an OCI card something you want to arrange or update?','Check official OCI guidance to establish which application, if any, fits your circumstances.'],
+ ['residency','Other residency or travel documents','Is there another citizenship, residency, visa, or travel document you need to arrange?','Identify the document and check the relevant official guidance.'],
+ ['family-documents','Family documents','Are identity or travel documents for anyone you help care for taken care of?','Check whether someone you support needs help with an upcoming document.']
+];
+export function discoveryTopics(){
+ const items=[];
+ for(const area of baseTopics){
+  const rows=reminders[area.id]||probes[area.id].map(label=>[label,`Is “${label.toLowerCase()}” something you would like to address, or is it already taken care of?`,`Identify one manageable next step for ${label.toLowerCase()}.`]);
+  rows.forEach(([title,question,action,group],index)=>{
+   const id=`check:${area.id}:${group||index}`;
+   items.push({id,parent:area.id,area:area.area,title,question,action,group});
+   if(group==='documents')for(const [slug,title,question,action] of documentReminders)items.push({id:`check:admin:${slug}`,parent:id,area:area.area,title,question,action});
+  });
+ }
+ return items;
+}
+export function coverageStats(id,topics,answers){
+ const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group);
+ return {reviewed:branch.filter(t=>answers[t.id]?.status).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
+}
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let saveQueue=Promise.resolve(), drafts={};
-let overview=true, selected='home',loadedKey='',data={answers:{},links:{}},notice='',loading=false;
+let loadedKey='',data={answers:{},links:{},concerns:[]},notice='',loading=false;
+let selected='admin',panel='explore',step='question',saveQueue=Promise.resolve();
+const labelFor=(item)=>item?.title||item?.name||[item?.first_name,item?.last_name].filter(Boolean).join(' ')||'Unavailable record';
+
 export function renderLifeMap(root,api){
  const key='seven-lives-map:'+api.userKey;
- if(loadedKey!==key){loadedKey=key;drafts={};overview=true;try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{}};}catch{data={answers:{},links:{}};}notice='Answers saved in this browser. Linked tasks use your existing task storage.';
- if(api.client&&api.userId){loading=true;api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle().then(({data:row,error})=>{if(loadedKey!==key)return;if(!error){if(row?.data)data=row.data;notice='Life map connected to your private account.';}else notice='Life map answers are saved in this browser; cloud setup is pending. Export a backup below.';loading=false;api.render();}).catch(()=>{if(loadedKey!==key)return;loading=false;notice='Cloud unavailable. Answers can be saved in this browser.';api.render();});}}
- const topics=[...baseTopics,...(data.concerns||[])];
- const t=topics.find(x=>x.id===selected)||topics[0],a=drafts[t.id]||data.answers[t.id]||{};
- const recs=topics.map(x=>{const r=recommendation(x,data.answers[x.id]);if(r&&r.answer.support==='person'&&!r.answer.next){const names=(api.people||[]).filter(p=>(data.links[x.id]||[]).includes('person:'+p.id)).map(p=>[p.first_name,p.last_name].filter(Boolean).join(' '));if(names.length)r.action=`Arrange a conversation with ${names.join(', ')} about “${x.title}”.`;}return r;}).filter(Boolean).sort((x,y)=>y.score-x.score);
- const linkedTasks=[...new Map(baseTopics.flatMap(topic=>branchStats(topic.id,topics,data.answers,data.links,api.tasks).tasks).map(task=>[task.id,task])).values()];
- const reviewed=topics.filter(x=>data.answers[x.id]?.status).length;
- const cards=baseTopics.map(topic=>{const stats=branchStats(topic.id,topics,data.answers,data.links,api.tasks);return `<button class="lm-map-card" data-zoom="${topic.id}"><span class="lm-state lm-state-${esc(data.answers[topic.id]?.status||'unknown')}">${esc(statuses[data.answers[topic.id]?.status]||'Not explored')}</span><h3>${esc(topic.title)}</h3><p>${stats.topics.length-1} outcomes · ${stats.attention} need attention</p>${stats.total?`<progress max="${stats.total}" value="${stats.done}"></progress><small>${stats.done} of ${stats.total} linked actions complete</small>`:'<small>No actions linked yet</small>'}<span class="lm-drill">Explore →</span></button>`;}).join('');
- const branch=branchStats(t.id,topics,data.answers,data.links,api.tasks);
- const mapMarkup=`<section class="lm-map"><div class="lm-map-heading"><div>${overview?'':`<h3>${esc(t.title)}</h3>`}</div>${overview?'':'<button type="button" id="lm-out">← Whole life</button>'}</div>${overview?`<div class="lm-map-grid">${cards}</div>`:`<div class="lm-branch">${t.parent?`<button data-zoom="${esc(t.parent)}">← Parent outcome</button>`:''}<p>${esc(t.area)} → <strong>${esc(t.title)}</strong></p>${branch.total?`<progress max="${branch.total}" value="${branch.done}"></progress><p>${branch.done} of ${branch.total} linked actions complete</p>`:'<p>No linked actions yet. Start by exploring what matters here.</p>'}${topics.filter(x=>x.parent===t.id).map(x=>`<button class="lm-outcome" data-zoom="${x.id}"><strong>${esc(x.title)}</strong><small>${esc(statuses[data.answers[x.id]?.status]||'Not explored')} →</small></button>`).join('')}<p>Your view: ${esc(a.notes||'No written reflection yet.')}</p><ul>${branch.tasks.map(task=>`<li>${task.status==='done'?'✓':'○'} ${esc(task.title)} <button data-task-toggle="${esc(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button></li>`).join('')}</ul></div>`}</section>`;
- root.innerHTML=`<div class="life-map"><header class="lm-compact-header"><p class="lm-storage" role="status">${esc(loading?'Loading your life map…':notice)}</p></header>${mapMarkup}<div class="lm-layout" ${overview?'hidden':''}><aside><h3>Life areas</h3><p>${reviewed} of ${topics.length} topics reviewed — not a score for your life.</p>${topics.map(x=>`<button class="lm-topic ${x.id===t.id?'selected':''}" data-topic="${x.id}"><strong>${esc(x.title)}</strong><small>${esc(x.area)} · ${esc(statuses[data.answers[x.id]?.status]||'Not explored')}</small></button>`).join('')}</aside><section class="lm-interview"><p>${esc(t.area)} → ${esc(t.title)}</p><h3>${esc(t.question)}</h3><p>Choose what fits. You can revisit any answer; nothing is assumed from a blank answer.</p>${!t.parent?`<details class="lm-probes" open><summary>Prompts to help you remember</summary><p>Does anything here need attention? Explore any that fit; these are possibilities, not obligations.</p>${(probes[t.id]||[]).map(p=>`<button type="button" data-probe="${esc(p)}">${esc(p)}</button>`).join(' ')}</details>`:''}<form id="lm-answer"><div class="lm-choices">${Object.entries(statuses).map(([v,label])=>`<label><input type="radio" name="status" value="${v}" ${a.status===v?'checked':''}> ${label}</label>`).join('')}</div><label>Anything you want to explain?<textarea name="notes" rows="3">${esc(a.notes)}</textarea></label><details ${a.status&&!['well','irrelevant'].includes(a.status)?'open':''}><summary>Timing and a manageable next step</summary><label>When would attention help?<select name="timing">${[['unknown','Help me decide'],['soon','Soon'],['month','This month'],['later','Later']].map(([v,l])=>`<option value="${v}" ${a.timing===v?'selected':''}>${l}</option>`).join('')}</select></label><label>Real deadline, if one exists<input type="date" name="deadline" value="${esc(a.deadline)}"></label><label>What would help you move forward?<select name="support">${[['unknown','Help me figure it out'],['information','Find information'],['decision','Make a decision'],['person','Talk to someone'],['overwhelmed','Make the first step smaller'],['waiting','Follow up on something'],['ready','I know what to do']].map(([v,l])=>`<option value="${v}" ${a.support===v?'selected':''}>${l}</option>`).join('')}</select></label><label>What is blocking you, or would happen if this waited?<textarea name="blocker" rows="2">${esc(a.blocker)}</textarea></label><label>Why does this matter?<select name="impact">${[['unknown','Help me clarify'],['high','Protects something important'],['medium','Makes everyday life better'],['low','Nice to have']].map(([v,l])=>`<option value="${v}" ${a.impact===v?'selected':''}>${l}</option>`).join('')}</select></label><label>Next action (optional — a suggestion is available below)<input name="next" value="${esc(a.next)}"></label></details><button type="submit" ${loading?'disabled':''}>Save answer</button> <button type="button" id="lm-next">Next unexplored topic</button></form><details><summary>Something specific came to mind?</summary><p>Capture as many concerns or ambitions as you need. Each gets its own editable questions and next steps.</p><form id="lm-concern"><label>What is it?<input name="title" required maxlength="200" placeholder="A concern, responsibility, or ambition"></label><button type="submit">Explore this</button></form></details><div class="lm-links"><h3>Connect existing work</h3><p>Choose personal tasks, goals, projects, or people to include. Only explicitly linked work appears in this map.</p><select id="lm-existing"><option value="">Choose existing work…</option>${api.tasks.map(x=>`<option value="task:${esc(x.id)}">Task: ${esc(x.title)}</option>`).join('')}${api.goals.map(x=>`<option value="goal:${esc(x.id)}">Goal: ${esc(x.name)}</option>`).join('')}${(api.people||[]).map(x=>`<option value="person:${esc(x.id)}">Person: ${esc([x.first_name,x.last_name].filter(Boolean).join(' '))}</option>`).join('')}${api.projects.map(x=>`<option value="project:${esc(x.id)}">Project: ${esc(x.name||x.title)}</option>`).join('')}</select><button id="lm-link">Link</button><ul>${(data.links[t.id]||[]).map(ref=>{const [type,id]=ref.split(':');const item=(type==='task'?api.tasks:type==='goal'?api.goals:type==='person'?(api.people||[]):api.projects).find(x=>x.id===id);return `<li>${esc(item?.title||item?.name||[item?.first_name,item?.last_name].filter(Boolean).join(' ')||'Unavailable record')} ${item?.status==='done'?'✓ Complete':''} <button data-unlink="${esc(ref)}">Unlink</button></li>`;}).join('')}</ul></div></section></div><section class="lm-next"><h3>Actions already in your plan</h3>${linkedTasks.length?`<ul class="lm-action-list">${linkedTasks.map(task=>`<li><span>${task.status==='done'?'✓':'○'} ${esc(task.title)}${task.due_date?`<small>Due ${esc(task.due_date)}</small>`:''}</span><button data-task-toggle="${esc(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button></li>`).join('')}</ul>`:'<p>Link existing work or accept a suggested action. Your existing tasks stay in their usual views too.</p>'}<h3>Your next actions</h3><p>These are proposed actions based on your answers, importance, and deadlines. The first three are a starting focus, not a fixed plan. A missing deadline does not mean unimportant. Review before adding tasks.</p>${recs.length?recs.slice(0,3).map(r=>`<article><small>${esc(r.topic.area)} → ${esc(r.topic.title)}</small><h4>${esc(r.action)}</h4><p>${esc(r.reason)}</p>${r.answer.blocker?`<p>To resolve: ${esc(r.answer.blocker)}</p>`:''}<button data-review="${r.topic.id}">Review</button> <button data-create="${r.topic.id}" ${(data.links[r.topic.id]||[]).some(ref=>api.tasks.some(task=>ref==='task:'+task.id&&task.title===r.action))?'disabled':''}>Add suggested task</button></article>`).join(''):'<p>Answer a few questions to reveal useful next steps. “Working well” and “Not relevant” do not create tasks.</p>'}</section><details><summary>All reviewed areas</summary>${topics.filter(x=>data.answers[x.id]?.status).map(x=>`<p><strong>${esc(x.area)} → ${esc(x.title)}</strong>: ${esc(statuses[data.answers[x.id].status])} <button data-review="${x.id}">Edit</button></p>`).join('')}</details><button id="lm-export">Export life map backup</button></div>`;
- async function save(){const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;const write=async()=>{try{localStorage.setItem(key,JSON.stringify(snapshot));notice='Saved in this browser.';if(client&&owner){const {error}=await client.from('planner_life_map').upsert({user_id:owner,data:snapshot,updated_at:new Date().toISOString()});if(error)notice='Saved in this browser; cloud save unavailable. Export a backup.';else notice='Saved to your private account.';}api.render();}catch(e){notice='Could not save: '+e.message;api.render();}};saveQueue=saveQueue.then(write,write);return saveQueue;}
- function capture(){const form=root.querySelector('#lm-answer');if(!form||overview)return;const answer=Object.fromEntries(new FormData(form));if(answer.status||answer.notes)data.answers[t.id]={...answer,updatedAt:new Date().toISOString()};delete drafts[t.id];}
- root.querySelectorAll('[data-topic],[data-review],[data-zoom]').forEach(b=>b.onclick=async()=>{capture();selected=b.dataset.topic||b.dataset.review||b.dataset.zoom;overview=false;await save();});
- root.querySelector('#lm-out')?.addEventListener('click',async()=>{capture();overview=true;await save();});
- root.querySelector('#lm-answer').oninput=e=>{drafts[t.id]=Object.fromEntries(new FormData(e.currentTarget));const status=root.querySelector('.lm-storage');if(status)status.textContent='Unsaved changes — Save answer or navigate within the map to save.';};
- root.querySelector('#lm-answer').onsubmit=async e=>{e.preventDefault();const answer=Object.fromEntries(new FormData(e.target));if(!answer.status){notice='Choose the answer that best fits, including Not sure.';api.render();return;}data.answers[t.id]={...answer,updatedAt:new Date().toISOString()};delete drafts[t.id];await save();};
- root.querySelector('#lm-next').onclick=async()=>{capture();selected=topics.find(x=>!data.answers[x.id]?.status&&x.id!==t.id)?.id||topics[(topics.indexOf(t)+1)%topics.length].id;await save();};
- root.querySelectorAll('[data-probe]').forEach(b=>b.onclick=()=>{root.querySelector('#lm-concern').closest('details').open=true;root.querySelector('#lm-concern input').value=b.dataset.probe;root.querySelector('#lm-concern input').focus();});
- root.querySelector('#lm-concern').onsubmit=async e=>{e.preventDefault();capture();const title=new FormData(e.target).get('title').trim();if(!title)return;const concern={id:crypto.randomUUID(),area:t.area,title,question:`Where are you with ${title.toLowerCase()}?`,action:`Clarify one manageable next step for ${title.toLowerCase()}.`,parent:t.id};data.concerns=[...(data.concerns||[]),concern];selected=concern.id;await save();};
- root.querySelector('#lm-link').onclick=async()=>{capture();const ref=root.querySelector('#lm-existing').value;if(!ref)return;data.links[t.id]=[...new Set([...(data.links[t.id]||[]),ref])];await save();};
- root.querySelectorAll('[data-unlink]').forEach(b=>b.onclick=async()=>{capture();data.links[t.id]=(data.links[t.id]||[]).filter(x=>x!==b.dataset.unlink);await save();});
- root.querySelectorAll('[data-create]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{const r=recs.find(x=>x.topic.id===b.dataset.create);const refs=data.links[r.topic.id]||[];const people=(api.people||[]).filter(p=>refs.includes('person:'+p.id)).map(p=>[p.first_name,p.last_name].filter(Boolean).join(' '));const task=await api.createTask({goal_ids:refs.filter(x=>x.startsWith('goal:')).map(x=>x.slice(5)),project_id:refs.find(x=>x.startsWith('project:'))?.slice(8)||null,title:r.action,area:r.topic.area,notes:`Life map: ${r.topic.title}\n${r.answer.notes||''}\n${r.answer.blocker||''}\nPeople: ${people.join(', ')}`,due_date:r.answer.deadline||'',priority:r.answer.timing==='soon'?'High':'Medium'});if(!task)throw Error('Task was not saved.');data.links[r.topic.id]=[...(data.links[r.topic.id]||[]),'task:'+task.id];await save();}catch(e){notice=e.message;api.render();}});
- root.querySelectorAll('[data-task-toggle]').forEach(b=>b.onclick=async()=>{capture();const task=api.tasks.find(task=>task.id===b.dataset.taskToggle);if(!task)return;b.disabled=true;const saved=await api.createTask({...task,status:task.status==='done'?'active':'done',completed_at:task.status==='done'?null:new Date().toISOString()});notice=saved?'Action updated.':'Could not update action.';api.render();});
- if(loading)root.querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
- root.querySelector('#lm-export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='seven-lives-life-map.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+ if(loadedKey!==key){
+  loadedKey=key;selected='admin';panel='explore';step='question';
+  try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{},concerns:[]};}catch{data={answers:{},links:{},concerns:[]};}
+  notice='Saved in this browser.';
+  if(api.client&&api.userId){loading=true;api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle().then(({data:row,error})=>{
+   if(loadedKey!==key)return;
+   if(!error&&row?.data)data=row.data;
+   notice=error?'Cloud unavailable; changes will also be kept in this browser.':'Connected to your account.';loading=false;api.render();
+  }).catch(()=>{if(loadedKey===key){loading=false;notice='Cloud unavailable; browser storage is available.';api.render();}});}
+ }
+ data.answers ||= {};data.links ||= {};data.concerns ||= [];
+ const topics=[...baseTopics,...discoveryTopics(),...data.concerns];
+ const current=topics.find(t=>t.id===selected)||baseTopics[0];
+ let area=current;const seen=new Set();while(area.parent&&!seen.has(area.id)){seen.add(area.id);area=topics.find(t=>t.id===area.parent)||area;}
+ const answer=data.answers[current.id]||{};
+ const isArea=baseTopics.some(t=>t.id===current.id);
+ const children=topics.filter(t=>t.parent===current.id);
+ const branch=branchStats(area.id,topics,data.answers,data.links,api.tasks);
+ const coverage=coverageStats(area.id,topics,data.answers);
+ const records=[...api.tasks.map(x=>['task',x]),...api.goals.map(x=>['goal',x]),...api.projects.map(x=>['project',x]),...(api.people||[]).map(x=>['person',x])];
+ function suggestion(topic){
+  const a=data.answers[topic.id]||{};const r=recommendation(topic,a);if(!r)return null;
+  if(!a.next&&!a.support)r.action=topic.action;
+  const people=records.filter(([type,item])=>type==='person'&&(data.links[topic.id]||[]).includes('person:'+item.id)).map(([,item])=>labelFor(item));
+  if(people.length&&a.support==='person'&&!a.next)r.action=`Arrange a conversation with ${people.join(', ')} about ${topic.title.toLowerCase()}.`;
+  return r;
+ }
+ const recs=topics.filter(t=>t.parent&&!t.group).map(suggestion).filter(Boolean).sort((a,b)=>b.score-a.score);
+ const linksMarkup=`<details class="lm-secondary"><summary>Link existing people, projects, goals, or tasks</summary><label>Existing item<select id="lm-existing"><option value="">Choose an item…</option>${records.map(([type,item])=>`<option value="${esc(type+':'+item.id)}">${esc(type)}: ${esc(labelFor(item))}</option>`).join('')}</select></label><button id="lm-link">Link</button><ul>${(data.links[current.id]||[]).map(ref=>{const record=records.find(([type,item])=>ref===type+':'+item.id);return `<li>${esc(record?labelFor(record[1]):'Unavailable record')} <button data-unlink="${esc(ref)}">Unlink</button></li>`;}).join('')}</ul></details>`;
+ const notesMarkup=`<details class="lm-secondary"><summary>Add a note</summary><form id="lm-note"><label>Note<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button>Save note</button></form></details>`;
+ const addMarkup=`<details class="lm-secondary"><summary>Add something else</summary><form id="lm-custom"><label>What would you like to include?<input name="title" required maxlength="200"></label><button>Add</button></form></details>`;
+ const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${c.complete} taken care of${c.reviewed?' · '+c.reviewed+' reviewed':''}</small></button>`;}).join('')}</aside>`;
+ let content='';
+ if(panel==='progress'){
+  const completed=branch.topics.filter(t=>t.parent&&['well','done'].includes(data.answers[t.id]?.status));
+  const attention=branch.topics.filter(t=>t.parent&&['unstarted','stuck','review','progress','unsure'].includes(data.answers[t.id]?.status));
+  content=`<h3>${esc(area.title)}</h3><div class="lm-progress-summary"><strong>${coverage.complete}</strong> taken care of <span>· ${coverage.reviewed} reviewed · ${coverage.notRelevant} not relevant</span></div>${branch.total?`<p>${branch.done} of ${branch.total} linked actions completed</p><progress value="${branch.done}" max="${branch.total}"></progress>`:''}<h4>Taken care of</h4>${completed.length?completed.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">✓ ${esc(t.title)} <small>${data.answers[t.id].completedAt?'Recorded '+esc(data.answers[t.id].completedAt.slice(0,10)):'Recorded as already in place'}</small></button>`).join(''):'<p>Mark something “Already taken care of” to record it here.</p>'}<h4>Needs attention</h4>${attention.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id].status])}</small></button>`).join('')||'<p>No gaps recorded yet.</p>'}<details><summary>Other answers</summary>${branch.topics.filter(t=>['irrelevant','defer'].includes(data.answers[t.id]?.status)).map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}">${esc(t.title)} · ${esc(statuses[data.answers[t.id].status])}</button>`).join('')}</details>`;
+ }else if(panel==='actions'){
+  const areaRecs=recs.filter(r=>branch.topics.some(t=>t.id===r.topic.id));
+  content=`<h3>Next actions · ${esc(area.title)}</h3>${branch.tasks.length?`<ul class="lm-action-list">${branch.tasks.map(task=>`<li><span>${task.status==='done'?'✓':'○'} ${esc(task.title)}</span><button data-toggle="${esc(task.id)}">${task.status==='done'?'Reopen':'Complete'}</button></li>`).join('')}</ul>`:''}${areaRecs.map(r=>`<article class="lm-proposal"><small>${esc(r.topic.title)}</small><h4>${esc(r.action)}</h4><p>${esc(r.reason)}</p><button data-plan="${esc(r.topic.id)}">Review action</button></article>`).join('')||'<p>Review reminders to find a useful next step.</p>'}`;
+ }else if(isArea||current.group){
+  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Guide me through ${isArea?'this area':'these documents'}</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id]?.status]||'Review →')}</small></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
+ }else if(step==='timing'){
+  content=`<small>${esc(current.title)}</small><h3>How soon does this need attention?</h3><div class="lm-answer-buttons">${[['soon','Soon'],['month','This month'],['later','Later'],['unknown','Help me decide']].map(([v,l])=>`<button data-timing="${v}">${l}</button>`).join('')}</div><details class="lm-secondary"><summary>There is a specific deadline</summary><form id="lm-deadline"><label>Deadline<input type="date" name="deadline" required value="${esc(answer.deadline||'')}"></label><button>Continue</button></form></details>`;
+ }else if(step==='action'){
+  const r=suggestion(current);const already=api.tasks.some(t=>(data.links[current.id]||[]).includes('task:'+t.id)&&t.title===r?.action);
+  content=`<small>${esc(current.title)}</small><h3>${answer.timing==='unknown'?'Let’s clarify the next step':'A manageable next step'}</h3><form id="lm-create"><label>Suggested action<input name="title" required value="${esc(r?.action||current.action)}"></label><button class="lm-primary" ${already?'disabled':''}>${already?'Already in your tasks':'Add to my tasks'}</button></form><button class="lm-next-prompt" id="lm-next">Continue without adding a task →</button>${linksMarkup}<details class="lm-secondary"><summary>Adjust the suggestion</summary><form id="lm-context"><label>What would help?<select name="support"><option value="information">Find information</option><option value="person">Talk to someone</option><option value="decision">Make a decision</option><option value="overwhelmed">Make the first step smaller</option><option value="waiting">Follow up</option></select></label><label>Why does it matter?<select name="impact"><option value="medium">Makes life easier</option><option value="high">Protects something important</option><option value="low">Nice to have</option></select></label><button>Update suggestion</button></form></details>${notesMarkup}`;
+ }else{
+  content=`<small>${esc(current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
+ }
+ root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['explore','Explore'],['progress','Progress'],['actions','Actions']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout">${nav}<section class="lm-interview"><nav class="lm-breadcrumb"><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
+ async function save(){
+  const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;
+  const write=async()=>{try{localStorage.setItem(key,JSON.stringify(snapshot));notice='Saved in this browser.';if(client&&owner){const {error}=await client.from('planner_life_map').upsert({user_id:owner,data:snapshot,updated_at:new Date().toISOString()});notice=error?'Saved here; account sync failed.':'Saved.';}if(loadedKey===key)api.render();}catch{notice='Save failed. Please retry.';api.render();}};
+  saveQueue=saveQueue.then(write,write);return saveQueue;
+ }
+ function go(id){selected=id;panel='explore';step='question';api.render();}
+ function next(){
+  const siblings=topics.filter(t=>t.parent===current.parent&&!t.group);
+  const index=siblings.findIndex(t=>t.id===current.id);
+  const candidate=[...siblings.slice(index+1),...siblings.slice(0,index)].find(t=>!data.answers[t.id]?.status);
+  go(candidate?.id||current.parent||area.id);
+ }
+ root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+ root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
+ root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
+ root.querySelectorAll('[data-answer]').forEach(b=>b.onclick=async()=>{
+  root.querySelectorAll('[data-answer]').forEach(x=>x.disabled=true);
+  const status=b.dataset.answer;data.answers[current.id]={...answer,status,updatedAt:new Date().toISOString(),completedAt:status==='done'?(answer.completedAt||new Date().toISOString()):null};
+  if(['unstarted','progress','unsure'].includes(status))step='timing';
+  await save();
+  if(['done','irrelevant','defer'].includes(status)){notice=status==='done'?`${current.title} recorded as taken care of.`:'Answer saved.';next();}
+ });
+ root.querySelectorAll('[data-timing]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,timing:b.dataset.timing};step='action';await save();});
+ root.querySelector('#lm-deadline')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,deadline:new FormData(e.target).get('deadline')};step='action';await save();});
+ root.querySelector('#lm-context')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,...Object.fromEntries(new FormData(e.target))};await save();});
+ root.querySelector('#lm-note')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,notes:new FormData(e.target).get('notes')};await save();});
+ root.querySelector('#lm-next')?.addEventListener('click',next);
+ root.querySelector('#lm-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`What is the status of ${title.toLowerCase()}?`,action:`Choose one next step for ${title.toLowerCase()}.`});selected=id;step='question';await save();});
+ root.querySelector('#lm-link')?.addEventListener('click',async()=>{const ref=root.querySelector('#lm-existing').value;if(!ref)return;data.links[current.id]=[...new Set([...(data.links[current.id]||[]),ref])];await save();});
+ root.querySelectorAll('[data-unlink]').forEach(b=>b.onclick=async()=>{data.links[current.id]=(data.links[current.id]||[]).filter(x=>x!==b.dataset.unlink);await save();});
+ root.querySelectorAll('[data-plan]').forEach(b=>b.onclick=()=>{selected=b.dataset.plan;panel='explore';step='action';api.render();});
+ root.querySelector('#lm-create')?.addEventListener('submit',async e=>{
+  e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;
+  const refs=data.links[current.id]||[];const people=records.filter(([type,item])=>type==='person'&&refs.includes('person:'+item.id)).map(([,item])=>labelFor(item));
+  try{const task=await api.createTask({title,goal_ids:refs.filter(x=>x.startsWith('goal:')).map(x=>x.slice(5)),project_id:refs.find(x=>x.startsWith('project:'))?.slice(8)||'',area:area.area,notes:`Life map: ${current.title}\n${answer.notes||''}\nPeople: ${people.join(', ')}`,due_date:answer.deadline||'',priority:answer.timing==='soon'?'High':'Medium'});if(!task)throw Error();data.links[current.id]=[...refs,'task:'+task.id];data.answers[current.id]={...answer,next:title};await save();notice='Task added.';next();}catch{notice='Could not save the task. Please retry.';api.render();}
+ });
+ root.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=async()=>{const task=api.tasks.find(t=>t.id===b.dataset.toggle);b.disabled=true;const saved=await api.createTask({...task,status:task.status==='done'?'active':'done',completed_at:task.status==='done'?null:new Date().toISOString()});notice=saved?'Task updated.':'Task update failed.';api.render();});
+ root.querySelector('#lm-export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='seven-lives-life-map.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+ if(loading)root.querySelectorAll('button,input,select,textarea').forEach(x=>x.disabled=true);
 }
