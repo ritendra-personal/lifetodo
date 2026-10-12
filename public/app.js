@@ -5838,9 +5838,9 @@ function renderProjectPhaseMatrixView() {
           <div class="phase-dialog-header"><strong id="phase-dialog-title">${escapeHtml(selectedProject.name)} · ${escapeHtml(selectedPhase.name)}</strong><button class="phase-dialog-close" type="button" aria-label="Close phase editor" title="Close">×</button></div>
           <div class="phase-dialog-error" role="alert"${state.syncError ? "" : " hidden"}>${escapeHtml(state.syncError || "")}</div>
           <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
-            <label>Phase status<select name="phaseStatusId" required>${orderedPhaseStatuses().map((status) => `<option value="${status.id}"${status.id === (selectedEntry?.status_id || phaseStatusIdForName("Not started")) ? " selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}</select></label>
-            <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Notes for this project phase">${escapeHtml(selectedEntry?.notes || "")}</textarea></label>
-            <div class="matrix-cell-actions"><button class="primary-button" type="submit">Save phase</button></div>
+            <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Optional notes for this project phase">${escapeHtml(selectedEntry?.notes || "")}</textarea></label>
+            <input type="hidden" name="phaseStatusId" value="${selectedEntry?.status_id || phaseStatusIdForName("Not started")}">
+            <fieldset class="phase-status-choices"><legend>Choose status to save</legend>${orderedPhaseStatuses().map((status) => `<button type="submit" class="phase-status-choice" name="chosenPhaseStatus" value="${status.id}" aria-pressed="${status.id === (selectedEntry?.status_id || phaseStatusIdForName("Not started"))}" style="--status-color:${phaseStatusTone(status.name).color}">${escapeHtml(status.name)}</button>`).join("")}</fieldset>
           </form>
           <details class="phase-dialog-tasks"><summary>Linked tasks (${selectedLinks.length})</summary><div class="matrix-add-row"><select name="matrixTaskId" aria-label="Existing project task"><option value="">Select existing project task...</option>${availableTasks.map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")}</select><button class="matrix-add-task-button" type="button"${availableTasks.length ? "" : " disabled"}>Link task</button></div>
           <div class="matrix-assigned-tasks">${selectedLinks.map((link) => {
@@ -9184,6 +9184,9 @@ els.taskList.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
   if (matrixCellForm) {
+    if (matrixCellForm.dataset.saving === "true") return;
+    if (event.submitter?.name === "chosenPhaseStatus") matrixCellForm.querySelector("[name=phaseStatusId]").value = event.submitter.value;
+    matrixCellForm.dataset.saving = "true";
     setFormSaving(event.target, true);
     showSyncMessage("Saving phase...");
     try {
@@ -9201,6 +9204,7 @@ els.taskList.addEventListener("submit", async (event) => {
       }
       renderSyncStatus();
     } finally {
+      matrixCellForm.dataset.saving = "false";
       setFormSaving(event.target, false);
     }
   } else if (eventForm || eventFocusForm) {
