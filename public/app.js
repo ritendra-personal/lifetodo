@@ -5866,7 +5866,7 @@ function renderProjectPhaseMatrixView() {
       <h3>${section.title} <small>(${section.projects.length})</small></h3>
       <div class="project-phase-matrix-scroll">
         <table class="project-phase-matrix-table">
-          <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;">Project<span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}</tr></thead>
+          <thead><tr><th class="matrix-project-header" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button phase-sort-name" type="button" title="Sort projects by name">Project ↕</button><span class="matrix-column-resize" title="Drag to resize project column" aria-hidden="true"></span></th>${phases.map((phase) => `<th>${escapeHtml(phase.name)}</th>`).join("")}</tr></thead>
           <tbody>
             ${section.projects.map((project) => {
               const projectTasks = state.tasks.filter((task) => task.project_id === project.id);
@@ -8718,6 +8718,12 @@ els.taskForm.addEventListener("submit", async (event) => {
 });
 
 els.taskList.addEventListener("click", async (event) => {
+  if (event.target.closest(".phase-sort-name")) {
+    state.phaseProjectSort = "name";
+    delete (state.phaseProjectOrders || {})[selectedPhaseProjectTypeId()];
+    renderTasks();
+    return;
+  }
   if (event.target.closest(".phase-apply-sort")) {
     delete (state.phaseProjectOrders || {})[selectedPhaseProjectTypeId()];
     renderTasks();
