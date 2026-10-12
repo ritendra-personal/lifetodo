@@ -1,7 +1,7 @@
-import {renderLifeMap} from './life-map.js?v=1.14.17';
+import {renderLifeMap} from './life-map.js?v=1.14.18';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.17";
+const APP_VERSION = "1.14.18";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -4561,7 +4561,7 @@ function renderParentControls() {
 }
 
 function renderTasks() {
-  if(state.view === "life-map"){renderLifeMap(els.taskList,{userKey:state.user?.id||state.plannerKey||"local",userId:state.user?.id,client:state.supabase,tasks:state.tasks,projects:state.projects,goals:state.goals,people:state.people,createTask:persistTask,createPerson:person=>persistPerson(person,{requireCloud:Boolean(state.user),render:false}),render});return;}
+  if(state.view === "life-map"){renderLifeMap(els.taskList,{userKey:state.user?.id||state.plannerKey||"local",userId:state.user?.id,client:state.supabase,tasks:state.tasks,projects:state.projects,goals:state.goals,people:state.people,createTask:persistTask,openTask:id=>focusObject("task",id,"life-map"),createPerson:person=>persistPerson(person,{requireCloud:Boolean(state.user),render:false}),render});return;}
   if (state.view === "focus-task") {
     renderFocusedTaskView();
     return;
