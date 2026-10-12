@@ -146,7 +146,7 @@ const state = {
   projectPhaseLinksCloudReady: false,
   projectPhaseEntriesCloudReady: false,
   projectPhaseTypesCloudReady: false,
-  phaseProjectTypeId: null,
+  phaseProjectTypeId: localStorage.getItem("phase-project-type"),
   phaseProjectSort: "most",
   taxonomiesCloudReady: false,
   taskTaxonomyLinksCloudReady: false,
@@ -9747,6 +9747,7 @@ els.taskList.addEventListener("change", (event) => {
   }
   if (event.target.name === "phaseProjectType") {
     state.phaseProjectTypeId = event.target.value;
+    localStorage.setItem("phase-project-type", state.phaseProjectTypeId);
     state.matrixProjectId = "";
     state.matrixPhaseId = "";
     renderTasks();
