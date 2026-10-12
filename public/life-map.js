@@ -1,3 +1,4 @@
+import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.25';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.23';
 export const baseTopics = [
  ['home','Home and everyday life','Home','How well is your home supporting everyday life?','Identify the home issue causing the most friction and one practical next step.'],
@@ -140,12 +141,12 @@ export function discoveryTopics(){
  }
  items.push({id:'check:creative:milestone',parent:'creative',area:baseTopics.find(t=>t.id==='creative').area,title:'Achieve a creative milestone',kind:'milestone-discovery'});
  const ongoing=items.find(t=>t.id==='check:health:4');Object.assign(ongoing,{group:'care',question:'Which condition or care need would you like to organize?'});
- for(const [slug,title] of [['diabetes','Diabetes'],['heart','Heart or blood pressure care'],['breathing','Asthma or breathing care'],['pain','Pain or mobility'],['other','Another condition or care need']]){
+ for(const [slug,title] of [['diabetes','Diabetes'],['heart','Heart or blood pressure care'],['breathing','Asthma or breathing care'],['pain','Pain or mobility'],['vision','Vision or hearing care'],['digestive','Digestive care'],['skin','Skin care'],['neurological','Neurological care'],['reproductive','Reproductive or hormonal care'],['accessibility','Accessibility and daily assistance'],['other','Another condition or care need']]){
   const parent='care:'+slug;items.push({id:parent,parent:ongoing.id,area:ongoing.area,title,group:'care',question:'Which part needs attention?'});
   const needs=slug==='diabetes'?['Glucose monitoring','Medication routine','Supplies and refills','Appointments and tests','Questions for my care team','Something else']:['Monitoring or equipment','Medication routine','Supplies and refills','Appointments and follow-ups','Everyday support or accessibility','Something else'];
   needs.forEach((need,index)=>items.push({id:parent+':'+index,parent,area:ongoing.area,title:need,kind:'care-outcome'}));
  }
- return items.map(item=>({...item,suggested:true}));
+ return expandDiscovery(items).map(item=>({...item,suggested:true}));
 }
 export function coverageStats(id,topics,answers){
  const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group&&!t.kind);
@@ -182,7 +183,7 @@ export function renderLifeMap(root,api){
   }).catch(()=>{if(loadedKey===key){loading=false;notice='Cloud unavailable; browser storage is available.';api.render();}});}
  }
  data.answers ||= {};data.links ||= {};data.concerns ||= [];
- const topics=[...baseTopics,...discoveryTopics(),...data.concerns];
+ const topics=assembleTopics(baseTopics,discoveryTopics(),data);
  for(const topic of topics){if(topic.parent==='check:relationships:0'&&/^(Arrange a call|Send a message|Meet up) — /.test(topic.title)){topic.action=topic.action||topic.title;topic.title=`Stay connected with ${topic.personName||topic.title.split(' — ').slice(1).join(' — ')}`;topic.question=`Where are you with “${topic.title}”?`;}}
  const current=topics.find(t=>t.id===selected)||baseTopics[0];
  let area=current;const seen=new Set();while(area.parent&&!seen.has(area.id)){seen.add(area.id);area=topics.find(t=>t.id===area.parent)||area;}
@@ -224,6 +225,8 @@ export function renderLifeMap(root,api){
  const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState});
  if(panel==='map'){
   content=graphMarkup(graph);
+  }else if(current.kind==='outcome-discovery'){
+  content=`<small>${esc(current.title)}</small><h3>What specific result would you like?</h3><form id="lm-specific-outcome"><label>Specific outcome<input name="title" required maxlength="200" value="${esc(current.preset||'')}" placeholder="${esc(current.title==='Something else'?'Name one specific result you want':'What specifically would you like for '+current.title.toLowerCase()+'?')}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Add separate outcomes for separate needs. Next: progress, timing, and tasks.</p><button data-go="${esc(current.parent)}" class="lm-next-prompt">Nothing to add here right now</button>${outcomeList(children)}`;
  }else if(current.kind==='care-outcome'){
   content=`<small>${esc(topics.find(t=>t.id===current.parent)?.title)} · ${esc(current.title)}</small><h3>What specifically do you want to have in place?</h3><form id="lm-care-outcome"><label>Outcome<input name="title" required maxlength="200" placeholder="${current.title==='Glucose monitoring'?'For example: Have my glucose monitor set up and in use':'Name one specific care need or result'}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Track each need separately, using the care plan agreed with your clinician.</p>${outcomeList(children)}`;
  }else if(current.kind==='milestone-discovery'){
@@ -286,6 +289,13 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
+ root.querySelector('#lm-specific-outcome')?.addEventListener('submit',async e=>{
+  e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;
+  const existing=children.find(t=>t.title.toLowerCase()===title.toLowerCase());if(existing){go(existing.id);return;}
+  e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();
+  data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:current.action||`Identify the first practical step toward: ${title}.`});
+  selected=id;step='question';await save();
+ });
  root.querySelector('#lm-care-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Identify the next practical step for ${title}, following your agreed care plan.`});selected=id;step='question';await save();});
  root.querySelector('#lm-milestone')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Identify one project or measurable step you can influence toward: ${title}.`});selected=id;step='question';await save();});
  async function savePersonSelection(e,nextStep){

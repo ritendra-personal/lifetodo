@@ -56,3 +56,44 @@ test('visual map distinguishes attention, progress, completion and unknown',asyn
  assert.equal(mapState({},{status:'progress'},[{status:'active',due_date:'2000-01-01'}]).label,'Overdue');
  assert.equal(mapState({},{},[{status:'done'}]).key,'planned','Completing an action does not silently complete an outcome');
 });
+
+test('every broad reminder identifies an outcome before asking status',async()=>{
+ const {discoveryTopics}=await import('../public/life-map.js');
+ const topics=discoveryTopics();
+ const direct=topics.filter(t=>!t.group&&!t.kind);
+ assert.deepEqual(direct.map(t=>t.id).sort(),['check:admin:oci','check:admin:passport','check:admin:real-id']);
+ for(const area of baseTopics)assert(topics.some(t=>t.parent===area.id&&(t.group||t.kind)),area.id);
+ for(const t of topics.filter(t=>t.kind==='outcome-discovery')){
+  assert(Array.isArray(t.choices),t.id);
+  assert(t.parent,t.id);
+ }
+ assert.equal(new Set(topics.map(t=>t.id)).size,topics.length);
+});
+
+test('dental needs are discoverable through appointments and ongoing care',async()=>{
+ const {discoveryTopics}=await import('../public/life-map.js');
+ const topics=discoveryTopics();
+ for(const id of ['appointment:dental','care:dental']){
+  const dental=topics.find(t=>t.id===id);assert.equal(dental.group,'discovery');
+  assert(topics.some(t=>t.parent===id&&t.title==='Root canal treatment'));
+  assert(topics.some(t=>t.parent===id&&t.title==='Gum health assessment'));
+ }
+ assert.equal(topics.find(t=>t.id==='check:health:0').group,'appointments');
+});
+
+test('upgrading reviewed categories preserves existing answers, task links and children',async()=>{
+ const {discoveryTopics}=await import('../public/life-map.js');
+ const {assembleTopics}=await import('../public/life-map-discovery.js');
+ const data={answers:{'check:health:0':{status:'progress'},'check:home:0':{status:'done'}},links:{'check:health:0':['task:existing']},concerns:[{id:'child',parent:'check:health:0',title:'Existing need'}]};
+ const before=JSON.stringify(data);
+ const topics=assembleTopics(baseTopics,discoveryTopics(),data);
+ for(const id of Object.keys(data.answers)){
+  const old=topics.find(t=>t.id===id);assert(!old.kind&&!old.group);assert.equal(old.parent,'discover:'+id);
+  assert(topics.find(t=>t.id==='discover:'+id));
+ }
+ assert.equal(topics.find(t=>t.id==='appointment:dental').parent,'discover:check:health:0');
+ assert.equal(topics.find(t=>t.id==='child').parent,'check:health:0');
+ assert.equal(JSON.stringify(data),before);
+ assert.equal(coverageStatsForTest(),2);
+ function coverageStatsForTest(){return topics.filter(t=>!t.group&&!t.kind&&data.answers[t.id]).length;}
+});
