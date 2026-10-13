@@ -1,7 +1,7 @@
-import {renderLifeMap} from './life-map.js?v=1.14.28';
+import {renderLifeMap} from './life-map.js?v=1.14.29';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.28";
+const APP_VERSION = "1.14.29";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -3742,7 +3742,7 @@ function filteredTasks() {
       return `${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")}`.toLowerCase().includes(search);
     })
     .filter((task) => {
-      if (!state.tagFilter) return true;
+      if (state.view!=="tasks" || !state.tagFilter) return true;
       return task.tags.includes(state.tagFilter);
     })
     .sort((a, b) => {
@@ -4486,6 +4486,7 @@ function relationshipName(person) {
 }
 
 function renderTagFilters() {
+  els.tagFilters.closest(".tag-panel").classList.toggle("hidden",state.view!=="tasks");
   const tags = [...new Set(state.tasks.flatMap((task) => task.tags))].sort((a, b) => a.localeCompare(b));
   els.tagFilters.innerHTML = "";
   for (const tag of ["", ...tags]) {
@@ -4493,6 +4494,7 @@ function renderTagFilters() {
     button.className = `tag-filter ${state.tagFilter === tag ? "active" : ""}`;
     button.type = "button";
     button.dataset.tag = tag;
+    button.setAttribute("aria-pressed",String(state.tagFilter===tag));
     button.textContent = tag || "All";
     els.tagFilters.append(button);
   }
@@ -4947,9 +4949,9 @@ function renderFocusedTaskView() {
         <label class="field-label">Due
           <input name="dueDate" type="date">
         </label>
-        <label class="field-label">Tags
+        <details class="optional-task-tags"><summary>Tags (optional)</summary><label class="field-label">Tags
           <input name="tags" type="text" placeholder="comma separated tags">
-        </label>
+        </label></details>
       </div>
       <div class="field-label">Taxonomy
         <div class="taxonomy-picker" role="group" aria-label="Task taxonomy"></div>
@@ -5614,7 +5616,7 @@ function taskMatchesTaxonomyView(task) {
   if (task.status === "done" && !state.showDone) return false;
   const search = state.search.trim().toLowerCase();
   if (search && !`${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")}`.toLowerCase().includes(search)) return false;
-  if (state.tagFilter && !task.tags.includes(state.tagFilter)) return false;
+  if (state.view==="tasks" && state.tagFilter && !task.tags.includes(state.tagFilter)) return false;
   return true;
 }
 
@@ -8117,7 +8119,7 @@ function fillRelationshipSelect(select, selected = "") {
 function taskMatchesGlobalFilters(task) {
   const search = state.search.trim().toLowerCase();
   if (task.status === "done" && !state.showDone) return false;
-  if (state.tagFilter && !task.tags.includes(state.tagFilter)) return false;
+  if (state.view==="tasks" && state.tagFilter && !task.tags.includes(state.tagFilter)) return false;
   if (!search) return true;
   return `${task.title} ${task.notes} ${areaNameFor(task)} ${task.tags.join(" ")}`.toLowerCase().includes(search);
 }

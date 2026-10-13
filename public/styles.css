@@ -4741,3 +4741,9 @@ dialog::backdrop {
 .nav-annotations > summary:focus-visible { outline: 2px solid #a2ead1; outline-offset: 2px; border-radius: 4px; }
 .nav-annotation-items { display: grid; gap: 1px; }
 .nav-annotation-items .view-button { width: 100%; }
+
+.task-tag-panel { padding: 8px 0; }
+.task-tag-panel .panel-label { color: #52616a; }
+.task-tag-panel .tag-filter { color: #263c37; border-color: #b8c9c2; }
+.task-tag-panel .tag-filter.active, .task-tag-panel .tag-filter:hover { color: white; background: #245b49; }
+.optional-task-tags > summary { cursor: pointer; padding: 6px 0; font-size: .85rem; }
