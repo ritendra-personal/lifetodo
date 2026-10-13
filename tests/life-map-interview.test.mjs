@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics,topicReviewState} from '../public/life-map.js';
+import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics,topicReviewState,topicPath} from '../public/life-map.js';
 import {assembleTopics} from '../public/life-map-discovery.js';
 
 const topics=[
@@ -12,6 +12,12 @@ const topics=[
  {id:'specific',parent:'group'},
  {id:'discovery',parent:'home',kind:'support-discovery'}
 ];
+test('breadcrumb includes every ancestor and the current topic',()=>{
+ assert.deepEqual(topicPath('detail',topics).map(topic=>topic.id),['home','repair','detail']);
+ assert.deepEqual(topicPath('home',topics).map(topic=>topic.id),['home']);
+ assert.deepEqual(topicPath('missing',topics),[]);
+ assert.equal(topicPath('a',[{id:'a',parent:'b'},{id:'b',parent:'a'}]).length,2);
+});
 test('chooses unanswered questions, excluding skips and context-dependent branches',()=>{
  assert.deepEqual(interviewCandidates(topics,{repair:{status:'done'}},['clutter','group','discovery']),[]);
  assert.equal(pickInterviewQuestion(topics,{},[],()=>0).id,'repair');

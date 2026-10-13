@@ -172,6 +172,11 @@ export function topicReviewState(id,topics,answers={}) {
  if(reviewed===branch.length)return {key:'reviewed',label:'Reviewed',reviewed,total:branch.length};
  return {key:'partial',label:own&&reviewed===1?'Reviewed · subtopics not reviewed':`Partially reviewed · ${reviewed} topic${reviewed===1?'':'s'}`,reviewed,total:branch.length};
 }
+export function topicPath(id,topics){
+ const byId=new Map(topics.map(topic=>[topic.id,topic])),path=[],seen=new Set();let current=byId.get(id);
+ while(current&&!seen.has(current.id)){seen.add(current.id);path.unshift(current);current=byId.get(current.parent);}
+ return path;
+}
 export function interviewCandidates(topics,answers={},skipped=[]) {
  const byId=new Map(topics.map(topic=>[topic.id,topic])),excluded=new Set(skipped);
  return topics.filter(topic=>{
@@ -336,6 +341,10 @@ export function renderLifeMap(root,api){
  if(panel!=='map'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
  if(panel==='interview'&&selected!=='interview-empty'&&!content.includes('id="lm-next"'))content+='<button id="lm-next" class="lm-next-prompt">Another question →</button>';
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
+ const breadcrumb=root.querySelector('.lm-breadcrumb');
+ breadcrumb.innerHTML=topicPath(current.id,topics).map((topic,index,path)=>
+  (index?'<span aria-hidden="true"> / </span>':'')+(index===path.length-1?`<span aria-current="page">${esc(topic.title)}</span>`:`<button data-go="${esc(topic.id)}">${esc(topic.title)}</button>`)
+ ).join('');
  async function save(markReviewed=true){
   if(markReviewed)data.answers[current.id]={...(data.answers[current.id]||{}),reviewedAt:data.answers[current.id]?.reviewedAt||new Date().toISOString()};
   const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;
