@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildLifeGraph,layoutLifeGraph} from '../public/life-map-graph.js';
+test('not interested branches hide by default and can be isolated or included',()=>{
+ const options={topics:[{id:'area',title:'Home'},{id:'hidden',parent:'area',title:'Hidden'},{id:'child',parent:'hidden',title:'Child'},{id:'active',parent:'area',title:'Active'}],answers:{hidden:{status:'uninterested'},child:{status:'progress'},active:{status:'progress'}}};
+ const labels=tree=>[tree.label,...tree.children.flatMap(child=>labels(child))];
+ assert.ok(!labels(buildLifeGraph(options)).includes('Hidden'));
+ assert.ok(!labels(buildLifeGraph(options)).includes('Child'));
+ assert.ok(labels(buildLifeGraph(options)).includes('Active'));
+ assert.ok(labels(buildLifeGraph({...options,interestFilter:'all'})).includes('Child'));
+ const excluded=labels(buildLifeGraph({...options,interestFilter:'excluded'}));
+ assert.ok(excluded.includes('Hidden'));
+ assert.ok(!excluded.includes('Active'));
+ assert.equal(options.answers.hidden.status,'uninterested');
+});
 test('reviewed topics appear in My map without claiming completion',()=>{
  const tree=buildLifeGraph({topics:[{id:'area',title:'Home'},{id:'review',parent:'area',title:'Repairs',suggested:true}],answers:{review:{reviewedAt:'2026-10-13'}},stateFor:()=>({key:'unknown',label:'Not reviewed'})});
  const node=tree.children[0].children[0];

@@ -1,5 +1,5 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.25';
-import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.33';
+import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.35';
 export function linkCandidates(records,type,linked=[],query='') {
  const needle=query.trim().toLocaleLowerCase();
  return records.filter(([kind,item])=>kind===type && !(type==='task'&&item.parent_id) && !linked.includes(`${type}:${item.id}`) && labelFor(item).toLocaleLowerCase().includes(needle)).sort((a,b)=>labelFor(a[1]).localeCompare(labelFor(b[1])));
@@ -211,12 +211,13 @@ let supportDraft={};
 let loadedKey='',data={answers:{},links:{},concerns:[]},notice='',loading=false;
 let selected='admin',panel='map',step='question',saveQueue=Promise.resolve();
 let interviewSkipped=[];
+let mapInterestFilter='active';
 const labelFor=(item)=>item?.title||item?.name||[item?.first_name,item?.last_name].filter(Boolean).join(' ')||'Unavailable record';
 
 export function renderLifeMap(root,api){
  const key='seven-lives-map:'+api.userKey;
  if(loadedKey!==key){
-  loadedKey=key;supportDraft={};selected='admin';panel='map';step='question';interviewSkipped=[];
+  loadedKey=key;supportDraft={};selected='admin';panel='map';step='question';interviewSkipped=[];mapInterestFilter='active';
   try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{},concerns:[]};}catch{data={answers:{},links:{},concerns:[]};}
   notice='Saved in this browser.';
   if(api.client&&api.userId){loading=true;api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle().then(({data:row,error})=>{
@@ -278,11 +279,11 @@ export function renderLifeMap(root,api){
   root.querySelectorAll('[data-graph-task]').forEach(b=>b.onclick=()=>api.openTask(b.dataset.graphTask));
   return;
  }
- const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState});
+ const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState,interestFilter:mapInterestFilter});
  if(panel==='interview'&&selected==='interview-empty'){
   content=`<h3>No more questions in this round</h3><p>${interviewCandidates(topics,data.answers).length?'You skipped the remaining questions.':'The available questions have been reviewed. You can explore more topics in Guided review.'}</p><button id="lm-interview-restart">Start another round</button>`;
  }else if(panel==='map'){
-  content=graphMarkup(graph);
+  content=`<label class="lm-interest-filter">Show<select id="lm-interest-filter">${[['active','Active topics'],['all','All topics'],['excluded','Not interested only']].map(([value,label])=>`<option value="${value}"${value===mapInterestFilter?' selected':''}>${label}</option>`).join('')}</select></label>`+graphMarkup(graph);
   }else if(current.kind==='outcome-discovery'){
   content=`<small>${esc(current.title)}</small><h3>What specific result would you like?</h3><form id="lm-specific-outcome"><label>Specific outcome<input name="title" required maxlength="200" value="${esc(current.preset||'')}" placeholder="${esc(current.title==='Something else'?'Name one specific result you want':'What specifically would you like for '+current.title.toLowerCase()+'?')}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Add separate outcomes for separate needs. Next: progress, timing, and tasks.</p><button data-go="${esc(current.parent)}" class="lm-next-prompt">Nothing to add here right now</button>${outcomeList(children)}`;
  }else if(current.kind==='care-outcome'){
@@ -355,6 +356,7 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
  root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;if(panel==='interview'){interviewSkipped=[];selected=pickInterviewQuestion(topics,data.answers)?.id||'interview-empty';interviewSkipped.push(selected);step='question';}api.render();});
  root.querySelector('#lm-interview-restart')?.addEventListener('click',()=>{interviewSkipped=[];selected=pickInterviewQuestion(topics,data.answers)?.id||'interview-empty';interviewSkipped.push(selected);step='question';api.render();});
+ root.querySelector('#lm-interest-filter')?.addEventListener('change',e=>{mapInterestFilter=e.target.value;api.render();});
  root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
  root.querySelector('#lm-specific-outcome')?.addEventListener('submit',async e=>{
   e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;

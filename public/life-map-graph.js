@@ -1,7 +1,16 @@
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nameFor = item => item?.title || item?.name || [item?.first_name,item?.last_name].filter(Boolean).join(' ') || 'Unavailable item';
 
-export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],goals=[],people=[],stateFor}) {
+export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],goals=[],people=[],stateFor,interestFilter='active'}) {
+ const excluded=new Set(topics.filter(topic=>answers[topic.id]?.status==='uninterested').map(topic=>topic.id));
+ let changed=true;
+ while(changed){changed=false;for(const topic of topics)if(excluded.has(topic.parent)&&!excluded.has(topic.id)){excluded.add(topic.id);changed=true;}}
+ if(interestFilter==='active')topics=topics.filter(topic=>!excluded.has(topic.id));
+ if(interestFilter==='excluded'){
+  const visible=new Set(excluded);changed=true;
+  while(changed){changed=false;for(const topic of topics)if(visible.has(topic.id)&&topic.parent&&!visible.has(topic.parent)){visible.add(topic.parent);changed=true;}}
+  topics=topics.filter(topic=>visible.has(topic.id));
+ }
  const root={id:'life-root',label:'My life outside work',kind:'root',status:'',children:[]};
  const nodes=new Map();
  const included=new Set(topics.filter(t=>answers[t.id]?.reviewedAt || (answers[t.id]?.status && answers[t.id].status!=='irrelevant') || (links[t.id]||[]).length || (t.parent && !t.suggested && !t.id.startsWith('check:') && !t.id.startsWith('learn:'))).map(t=>t.id));
