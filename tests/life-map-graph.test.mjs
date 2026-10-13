@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildLifeGraph,layoutLifeGraph} from '../public/life-map-graph.js';
+test('reviewed topics appear in My map without claiming completion',()=>{
+ const tree=buildLifeGraph({topics:[{id:'area',title:'Home'},{id:'review',parent:'area',title:'Repairs',suggested:true}],answers:{review:{reviewedAt:'2026-10-13'}},stateFor:()=>({key:'unknown',label:'Not reviewed'})});
+ const node=tree.children[0].children[0];
+ assert.match(node.status,/Reviewed/);
+ assert.equal(node.state,'unknown');
+ assert.match(tree.children[0].status,/1 reviewed/);
+ assert.match(tree.children[0].status,/0 complete/);
+});
 const input={topics:[{id:'care',title:'Family support'},{id:'hub',parent:'care',title:'Support',kind:'support-discovery'},{id:'outcome',parent:'hub',title:'Help with housing',personName:'Parent',personId:'p'}],answers:{},links:{outcome:['person:p','project:proj']},people:[{id:'p',first_name:'Parent'}],projects:[{id:'proj',name:'Housing project'}],tasks:[{id:'a',project_id:'proj',title:'Plan',status:'active'},{id:'b',parent_id:'a',project_id:'proj',title:'Arrange call',status:'done'}]};
 test('graph preserves review ancestry, person grouping, project and subtask hierarchy',()=>{
  const tree=buildLifeGraph(input);

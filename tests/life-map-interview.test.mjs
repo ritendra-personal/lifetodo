@@ -28,3 +28,6 @@ test('a new life map has questions available without pre-existing outcomes',()=>
  const assembled=assembleTopics(baseTopics,discoveryTopics(),{answers:{},concerns:[]});
  assert.ok(interviewCandidates(assembled,{}).length>10);
 });
+test('explicitly reviewed topics are not repeated',()=>{
+ assert.equal(pickInterviewQuestion(topics,{repair:{reviewedAt:'2026-10-13'}},[],()=>0).id,'clutter');
+});

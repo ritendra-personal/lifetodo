@@ -1,5 +1,5 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.25';
-import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.23';
+import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.31';
 export function linkCandidates(records,type,linked=[],query='') {
  const needle=query.trim().toLocaleLowerCase();
  return records.filter(([kind,item])=>kind===type && !(type==='task'&&item.parent_id) && !linked.includes(`${type}:${item.id}`) && labelFor(item).toLocaleLowerCase().includes(needle)).sort((a,b)=>labelFor(a[1]).localeCompare(labelFor(b[1])));
@@ -154,12 +154,12 @@ export function discoveryTopics(){
 }
 export function coverageStats(id,topics,answers){
  const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group&&!t.kind);
- return {reviewed:branch.filter(t=>answers[t.id]?.status).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
+ return {reviewed:branch.filter(t=>answers[t.id]?.status||answers[t.id]?.reviewedAt).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
 }
 export function interviewCandidates(topics,answers={},skipped=[]) {
  const byId=new Map(topics.map(topic=>[topic.id,topic])),excluded=new Set(skipped);
  return topics.filter(topic=>{
-  if(!topic.parent||answers[topic.id]?.status||excluded.has(topic.id))return false;
+  if(!topic.parent||answers[topic.id]?.status||answers[topic.id]?.reviewedAt||excluded.has(topic.id))return false;
   const directAreaChild=!byId.get(topic.parent)?.parent;
   if((topic.group||topic.kind)&&!directAreaChild)return false;
   let parent=byId.get(topic.parent);const seen=new Set([topic.id]);
@@ -305,9 +305,11 @@ export function renderLifeMap(root,api){
   content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
  }
  if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action')content=`<p class="lm-current-answer">Outcome — what you want to achieve</p>`+content+outcomeList([current]);
+ if(panel!=='map'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
  if(panel==='interview'&&selected!=='interview-empty'&&!content.includes('id="lm-next"'))content+='<button id="lm-next" class="lm-next-prompt">Another question →</button>';
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
  async function save(){
+  data.answers[current.id]={...(data.answers[current.id]||{}),reviewedAt:data.answers[current.id]?.reviewedAt||new Date().toISOString()};
   const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;
   const write=async()=>{try{localStorage.setItem(key,JSON.stringify(snapshot));notice='Saved in this browser.';if(client&&owner){const {error}=await client.from('planner_life_map').upsert({user_id:owner,data:snapshot,updated_at:new Date().toISOString()});notice=error?'Saved here; account sync failed.':'Saved.';}if(loadedKey===key)api.render();}catch{notice='Save failed. Please retry.';api.render();}};
   saveQueue=saveQueue.then(write,write);return saveQueue;
@@ -371,6 +373,7 @@ export function renderLifeMap(root,api){
  root.querySelector('#lm-deadline')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,deadline:new FormData(e.target).get('deadline')};step='action';await save();});
 
  root.querySelector('#lm-note')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,notes:new FormData(e.target).get('notes')};await save();});
+ root.querySelector('#lm-mark-reviewed')?.addEventListener('click',async e=>{e.target.disabled=true;await save();});
  root.querySelector('#lm-next')?.addEventListener('click',next);
  root.querySelector('#lm-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`What is the status of ${title.toLowerCase()}?`,action:`Choose one next step for ${title.toLowerCase()}.`});selected=id;step='question';await save();});
  root.querySelectorAll('.lm-link-picker').forEach(picker=>{
