@@ -177,6 +177,14 @@ export function topicPath(id,topics){
  while(current&&!seen.has(current.id)){seen.add(current.id);path.unshift(current);current=byId.get(current.parent);}
  return path;
 }
+export function removeCustomOutcome(map,id){
+ if(!map.concerns.some(topic=>topic.id===id))return false;
+ const ids=new Set([id]);let changed=true;
+ while(changed){changed=false;for(const topic of map.concerns)if(ids.has(topic.parent)&&!ids.has(topic.id)){ids.add(topic.id);changed=true;}}
+ map.concerns=map.concerns.filter(topic=>!ids.has(topic.id));
+ for(const key of ids){delete map.answers[key];delete map.links[key];}
+ return true;
+}
 export function interviewCandidates(topics,answers={},skipped=[]) {
  const byId=new Map(topics.map(topic=>[topic.id,topic])),excluded=new Set(skipped);
  return topics.filter(topic=>{
@@ -333,10 +341,13 @@ export function renderLifeMap(root,api){
  }else{
   content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
  }
- if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action')content=`<p class="lm-current-answer">Outcome — what you want to achieve</p>`+content+outcomeList([current]);
+ if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action')content+=`<details class="lm-secondary lm-outcome-tasks"><summary>Tasks</summary>${outcomeList([current])}</details>`;
  if(panel!=='map'&&selected!=='interview-empty'){
   if(answer.status==='uninterested')content=`<h3>${esc(current.title)}</h3><p>Not of interest · Reviewed</p><button id="lm-reopen-interest">Reopen this topic</button>`;
   else content+='<button id="lm-not-interested" class="lm-next-prompt">Not of interest</button>';
+ }
+ if(panel!=='map'&&data.concerns.some(topic=>topic.id===current.id)){
+  content+=`<details class="lm-secondary"><summary>Edit outcome</summary><form id="lm-edit-outcome"><label>Title<input name="title" required maxlength="200" value="${esc(current.title)}"></label><label>Notes<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button class="lm-primary">Save changes</button></form><button id="lm-delete-outcome" class="danger-button" type="button">Delete outcome</button></details><dialog id="lm-delete-confirm" aria-labelledby="lm-delete-heading"><h3 id="lm-delete-heading">Delete this outcome?</h3><p>${esc(current.title)}</p><p>This removes the outcome, its nested outcomes, notes, and links. Tasks, projects, and people are not deleted.</p><form method="dialog"><button value="cancel">Cancel</button><button value="delete" class="danger-button">Delete outcome</button></form></dialog>`;
  }
  if(panel!=='map'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
  if(panel==='interview'&&selected!=='interview-empty'&&!content.includes('id="lm-next"'))content+='<button id="lm-next" class="lm-next-prompt">Another question →</button>';
@@ -345,6 +356,16 @@ export function renderLifeMap(root,api){
  breadcrumb.innerHTML=topicPath(current.id,topics).map((topic,index,path)=>
   (index?'<span aria-hidden="true"> / </span>':'')+(index===path.length-1?`<span aria-current="page">${esc(topic.title)}</span>`:`<button data-go="${esc(topic.id)}">${esc(topic.title)}</button>`)
  ).join('');
+ if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step==='question'){
+  const heading=root.querySelector('.lm-interview h3');
+  if(heading)heading.textContent=current.title;
+  const repeatedTitle=root.querySelector('.lm-interview > small');
+  repeatedTitle?.remove();
+  const extraOutcome=root.querySelector('.lm-outcome-tasks .lm-outcome-item > .lm-review-row');
+  extraOutcome?.remove();
+  const repeatedHeading=root.querySelector('.lm-outcome-tasks h4');
+  repeatedHeading?.remove();
+ }
  async function save(markReviewed=true){
   if(markReviewed)data.answers[current.id]={...(data.answers[current.id]||{}),reviewedAt:data.answers[current.id]?.reviewedAt||new Date().toISOString()};
   const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;
@@ -412,6 +433,21 @@ export function renderLifeMap(root,api){
 
  root.querySelector('#lm-note')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,notes:new FormData(e.target).get('notes')};await save();});
  root.querySelector('#lm-mark-reviewed')?.addEventListener('click',async e=>{e.target.disabled=true;await save();});
+ root.querySelector('#lm-edit-outcome')?.addEventListener('submit',async e=>{
+  e.preventDefault();const values=new FormData(e.target),title=values.get('title').trim();if(!title)return;
+  const outcome=data.concerns.find(topic=>topic.id===current.id);if(!outcome)return;
+  e.target.querySelector('button').disabled=true;
+  outcome.title=title;outcome.question=`Where are you with “${title}”?`;
+  data.answers[current.id]={...answer,notes:values.get('notes'),updatedAt:new Date().toISOString()};await save();
+ });
+ root.querySelector('#lm-delete-outcome')?.addEventListener('click',()=>{
+  const dialog=root.querySelector('#lm-delete-confirm');
+  dialog.addEventListener('close',async()=>{
+   if(dialog.returnValue!=='delete')return;
+   if(removeCustomOutcome(data,current.id)){selected=current.parent||area.id;step='question';await save(false);}
+  },{once:true});
+  dialog.showModal();
+ });
  root.querySelector('#lm-not-interested')?.addEventListener('click',async e=>{
   e.target.disabled=true;
   data.answers[current.id]={...answer,status:'uninterested',previousStatus:answer.status||null,reviewedAt:answer.reviewedAt||new Date().toISOString(),updatedAt:new Date().toISOString()};

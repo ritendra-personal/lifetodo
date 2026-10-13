@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics,topicReviewState,topicPath} from '../public/life-map.js';
+import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics,topicReviewState,topicPath,removeCustomOutcome} from '../public/life-map.js';
 import {assembleTopics} from '../public/life-map-discovery.js';
 
 const topics=[
@@ -12,6 +12,16 @@ const topics=[
  {id:'specific',parent:'group'},
  {id:'discovery',parent:'home',kind:'support-discovery'}
 ];
+test('outcome deletion removes its branch and links, not linked task records',()=>{
+ const task={id:'task'};
+ const data={concerns:[{id:'a',parent:'home'},{id:'b',parent:'a'},{id:'c',parent:'home'}],answers:{a:{notes:'note'},b:{status:'progress'},c:{status:'done'}},links:{a:['task:'+task.id],b:['person:p'],c:['task:other']}};
+ assert.equal(removeCustomOutcome(data,'home'),false);
+ assert.equal(removeCustomOutcome(data,'a'),true);
+ assert.deepEqual(data.concerns.map(topic=>topic.id),['c']);
+ assert.deepEqual(Object.keys(data.answers),['c']);
+ assert.deepEqual(Object.keys(data.links),['c']);
+ assert.equal(task.id,'task');
+});
 test('breadcrumb includes every ancestor and the current topic',()=>{
  assert.deepEqual(topicPath('detail',topics).map(topic=>topic.id),['home','repair','detail']);
  assert.deepEqual(topicPath('home',topics).map(topic=>topic.id),['home']);
