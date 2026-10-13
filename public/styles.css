@@ -595,10 +595,15 @@ textarea:focus {
 }
 
 .sync-status {
+  position: static;
+  margin-bottom: 12px;
+  max-height: none;
+  box-shadow: none;
   border-color: #abd8cf;
   background: #eef7f6;
   color: #075f59;
 }
+body:not(.has-sync-error) { --status-bar-gap: 0px; }
 
 body.has-sync-error #sync-button {
   border-color: #d92d20;

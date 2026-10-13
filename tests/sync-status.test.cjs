@@ -1,0 +1,21 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('public/app.js','utf8');
+const block=source.slice(source.indexOf('let syncStatusTimer='),source.indexOf('function refreshSharedPlannerUi()'));
+function element(){const classes=new Set();return {textContent:'',classList:{add:x=>classes.add(x),remove:x=>classes.delete(x),toggle:(x,on)=>on?classes.add(x):classes.delete(x),contains:x=>classes.has(x)}};}
+const state={syncMessage:'Loaded records',syncError:''},els={syncStatus:element(),syncError:element()};
+let callback,timerCount=0;
+const context=vm.createContext({state,els,document:{body:element()},setTimeout:fn=>{callback=fn;return ++timerCount},clearTimeout:()=>{}});
+vm.runInContext(block,context);
+context.renderSyncStatus();
+assert.equal(els.syncStatus.classList.contains('hidden'),false);
+callback();context.renderSyncStatus();
+assert.equal(els.syncStatus.classList.contains('hidden'),true);
+state.syncMessage='Saving person...';context.renderSyncStatus();
+assert.equal(timerCount,1);
+assert.equal(els.syncStatus.classList.contains('hidden'),false);
+state.syncMessage='Saved person';context.renderSyncStatus();
+const previousTimer=callback;
+state.syncError='Database unavailable';context.renderSyncStatus();previousTimer();
+assert.equal(els.syncError.classList.contains('hidden'),false);
+assert.match(els.syncError.textContent,/Database unavailable/);
+console.log('Success expires without reappearing; active saving and errors remain visible.');

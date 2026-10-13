@@ -1,7 +1,7 @@
 import {renderLifeMap} from './life-map.js?v=1.14.35';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.35";
+const APP_VERSION = "1.14.36";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -602,9 +602,21 @@ function applyRouteFromLocation(options = {}) {
   }
 }
 
+let syncStatusTimer=null,lastSyncStatusMessage="",dismissedSyncStatusMessage="";
 function renderSyncStatus() {
+  if(state.syncMessage!==lastSyncStatusMessage){
+    clearTimeout(syncStatusTimer);lastSyncStatusMessage=state.syncMessage;dismissedSyncStatusMessage="";
+    if(state.syncMessage&&!/saving|loading|syncing|connecting|restoring|waiting|taking longer/i.test(state.syncMessage)){
+      const message=state.syncMessage;
+      syncStatusTimer=setTimeout(()=>{
+        if(state.syncMessage!==message||state.syncError)return;
+        dismissedSyncStatusMessage=message;
+        els.syncStatus.classList.add("hidden");
+      },5000);
+    }
+  }
   document.body.classList.toggle("has-sync-error", Boolean(state.syncError));
-  if (state.syncMessage && !state.syncError) {
+  if (state.syncMessage && !state.syncError && state.syncMessage!==dismissedSyncStatusMessage) {
     els.syncStatus.textContent = state.syncMessage;
     els.syncStatus.classList.remove("hidden");
   } else {
@@ -8626,21 +8638,7 @@ function render() {
   els.showDone.checked = state.showDone;
   els.storageStatus.title = state.syncError || "";
   els.storageStatus.textContent = state.syncError ? "Sync issue" : els.storageStatus.textContent;
-  document.body.classList.toggle("has-sync-error", Boolean(state.syncError));
-  if (state.syncMessage && !state.syncError) {
-    els.syncStatus.textContent = state.syncMessage;
-    els.syncStatus.classList.remove("hidden");
-  } else {
-    els.syncStatus.textContent = "";
-    els.syncStatus.classList.add("hidden");
-  }
-  if (state.syncError) {
-    els.syncError.textContent = `DATABASE SAVE FAILED: ${state.syncError}. Changes are only kept in this browser until Sync succeeds.`;
-    els.syncError.classList.remove("hidden");
-  } else {
-    els.syncError.textContent = "";
-    els.syncError.classList.add("hidden");
-  }
+  renderSyncStatus();
   document.querySelectorAll(".view-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === state.view);
   });
