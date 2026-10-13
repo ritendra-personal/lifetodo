@@ -48,3 +48,16 @@ test('not of interest explicitly reviews a branch and suppresses its questions',
  delete answers.home;
  assert.ok(pickInterviewQuestion(topics,answers));
 });
+test('opting out of Pets keeps its parent identity rather than creating a sibling outcome',()=>{
+ const data={answers:{'check:home:5':{status:'uninterested',reviewedAt:'2026-10-13'}},concerns:[{id:'existing',parent:'discover:check:home:5',title:'Existing note'}]};
+ const assembled=assembleTopics(baseTopics,discoveryTopics(),data);
+ const pets=assembled.find(topic=>topic.id==='check:home:5');
+ assert.equal(pets.parent,'home');
+ assert.ok(pets.group||pets.kind);
+ assert.ok(!assembled.some(topic=>topic.id==='discover:check:home:5'));
+ const children=assembled.filter(topic=>topic.parent===pets.id);
+ assert.ok(children.length>1);
+ for(const child of children)assert.equal(topicReviewState(child.id,assembled,data.answers).key,'uninterested');
+ assert.equal(assembled.find(topic=>topic.id==='existing').parent,pets.id);
+ assert.ok(!interviewCandidates(assembled,data.answers).some(topic=>children.some(child=>child.id===topic.id)));
+});

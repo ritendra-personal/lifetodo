@@ -127,8 +127,12 @@ export function expandDiscovery(items) {
 // Preserve old reviewed topics and links at their original IDs as explicit outcomes.
 // Their replacement discovery menu gets a new ID; nothing is written or deleted here.
 export function assembleTopics(base, templates, data) {
- const replaced=new Map(templates.filter(t=>t.expandedDiscovery&&(data.answers?.[t.id]?.status||(data.links?.[t.id]||[]).length)).map(t=>[t.id,'discover:'+t.id]));
+ const replaced=new Map(templates.filter(t=>t.expandedDiscovery&&data.answers?.[t.id]?.status!=='uninterested'&&(data.answers?.[t.id]?.status||(data.links?.[t.id]||[]).length)).map(t=>[t.id,'discover:'+t.id]));
  const menus=templates.map(t=>({...t,id:replaced.get(t.id)||t.id,parent:replaced.get(t.parent)||t.parent}));
  const saved=templates.filter(t=>replaced.has(t.id)).map(t=>({...t,kind:null,group:null,expandedDiscovery:false,choices:null,suggested:false,parent:replaced.get(t.id),question:`Where are you with “${t.title}”?`}));
- return [...base,...menus,...saved,...(data.concerns||[])];
+ const concerns=(data.concerns||[]).map(topic=>{
+  const original=topic.parent?.startsWith('discover:')?topic.parent.slice(9):null;
+  return original&&templates.some(item=>item.id===original)&&!replaced.has(original)?{...topic,parent:original}:topic;
+ });
+ return [...base,...menus,...saved,...concerns];
 }

@@ -1,4 +1,4 @@
-import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.25';
+import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.37';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.35';
 export function linkCandidates(records,type,linked=[],query='') {
  const needle=query.trim().toLocaleLowerCase();
@@ -228,6 +228,7 @@ export function renderLifeMap(root,api){
  }
  data.answers ||= {};data.links ||= {};data.concerns ||= [];
  const topics=assembleTopics(baseTopics,discoveryTopics(),data);
+ if(selected.startsWith('discover:')&&!topics.some(topic=>topic.id===selected)&&topics.some(topic=>topic.id===selected.slice(9)))selected=selected.slice(9);
  for(const topic of topics){if(topic.parent==='check:relationships:0'&&/^(Arrange a call|Send a message|Meet up) — /.test(topic.title)){topic.action=topic.action||topic.title;topic.title=`Stay connected with ${topic.personName||topic.title.split(' — ').slice(1).join(' — ')}`;topic.question=`Where are you with “${topic.title}”?`;}}
  const current=topics.find(t=>t.id===selected)||baseTopics[0];
  let area=current;const seen=new Set();while(area.parent&&!seen.has(area.id)){seen.add(area.id);area=topics.find(t=>t.id===area.parent)||area;}
