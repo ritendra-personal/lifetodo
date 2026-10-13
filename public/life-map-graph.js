@@ -50,6 +50,7 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
    const reviewed=[...ids].filter(id=>answers[id]?.reviewedAt||answers[id]?.status).length;
    node.status+=reviewed===ids.size?' · Reviewed':' · Partially reviewed';
   }
+  if(answers[node.sourceId]?.status==='uninterested'){node.status='Not of interest · Reviewed';node.state='inactive';}
   return own;
  }
  summarize(root);

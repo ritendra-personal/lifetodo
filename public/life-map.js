@@ -1,5 +1,5 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.25';
-import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.32';
+import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.33';
 export function linkCandidates(records,type,linked=[],query='') {
  const needle=query.trim().toLocaleLowerCase();
  return records.filter(([kind,item])=>kind===type && !(type==='task'&&item.parent_id) && !linked.includes(`${type}:${item.id}`) && labelFor(item).toLocaleLowerCase().includes(needle)).sort((a,b)=>labelFor(a[1]).localeCompare(labelFor(b[1])));
@@ -44,9 +44,9 @@ export function suggestedAction(topic, answer={}) {
  if(topic.parent)return `Choose and take one small step toward “${label}”.`;
  return topic.action;
 }
-export const statuses={unstarted:'Not started / needs attention',stuck:'Started, but stuck',progress:'In progress',well:'Working well / in place',review:'Needs updating',unsure:'Not sure',irrelevant:'Not relevant',defer:'Not now',done:'Completed'};
+export const statuses={unstarted:'Not started / needs attention',stuck:'Started, but stuck',progress:'In progress',well:'Working well / in place',review:'Needs updating',unsure:'Not sure',irrelevant:'Not relevant',uninterested:'Not of interest',defer:'Not now',done:'Completed'};
 export function recommendation(topic,answer={}){
- if(!answer.status||['well','irrelevant','defer','done'].includes(answer.status))return null;
+ if(!answer.status||['well','irrelevant','uninterested','defer','done'].includes(answer.status))return null;
  const reason=answer.deadline?`Deadline: ${answer.deadline}`:['soon','week'].includes(answer.timing)?'You want to address this within a week':answer.timing==='month'?'You want progress within a month':answer.timing==='quarter'?'You want progress within three months':answer.timing==='year'?'You want progress within a year':answer.timing==='two-years'?'You want progress within two years':answer.timing==='someday'?'Longer term, with no fixed deadline':answer.timing==='decade'?'You want progress within a decade':answer.status==='stuck'?'A blocked next step needs clarification':answer.impact==='high'?'You said this protects something important':'Timing still needs clarification';
  const days=answer.deadline?Math.ceil((Date.parse(answer.deadline+'T12:00:00')-Date.now())/86400000):Infinity;
  const score=(days<=7?100:days<=30?60:0)+(({soon:40,week:40,month:20,quarter:10,year:5,'two-years':1,someday:0,decade:1}[answer.timing]||0))+(answer.status==='stuck'?10:0)+(answer.impact==='high'?25:answer.impact==='medium'?10:0);
@@ -157,6 +157,12 @@ export function coverageStats(id,topics,answers){
  return {reviewed:branch.filter(t=>answers[t.id]?.status||answers[t.id]?.reviewedAt).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
 }
 export function topicReviewState(id,topics,answers={}) {
+ const byId=new Map(topics.map(topic=>[topic.id,topic]));let cursor=byId.get(id);const visited=new Set();
+ while(cursor&&!visited.has(cursor.id)){
+  visited.add(cursor.id);
+  if(answers[cursor.id]?.status==='uninterested')return {key:'uninterested',label:'Not of interest · Reviewed',reviewed:1,total:1};
+  cursor=byId.get(cursor.parent);
+ }
  const ids=new Set([id]);let changed=true;
  while(changed){changed=false;for(const topic of topics)if(ids.has(topic.parent)&&!ids.has(topic.id)){ids.add(topic.id);changed=true;}}
  const branch=topics.filter(topic=>ids.has(topic.id));
@@ -175,7 +181,7 @@ export function interviewCandidates(topics,answers={},skipped=[]) {
   let parent=byId.get(topic.parent);const seen=new Set([topic.id]);
   while(parent){
    if(seen.has(parent.id))return false;seen.add(parent.id);
-   if(['irrelevant','defer','done','well'].includes(answers[parent.id]?.status))return false;
+   if(['irrelevant','uninterested','defer','done','well'].includes(answers[parent.id]?.status))return false;
    // Detailed branches require context established by the guided review.
    if(parent.parent&&(parent.group||parent.kind)&&!topics.some(child=>child.parent===parent.id&&answers[child.id]?.status))return false;
    parent=byId.get(parent.parent);
@@ -188,6 +194,7 @@ export function pickInterviewQuestion(topics,answers,skipped=[],random=Math.rand
  return candidates.length?candidates[Math.min(candidates.length-1,Math.floor(random()*candidates.length))]:null;
 }
 export function mapState(topic,answer={},tasks=[],now=Date.now()){
+ if(answer.status==='uninterested')return {key:'inactive',label:'Not of interest'};
  if(['done','well'].includes(answer.status))return {key:'complete',label:'Taken care of'};
  if(answer.status==='irrelevant')return {key:'inactive',label:'Not relevant'};
  const deadline=answer.deadline?Date.parse(answer.deadline+'T23:59:59'):NaN;
@@ -230,6 +237,7 @@ export function renderLifeMap(root,api){
  const coverage=coverageStats(area.id,topics,data.answers);
  const records=[...api.tasks.map(x=>['task',x]),...api.projects.map(x=>['project',x]),...(api.people||[]).map(x=>['person',x])];
  function suggestion(topic){
+  if(topicReviewState(topic.id,topics,data.answers).key==='uninterested')return null;
   const a=data.answers[topic.id]||{};const r=recommendation(topic,a);if(!r)return null;
   if(!a.next&&!a.support)r.action=topic.action;
   const people=records.filter(([type,item])=>type==='person'&&(data.links[topic.id]||[]).includes('person:'+item.id)).map(([,item])=>labelFor(item));
@@ -253,7 +261,7 @@ export function renderLifeMap(root,api){
  const notesMarkup=`<details class="lm-secondary"><summary>Add a note</summary><form id="lm-note"><label>Note<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button>Save note</button></form></details>`;
  const addMarkup=`<details class="lm-secondary"><summary>Add something else</summary><form id="lm-custom"><label>What would you like to include?<input name="title" required maxlength="200"></label><button>Add</button></form></details>`;
  function outcomeList(items){return items.length?`<h4>Outcomes under this topic</h4>${items.map(t=>{const tasks=api.tasks.filter(task=>(data.links[t.id]||[]).includes('task:'+task.id));return `<div class="lm-outcome-item"><button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>Outcome · Review →</small></button>${tasks.length?`<p>Tasks — concrete actions</p>${tasks.map(task=>`<a class="lm-review-row" data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)} — Open task</a><button data-unlink="task:${esc(task.id)}" data-link-outcome="${esc(t.id)}">Unlink task</button>`).join('')}`:`<p>No tasks yet</p>`}<details><summary>Add task</summary><form data-inline-task="${esc(t.id)}"><label>Task title<input name="title" required maxlength="300" placeholder="What concrete action will you take?"></label><button class="lm-primary">Create task</button></form></details>${linkPicker('task',t.id)}</div>`;}).join('')}`:'';}
- const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${panel!=='map'&&area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${c.complete} taken care of${c.reviewed?' · '+c.reviewed+' reviewed':''}</small></button>`;}).join('')}</aside>`;
+ const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${panel!=='map'&&area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${data.answers[t.id]?.status==='uninterested'?'Not of interest · Reviewed':c.complete+' taken care of'+(c.reviewed?' · '+c.reviewed+' reviewed':'')}</small></button>`;}).join('')}</aside>`;
  const mapAreas=baseTopics.map(domain=>{
   const b=branchStats(domain.id,topics,data.answers,data.links,api.tasks);
   const outcomes=b.topics.filter(t=>t.id!==domain.id&&!t.group&&!t.kind&&(data.answers[t.id]?.status||data.concerns.some(c=>c.id===t.id)||(data.links[t.id]||[]).length));
@@ -319,11 +327,15 @@ export function renderLifeMap(root,api){
   content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
  }
  if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action')content=`<p class="lm-current-answer">Outcome — what you want to achieve</p>`+content+outcomeList([current]);
+ if(panel!=='map'&&selected!=='interview-empty'){
+  if(answer.status==='uninterested')content=`<h3>${esc(current.title)}</h3><p>Not of interest · Reviewed</p><button id="lm-reopen-interest">Reopen this topic</button>`;
+  else content+='<button id="lm-not-interested" class="lm-next-prompt">Not of interest</button>';
+ }
  if(panel!=='map'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
  if(panel==='interview'&&selected!=='interview-empty'&&!content.includes('id="lm-next"'))content+='<button id="lm-next" class="lm-next-prompt">Another question →</button>';
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
- async function save(){
-  data.answers[current.id]={...(data.answers[current.id]||{}),reviewedAt:data.answers[current.id]?.reviewedAt||new Date().toISOString()};
+ async function save(markReviewed=true){
+  if(markReviewed)data.answers[current.id]={...(data.answers[current.id]||{}),reviewedAt:data.answers[current.id]?.reviewedAt||new Date().toISOString()};
   const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;
   const write=async()=>{try{localStorage.setItem(key,JSON.stringify(snapshot));notice='Saved in this browser.';if(client&&owner){const {error}=await client.from('planner_life_map').upsert({user_id:owner,data:snapshot,updated_at:new Date().toISOString()});notice=error?'Saved here; account sync failed.':'Saved.';}if(loadedKey===key)api.render();}catch{notice='Save failed. Please retry.';api.render();}};
   saveQueue=saveQueue.then(write,write);return saveQueue;
@@ -388,6 +400,16 @@ export function renderLifeMap(root,api){
 
  root.querySelector('#lm-note')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,notes:new FormData(e.target).get('notes')};await save();});
  root.querySelector('#lm-mark-reviewed')?.addEventListener('click',async e=>{e.target.disabled=true;await save();});
+ root.querySelector('#lm-not-interested')?.addEventListener('click',async e=>{
+  e.target.disabled=true;
+  data.answers[current.id]={...answer,status:'uninterested',previousStatus:answer.status||null,reviewedAt:answer.reviewedAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+  await save();if(panel==='interview')next();
+ });
+ root.querySelector('#lm-reopen-interest')?.addEventListener('click',async e=>{
+  e.target.disabled=true;
+  const reopened={...answer,status:answer.previousStatus||null,updatedAt:new Date().toISOString()};
+  delete reopened.previousStatus;delete reopened.reviewedAt;data.answers[current.id]=reopened;step='question';await save(false);
+ });
  root.querySelector('#lm-next')?.addEventListener('click',next);
  root.querySelector('#lm-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`What is the status of ${title.toLowerCase()}?`,action:`Choose one next step for ${title.toLowerCase()}.`});selected=id;step='question';await save();});
  root.querySelectorAll('.lm-link-picker').forEach(picker=>{

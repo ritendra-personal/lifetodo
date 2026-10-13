@@ -40,3 +40,11 @@ test('nested review markers identify the branch, independently of completion',()
  assert.equal(topicReviewState('dentist',branch,answers).key,'reviewed');
  assert.equal(answers.dentist.status,'progress');
 });
+test('not of interest explicitly reviews a branch and suppresses its questions',()=>{
+ const answers={home:{status:'uninterested',reviewedAt:'2026-10-13'}};
+ assert.equal(pickInterviewQuestion(topics,answers),null);
+ assert.equal(topicReviewState('repair',topics,answers).key,'uninterested');
+ assert.match(topicReviewState('home',topics,answers).label,/Reviewed/);
+ delete answers.home;
+ assert.ok(pickInterviewQuestion(topics,answers));
+});
