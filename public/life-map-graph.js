@@ -44,6 +44,12 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
   for(const child of node.children){const counts=summarize(child);for(const key of Object.keys(own))own[key]+=counts[key];}
   if(['root','area','group','person'].includes(node.kind)&&own.total){node.status=`${own.total} outcomes · ${own.attention} attention · ${own.complete} complete · ${own.reviewed} reviewed`;node.state=own.attention?'attention':own.progress?'progress':'unknown';}
   else if(node.reviewed)node.status+=' · Reviewed';
+  if(['area','group'].includes(node.kind)&&own.reviewed){
+   const ids=new Set([node.sourceId]);let changed=true;
+   while(changed){changed=false;for(const topic of topics)if(ids.has(topic.parent)&&!ids.has(topic.id)){ids.add(topic.id);changed=true;}}
+   const reviewed=[...ids].filter(id=>answers[id]?.reviewedAt||answers[id]?.status).length;
+   node.status+=reviewed===ids.size?' · Reviewed':' · Partially reviewed';
+  }
   return own;
  }
  summarize(root);

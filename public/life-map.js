@@ -1,5 +1,5 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.25';
-import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.31';
+import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.32';
 export function linkCandidates(records,type,linked=[],query='') {
  const needle=query.trim().toLocaleLowerCase();
  return records.filter(([kind,item])=>kind===type && !(type==='task'&&item.parent_id) && !linked.includes(`${type}:${item.id}`) && labelFor(item).toLocaleLowerCase().includes(needle)).sort((a,b)=>labelFor(a[1]).localeCompare(labelFor(b[1])));
@@ -156,6 +156,16 @@ export function coverageStats(id,topics,answers){
  const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group&&!t.kind);
  return {reviewed:branch.filter(t=>answers[t.id]?.status||answers[t.id]?.reviewedAt).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
 }
+export function topicReviewState(id,topics,answers={}) {
+ const ids=new Set([id]);let changed=true;
+ while(changed){changed=false;for(const topic of topics)if(ids.has(topic.parent)&&!ids.has(topic.id)){ids.add(topic.id);changed=true;}}
+ const branch=topics.filter(topic=>ids.has(topic.id));
+ const reviewed=branch.filter(topic=>answers[topic.id]?.reviewedAt||answers[topic.id]?.status).length;
+ const own=Boolean(answers[id]?.reviewedAt||answers[id]?.status);
+ if(!reviewed)return {key:'unreviewed',label:'Not reviewed',reviewed:0,total:branch.length};
+ if(reviewed===branch.length)return {key:'reviewed',label:'Reviewed',reviewed,total:branch.length};
+ return {key:'partial',label:own&&reviewed===1?'Reviewed · subtopics not reviewed':`Partially reviewed · ${reviewed} topic${reviewed===1?'':'s'}`,reviewed,total:branch.length};
+}
 export function interviewCandidates(topics,answers={},skipped=[]) {
  const byId=new Map(topics.map(topic=>[topic.id,topic])),excluded=new Set(skipped);
  return topics.filter(topic=>{
@@ -226,6 +236,10 @@ export function renderLifeMap(root,api){
   if(people.length&&a.support==='person'&&!a.next)r.action=`Arrange a conversation with ${people.join(', ')} about ${topic.title.toLowerCase()}.`;
   return r;
  }
+ function reviewMarker(topic){
+  const review=topicReviewState(topic.id,topics,data.answers);
+  return `<span class="lm-review-badge lm-review-${review.key}">${esc(review.label)}</span>`;
+ }
  const recs=topics.filter(t=>t.parent&&!t.group&&!t.kind).map(suggestion).filter(Boolean).sort((a,b)=>b.score-a.score);
  function linkPicker(type,id){
   const names={person:['People involved','Search people','Link person'],project:['Supporting projects','Search projects','Link project'],task:['Link existing task','Search top-level tasks','Link task']};
@@ -295,7 +309,7 @@ export function renderLifeMap(root,api){
    content=`<h3>${esc(current.question)}</h3><div class="lm-answer-buttons"><button id="lm-support-yes">Yes — choose a person</button><button data-support-answer="well">Everyone is supported for now</button><button id="lm-support-unsure">Help me think</button><button data-support-answer="defer">Come back to this later</button></div>${step==='support-think'?'<p>Think about a parent managing a change, a partner pursuing a goal, a child needing guidance, or a friend who could use practical help. Is there someone you want to check in with?</p>':''}${outcomeList(outcomes)}`;
   }
  }else if(isArea||current.group){
-  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Review next topic</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}">${esc(t.title)} <small>${esc(statuses[data.answers[t.id]?.status]||'Review →')}</small></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
+  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Review next topic</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}"><span>${esc(t.title)}</span><span class="lm-topic-review">${reviewMarker(t)}${data.answers[t.id]?.status?`<small>${esc(statuses[data.answers[t.id].status])}</small>`:''}</span></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
  }else if(step==='timing'){
   content=`<small>${esc(current.title)}</small><h3>How soon does this need attention?</h3><div class="lm-answer-buttons">${[['week','Within a week'],['month','Within a month'],['quarter','Within a quarter (3 months)'],['year','Within a year'],['decade','Within a decade']].map(([v,l])=>`<button data-timing="${v}">${l}</button>`).join('')}</div><details class="lm-secondary"><summary>There is a specific deadline</summary><form id="lm-deadline"><label>Deadline<input type="date" name="deadline" required value="${esc(answer.deadline||'')}"></label><button>Continue</button></form></details>`;
  }else if(step==='action'){

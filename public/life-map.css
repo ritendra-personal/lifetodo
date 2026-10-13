@@ -14,5 +14,6 @@
 .lm-graph-scroll{height:max(520px,calc(100dvh - 245px));max-height:none}@media(max-width:750px){.lm-graph-scroll{height:max(480px,calc(100dvh - 310px));max-height:none}}
 
 /* Let both Life map modes fill the available workspace. */
+.lm-topic-review{display:grid;gap:4px;justify-items:end}.lm-review-badge{display:inline-block;font-size:12px;padding:4px 8px;border-radius:4px;white-space:normal}.lm-review-unreviewed{background:#f0f2f3;color:#54616c}.lm-review-partial{background:#fff0c2;color:#795700}.lm-review-reviewed{background:#dcefe6;color:#21583f}
 .lm-guided .lm-layout.lm-random-layout{grid-template-columns:minmax(0,1fr)}.lm-random-layout .lm-interview{width:100%;box-sizing:border-box;margin-inline:auto}.lm-toolbar [role=tablist]{flex-wrap:wrap}
 .life-map.lm-guided{max-width:none;width:100%;margin:0;padding:0;box-sizing:border-box}.lm-guided .lm-layout{grid-template-columns:200px minmax(0,1fr);gap:16px}.lm-guided .lm-area-nav{width:auto;min-width:0}.lm-guided .lm-interview{min-width:0}.lm-guided .lm-map-canvas{padding:0}.lm-guided .lm-toolbar{margin-bottom:12px}@media(max-width:750px){.lm-guided .lm-layout{grid-template-columns:1fr;gap:12px}}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics} from '../public/life-map.js';
+import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics,topicReviewState} from '../public/life-map.js';
 import {assembleTopics} from '../public/life-map-discovery.js';
 
 const topics=[
@@ -30,4 +30,13 @@ test('a new life map has questions available without pre-existing outcomes',()=>
 });
 test('explicitly reviewed topics are not repeated',()=>{
  assert.equal(pickInterviewQuestion(topics,{repair:{reviewedAt:'2026-10-13'}},[],()=>0).id,'clutter');
+});
+test('nested review markers identify the branch, independently of completion',()=>{
+ const branch=[{id:'health'},{id:'appointments',parent:'health'},{id:'dentist',parent:'appointments'},{id:'sleep',parent:'health'}];
+ const answers={dentist:{status:'progress'}};
+ assert.equal(topicReviewState('appointments',branch,answers).key,'partial');
+ assert.match(topicReviewState('appointments',branch,answers).label,/1 topic/);
+ assert.equal(topicReviewState('sleep',branch,answers).key,'unreviewed');
+ assert.equal(topicReviewState('dentist',branch,answers).key,'reviewed');
+ assert.equal(answers.dentist.status,'progress');
 });
