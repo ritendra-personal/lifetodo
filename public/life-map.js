@@ -1,5 +1,6 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.43';
-import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.43';
+import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
+import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.44';
 export function linkCandidates(records,type,linked=[],query='') {
  const needle=query.trim().toLocaleLowerCase();
  return records.filter(([kind,item])=>kind===type && !(type==='task'&&item.parent_id) && !linked.includes(`${type}:${item.id}`) && labelFor(item).toLocaleLowerCase().includes(needle)).sort((a,b)=>labelFor(a[1]).localeCompare(labelFor(b[1])));
@@ -162,12 +163,7 @@ export function coverageStats(id,topics,answers){
  return {reviewed:branch.filter(t=>answers[t.id]?.status||answers[t.id]?.reviewedAt).length,complete:branch.filter(t=>['well','done'].includes(answers[t.id]?.status)).length,notRelevant:branch.filter(t=>answers[t.id]?.status==='irrelevant').length,total:branch.length};
 }
 export function topicReviewState(id,topics,answers={}) {
- const byId=new Map(topics.map(topic=>[topic.id,topic]));let cursor=byId.get(id);const visited=new Set();
- while(cursor&&!visited.has(cursor.id)){
-  visited.add(cursor.id);
-  if(answers[cursor.id]?.status==='uninterested')return {key:'uninterested',label:'Not of interest · Reviewed',reviewed:1,total:1};
-  cursor=byId.get(cursor.parent);
- }
+ if(createTopicExclusionResolver(topics,answers)(id))return {key:'uninterested',label:'Not of interest · Reviewed',reviewed:1,total:1};
  const ids=new Set([id]);let changed=true;
  while(changed){changed=false;for(const topic of topics)if(ids.has(topic.parent)&&!ids.has(topic.id)){ids.add(topic.id);changed=true;}}
  const branch=topics.filter(topic=>ids.has(topic.id));
@@ -185,6 +181,16 @@ export function topicPath(id,topics){
 export function nextReviewTopic(id,topics,answers={}){
  return topics.find(topic=>topic.parent===id&&['unreviewed','partial'].includes(topicReviewState(topic.id,topics,answers).key))||null;
 }
+export function nextGuidedTopic(id,topics,answers={}){
+ const current=topics.find(topic=>topic.id===id);if(!current)return null;
+ const excluded=createTopicExclusionResolver(topics,answers);
+ let parent=topics.find(topic=>topic.id===current.parent);const seen=new Set();
+ while(parent&&excluded(parent.id)&&!seen.has(parent.id)){seen.add(parent.id);parent=topics.find(topic=>topic.id===parent.parent);}
+ if(topics.find(topic=>topic.id===current.parent)?.kind?.endsWith('discovery'))return parent||null;
+ const siblings=topics.filter(topic=>topic.parent===current.parent&&!topic.group);
+ const index=siblings.findIndex(topic=>topic.id===id);
+ return [...siblings.slice(index+1),...siblings.slice(0,index)].find(topic=>!excluded(topic.id)&&!answers[topic.id]?.status&&!answers[topic.id]?.reviewedAt)||parent||null;
+}
 export function removeCustomOutcome(map,id){
  if(!map.concerns.some(topic=>topic.id===id))return false;
  const ids=new Set([id]);let changed=true;
@@ -195,8 +201,9 @@ export function removeCustomOutcome(map,id){
 }
 export function interviewCandidates(topics,answers={},skipped=[]) {
  const byId=new Map(topics.map(topic=>[topic.id,topic])),excluded=new Set(skipped);
+ const isExcluded=createTopicExclusionResolver(topics,answers);
  return topics.filter(topic=>{
-  if(!topic.parent||answers[topic.id]?.status||answers[topic.id]?.reviewedAt||excluded.has(topic.id))return false;
+  if(!topic.parent||answers[topic.id]?.status||answers[topic.id]?.reviewedAt||excluded.has(topic.id)||isExcluded(topic.id))return false;
   const directAreaChild=!byId.get(topic.parent)?.parent;
   if((topic.group||topic.kind)&&!directAreaChild)return false;
   let parent=byId.get(topic.parent);const seen=new Set([topic.id]);
@@ -251,10 +258,13 @@ export function renderLifeMap(root,api){
  data.answers ||= {};data.links ||= {};data.concerns ||= [];
  const topics=assembleTopics(baseTopics,discoveryTopics(),data);
  if(selected.startsWith('discover:')&&!topics.some(topic=>topic.id===selected)&&topics.some(topic=>topic.id===selected.slice(9)))selected=selected.slice(9);
+ const excludedTopic=createTopicExclusionResolver(topics,data.answers);
+ if(panel==='interview'&&excludedTopic(selected)){selected=pickInterviewQuestion(topics,data.answers,interviewSkipped)?.id||'interview-empty';step='question';}
  for(const topic of topics){if(topic.parent==='check:relationships:0'&&/^(Arrange a call|Send a message|Meet up) — /.test(topic.title)){topic.action=topic.action||topic.title;topic.title=`Stay connected with ${topic.personName||topic.title.split(' — ').slice(1).join(' — ')}`;topic.question=`Where are you with “${topic.title}”?`;}}
  const current=topics.find(t=>t.id===selected)||baseTopics[0];
  let area=current;const seen=new Set();while(area.parent&&!seen.has(area.id)){seen.add(area.id);area=topics.find(t=>t.id===area.parent)||area;}
  const answer=data.answers[current.id]||{};
+ const exclusion=excludedTopic(current.id);
  const isArea=baseTopics.some(t=>t.id===current.id);
  const children=topics.filter(t=>t.parent===current.id);
  const branch=branchStats(area.id,topics,data.answers,data.links,api.tasks);
@@ -352,7 +362,7 @@ export function renderLifeMap(root,api){
  }
  if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action')content+=`<details class="lm-secondary lm-outcome-tasks"><summary>Tasks</summary>${outcomeList([current],true)}</details>`;
  if(panel!=='map'&&selected!=='interview-empty'){
-  if(answer.status==='uninterested')content=`<h3>${esc(current.title)}</h3><p>Not of interest · Reviewed</p><button id="lm-reopen-interest">Reopen this topic</button>`;
+  if(exclusion)content=`<h3>${esc(current.title)}</h3><p>Not of interest · Reviewed</p>${exclusion.topicId===current.id?'<button id="lm-reopen-interest">Reopen this topic</button>':`<button data-go="${esc(exclusion.topicId)}">Manage excluded topic: ${esc(exclusion.title)}</button>`}`;
   else content+='<button id="lm-not-interested" class="lm-next-prompt">Not of interest</button>';
  }
  if(panel!=='map'&&data.concerns.some(topic=>topic.id===current.id)){
@@ -384,11 +394,8 @@ export function renderLifeMap(root,api){
  function go(id){selected=id;if(panel!=='interview')panel='explore';step='question';api.render();}
  function next(){
   if(panel==='interview'){interviewSkipped.push(current.id);const candidate=pickInterviewQuestion(topics,data.answers,interviewSkipped);selected=candidate?.id||'interview-empty';interviewSkipped.push(selected);step='question';api.render();return;}
-  if(topics.find(t=>t.id===current.parent)?.kind?.endsWith('discovery')){go(current.parent);return;}
-  const siblings=topics.filter(t=>t.parent===current.parent&&!t.group);
-  const index=siblings.findIndex(t=>t.id===current.id);
-  const candidate=[...siblings.slice(index+1),...siblings.slice(0,index)].find(t=>!data.answers[t.id]?.status);
-  go(candidate?.id||current.parent||area.id);
+  const candidate=nextGuidedTopic(current.id,topics,data.answers);
+  if(candidate)go(candidate.id);else{selected=area.id;step='question';api.render();}
  }
  root.querySelectorAll('[data-inline-task]').forEach(form=>form.onsubmit=async e=>{e.preventDefault();const title=new FormData(form).get('title').trim();if(!title)return;const id=form.dataset.inlineTask;const topic=topics.find(t=>t.id===id);const refs=data.links[id]||[];form.querySelector('button').disabled=true;try{const task=await api.createTask({title,area:topic.area,notes:`Life map outcome: ${topic.title}`,goal_ids:refs.filter(r=>r.startsWith('goal:')).map(r=>r.slice(5)),project_id:refs.find(r=>r.startsWith('project:'))?.slice(8)||'',priority:'Medium'});if(!task)throw Error();data.links[id]=[...new Set([...(data.links[id]||[]),'task:'+task.id])];await save();notice='Task created and linked to this outcome.';api.render();}catch{notice='Task could not be created. Please retry.';api.render();}});
 
@@ -436,6 +443,7 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-support-kind]').forEach(b=>b.onclick=()=>{supportDraft.kind=b.dataset.supportKind;step='support-outcome';api.render();});
  root.querySelector('#lm-support-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();const outcome=supportOutcome({...supportDraft,id,title,parent:current.id,area:area.area});data.concerns.push(outcome);if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];data.answers[current.id]={...answer,status:'progress'};selected=id;step='question';await save();});
  root.querySelectorAll('[data-answer]').forEach(b=>b.onclick=async()=>{
+  if(excludedTopic(current.id)){api.render();return;}
  root.querySelectorAll('[data-answer]').forEach(x=>x.disabled=true);
   const status=b.dataset.answer;data.answers[current.id]={...answer,status,updatedAt:new Date().toISOString(),completedAt:status==='done'?(answer.completedAt||new Date().toISOString()):null};
   if(['unstarted','progress','unsure'].includes(status))step='timing';
@@ -469,8 +477,7 @@ export function renderLifeMap(root,api){
  });
  root.querySelector('#lm-reopen-interest')?.addEventListener('click',async e=>{
   e.target.disabled=true;
-  const reopened={...answer,status:answer.previousStatus||null,updatedAt:new Date().toISOString()};
-  delete reopened.previousStatus;delete reopened.reviewedAt;data.answers[current.id]=reopened;step='question';await save(false);
+  reopenTopicInterest(current.id,data.answers);step='question';await save(false);
  });
  root.querySelector('#lm-next')?.addEventListener('click',next);
  root.querySelector('#lm-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`What is the status of ${title.toLowerCase()}?`,action:`Choose one next step for ${title.toLowerCase()}.`});selected=id;step='question';await save();});

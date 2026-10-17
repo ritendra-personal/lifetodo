@@ -1,8 +1,10 @@
+import {createTopicExclusionResolver} from './life-map-review.js?v=1.14.44';
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nameFor = item => item?.title || item?.name || [item?.first_name,item?.last_name].filter(Boolean).join(' ') || 'Unavailable item';
 
 export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],goals=[],people=[],stateFor,interestFilter='active',hideCompleted=false}) {
- const excluded=new Set(topics.filter(topic=>answers[topic.id]?.status==='uninterested').map(topic=>topic.id));
+ const isExcluded=createTopicExclusionResolver(topics,answers);
+ const excluded=new Set(topics.filter(topic=>isExcluded(topic.id)).map(topic=>topic.id));
  let changed=true;
  while(changed){changed=false;for(const topic of topics)if(excluded.has(topic.parent)&&!excluded.has(topic.id)){excluded.add(topic.id);changed=true;}}
  if(interestFilter==='active')topics=topics.filter(topic=>!excluded.has(topic.id));
@@ -59,8 +61,8 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
    const reviewed=[...ids].filter(id=>answers[id]?.reviewedAt||answers[id]?.status).length;
    node.status+=reviewed===ids.size?' · Reviewed':' · Partially reviewed';
   }
-  if(answers[node.sourceId]?.status==='uninterested'){node.status='Not of interest · Reviewed';node.state='inactive';}
-  if(['done','well'].includes(answers[node.sourceId]?.status)){
+  if(excluded.has(node.sourceId)){node.status='Not of interest · Reviewed';node.state='inactive';}
+  if(!excluded.has(node.sourceId)&&['done','well'].includes(answers[node.sourceId]?.status)){
    node.state='complete';
    if(!node.status.includes('Taken care of'))node.status='Taken care of · '+node.status;
   }
