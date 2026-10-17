@@ -80,6 +80,13 @@ body:has(.lm-map-canvas){overflow:hidden}
 .life-map #lm-create input{width:100%;min-width:0;box-sizing:border-box}
 .life-map #lm-create>button{flex-shrink:0;margin:0;min-height:40px}
 .lm-outcome-details{margin-top:16px}
+.lm-add-outcome{margin:16px 0;padding-top:12px;border-top:1px solid #dce3df}
+.lm-add-outcome h4{font-size:13px;margin:0 0 6px}
+.life-map #lm-custom{display:flex;align-items:flex-end;gap:8px}
+.life-map #lm-custom label{flex:1;min-width:0;margin:0}
+.life-map #lm-custom input{width:100%;min-width:0;box-sizing:border-box}
+.life-map #lm-custom>button{flex-shrink:0;min-height:40px;margin:0}
+@media(max-width:420px){.life-map #lm-custom{flex-wrap:wrap}.life-map #lm-custom label{flex-basis:100%}}
 .lm-excluded-topics{margin-top:24px;padding-top:12px;border-top:1px solid #dce3df}
 .lm-excluded-topics h4{font-size:12px;color:#64706a;margin:0}
 .lm-excluded-topics .lm-topic-menu{margin-top:8px}

@@ -178,6 +178,17 @@ export function orderTopicsByReview(items,topics,answers={}){
 export function hasFallbackChoice(children){
  return children.some(topic=>/^something else$/i.test(topic.title.trim()));
 }
+export function outcomeMenuChildren(parent,topics){
+ const result=[],seen=new Set();
+ function visit(id){
+  if(seen.has(id))return;seen.add(id);
+  for(const topic of topics.filter(item=>item.parent===id)){
+   if(topic.suggested&&hasFallbackChoice([topic]))visit(topic.id);
+   else result.push(topic);
+  }
+ }
+ visit(parent);return result;
+}
 export function topicPath(id,topics){
  const byId=new Map(topics.map(topic=>[topic.id,topic])),path=[],seen=new Set();let current=byId.get(id);
  while(current&&!seen.has(current.id)){seen.add(current.id);path.unshift(current);current=byId.get(current.parent);}
@@ -240,6 +251,9 @@ export function mapState(topic,answer={},tasks=[],now=Date.now()){
  return {key:'unknown',label:'Not reviewed'};
 }
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function outcomeEntryMarkup(){
+ return '<section class="lm-add-outcome" aria-label="Add an outcome"><h4>Add an outcome</h4><form id="lm-custom"><label>Outcome<input name="title" required maxlength="200" placeholder="What result would you like to achieve?"></label><button type="submit">Add outcome</button></form></section>';
+}
 export function taskEntryMarkup(current,tasks,suggestion='',overview=false){
  const already=tasks.some(task=>task.title===suggestion);
  return `${overview?'':`<h3>${esc(current.title)}</h3>`}<form id="lm-create"><label>Task<input name="title" required maxlength="300" value="${esc(already?'':suggestion)}" placeholder="What will you do next?"></label><button class="lm-primary">Add task</button></form>${tasks.length?`<section class="lm-added-tasks" aria-label="Tasks for this outcome"><h4>Tasks (${tasks.length})</h4><ol>${tasks.map(task=>`<li><a data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)}</a>${task.status==='done'?' <small>Completed</small>':''}</li>`).join('')}</ol></section>`:''}${overview?'':'<button class="lm-next-prompt" id="lm-next">Next question →</button>'}`;
@@ -300,7 +314,7 @@ export function renderLifeMap(root,api){
  const answer=data.answers[current.id]||{};
  const exclusion=excludedTopic(current.id);
  const isArea=baseTopics.some(t=>t.id===current.id);
- const allChildren=orderTopicsByReview(topics.filter(t=>t.parent===current.id),topics,data.answers);
+ const allChildren=orderTopicsByReview(outcomeMenuChildren(current.id,topics),topics,data.answers);
  const excludedChildren=allChildren.filter(topic=>excludedTopic(topic.id));
  const children=allChildren.filter(topic=>!excludedTopic(topic.id));
  const branch=branchStats(area.id,topics,data.answers,data.links,api.tasks);
@@ -336,7 +350,7 @@ export function renderLifeMap(root,api){
  const linksMarkup=!isArea&&!current.group&&!current.kind?`<div class="lm-connections">${linkPicker('person',current.id)}${linkPicker('project',current.id)}</div>`:'';
 
  const notesMarkup=`<details class="lm-secondary"><summary>Add a note</summary><form id="lm-note"><label>Note<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button>Save note</button></form></details>`;
- const addMarkup=hasFallbackChoice(allChildren)?'':`<details class="lm-secondary"${current.id==='health'?' open':''}><summary>${current.id==='health'?'Add an outcome':'Add something else'}</summary><form id="lm-custom"><label>${current.id==='health'?'What health outcome needs attention?':'What would you like to include?'}<input name="title" required maxlength="200"${current.id==='health'?' placeholder="For example: get a planned surgery completed"':''}></label><button>Add</button></form></details>`;
+ const addMarkup=outcomeEntryMarkup();
  function outcomeList(items,expanded=false){if(!expanded)return items.length?`<h4>Outcomes</h4>${items.map(topic=>{const count=(data.links[topic.id]||[]).filter(ref=>ref.startsWith('task:')).length;return `<button class="lm-review-row" data-go="${esc(topic.id)}"><strong>${esc(topic.title)}</strong><span class="lm-topic-review">${reviewMarker(topic)}<small>${esc(statuses[data.answers[topic.id]?.status]||'Status not set')} · ${count} task${count===1?'':'s'}</small></span></button>`;}).join('')}`:'';return items.length?`<h4>Outcomes under this topic</h4>${items.map(t=>{const tasks=api.tasks.filter(task=>(data.links[t.id]||[]).includes('task:'+task.id));return `<div class="lm-outcome-item"><button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>Outcome · Review →</small></button>${tasks.length?`<p>Tasks — concrete actions</p>${tasks.map(task=>`<a class="lm-review-row" data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)} — Open task</a><button data-unlink="task:${esc(task.id)}" data-link-outcome="${esc(t.id)}">Unlink task</button>`).join('')}`:`<p>No tasks yet</p>`}<details><summary>Add task</summary><form data-inline-task="${esc(t.id)}"><label>Task title<input name="title" required maxlength="300" placeholder="What concrete action will you take?"></label><button class="lm-primary">Create task</button></form></details>${linkPicker('task',t.id)}</div>`;}).join('')}`:'';}
  const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${panel!=='map'&&area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${data.answers[t.id]?.status==='uninterested'?'Not of interest · Reviewed':c.complete+' taken care of'+(c.reviewed?' · '+c.reviewed+' reviewed':'')}</small></button>`;}).join('')}</aside>`;
  const mapAreas=baseTopics.map(domain=>{
@@ -408,7 +422,7 @@ export function renderLifeMap(root,api){
  }
  if(compactOutcome){
   const tasks=(data.links[current.id]||[]).filter(ref=>ref.startsWith('task:')).map(ref=>api.tasks.find(task=>task.id===ref.slice(5))).filter(Boolean);
-  content+=taskEntryMarkup(current,tasks,'',true)+`<details class="lm-secondary lm-outcome-details"><summary>Details</summary>${notesMarkup}${linksMarkup}${linkPicker('task',current.id)}${addMarkup}`;
+  content+=taskEntryMarkup(current,tasks,'',true)+addMarkup+`<details class="lm-secondary lm-outcome-details"><summary>Details</summary>${notesMarkup}${linksMarkup}${linkPicker('task',current.id)}`;
  }
  if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action'&&!compactOutcome)content+=`<details class="lm-secondary lm-outcome-tasks"><summary>Tasks</summary>${outcomeList([current],true)}</details>`;
  if(panel!=='map'&&selected!=='interview-empty'){
