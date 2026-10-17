@@ -168,15 +168,22 @@ button:focus-visible,
 }
 
 .brand {
+  --brand-height: 42px;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
+  column-gap: 12px;
+  row-gap: 4px;
   align-items: center;
 }
+.brand > div { display: contents; }
+.brand .mark { grid-column: 1; grid-row: 1; }
+.brand .brand-wordmark { grid-column: 2; grid-row: 1; height: var(--brand-height); min-height: var(--brand-height); grid-template-rows: repeat(2, 21px); align-content: start; font-size: 21px; line-height: 21px; }
+.brand #storage-status { grid-column: 2; grid-row: 2; margin-top: 0; }
+.brand #app-version { grid-column: 2; grid-row: 3; }
 
 .mark {
-  width: 42px;
-  height: 42px;
+  width: var(--brand-height);
+  height: var(--brand-height);
   display: grid;
   place-items: center;
   border-radius: 12px;
