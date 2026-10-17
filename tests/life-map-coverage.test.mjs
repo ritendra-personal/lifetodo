@@ -45,9 +45,11 @@ test('additional choices respect opt-outs, and assembly preserves stored answers
  assert.ok(topics.some(topic=>topic.id==='mine'));
 });
 test('guided review skips reviewed or opted-out topics but returns partially reviewed branches',()=>{
- const topics=[{id:'area'},{id:'reviewed',parent:'area'},{id:'excluded',parent:'area'},{id:'partial',parent:'area'},{id:'child',parent:'partial'}];
+ const topics=[{id:'area'},{id:'reviewed',parent:'area',isOutcome:true},{id:'excluded',parent:'area'},{id:'partial',parent:'area'},{id:'child',parent:'partial'},{id:'child2',parent:'partial'}];
  const answers={reviewed:{reviewedAt:'2026-10-16'},excluded:{status:'uninterested'},child:{status:'progress'}};
  assert.equal(nextReviewTopic('area',topics,answers).id,'partial');
  answers.partial={reviewedAt:'2026-10-16'};
+ assert.equal(nextReviewTopic('area',topics,answers).id,'partial');
+ answers.child2={status:'uninterested'};
  assert.equal(nextReviewTopic('area',topics,answers),null);
 });

@@ -2,7 +2,7 @@ import {createTopicExclusionResolver} from './life-map-review.js?v=1.14.44';
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nameFor = item => item?.title || item?.name || [item?.first_name,item?.last_name].filter(Boolean).join(' ') || 'Unavailable item';
 
-export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],goals=[],people=[],stateFor,interestFilter='active',hideCompleted=false}) {
+export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],goals=[],people=[],stateFor,reviewFor,interestFilter='active',hideCompleted=false}) {
  const isExcluded=createTopicExclusionResolver(topics,answers);
  const excluded=new Set(topics.filter(topic=>isExcluded(topic.id)).map(topic=>topic.id));
  let changed=true;
@@ -15,9 +15,9 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
  }
  const root={id:'life-root',label:'My life',kind:'root',status:'',children:[]};
  const nodes=new Map();
- const included=new Set(topics.filter(t=>answers[t.id]?.reviewedAt || (answers[t.id]?.status && answers[t.id].status!=='irrelevant') || (links[t.id]||[]).length || (t.parent && !t.suggested && !t.id.startsWith('check:') && !t.id.startsWith('learn:'))).map(t=>t.id));
+ const included=new Set(topics.filter(t=>(!reviewFor&&answers[t.id]?.reviewedAt) || t.isOutcome || (answers[t.id]?.status && answers[t.id].status!=='irrelevant') || (links[t.id]||[]).length || (t.parent && !t.suggested && !t.id.startsWith('check:') && !t.id.startsWith('learn:'))).map(t=>t.id));
  for(const id of [...included]){let t=topics.find(t=>t.id===id);const seen=new Set();while(t?.parent&&!seen.has(t.id)){seen.add(t.id);included.add(t.parent);t=topics.find(x=>x.id===t.parent);}}
- for(const t of topics.filter(t=>included.has(t.id))){const state=stateFor?.(t,answers[t.id]||{},[])||{key:'unknown',label:'Not reviewed'};nodes.set(t.id,{id:'topic:'+t.id,label:t.title,kind:!t.parent?'area':t.group||t.kind?'group':'outcome',sourceId:t.id,reviewed:Boolean(answers[t.id]?.reviewedAt||answers[t.id]?.status),status:(!t.group&&!t.kind&&t.parent?'Outcome · ':'')+(state.key==='unknown'&&answers[t.id]?.reviewedAt?'Status not set':state.label),state:state.key,children:[]});}
+ for(const t of topics.filter(t=>included.has(t.id))){const state=stateFor?.(t,answers[t.id]||{},[])||{key:'unknown',label:'Not reviewed'};nodes.set(t.id,{id:'topic:'+t.id,label:t.title,kind:!t.parent?'area':t.group||t.kind?'group':'outcome',sourceId:t.id,reviewed:reviewFor?reviewFor(t.id).key==='reviewed':Boolean(answers[t.id]?.reviewedAt||answers[t.id]?.status),status:(!t.group&&!t.kind&&t.parent?'Outcome · ':'')+(state.key==='unknown'&&(reviewFor?t.isOutcome:answers[t.id]?.reviewedAt)?'Status not set':state.label),state:state.key,children:[]});}
  for(const t of topics.filter(t=>included.has(t.id))){
   const node=nodes.get(t.id),parent=nodes.get(t.parent)||root;
   const sourceParent=topics.find(x=>x.id===t.parent);
@@ -51,11 +51,14 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
   }
  }
  function summarize(node){
-  const own=node.kind==='outcome'?{total:1,attention:node.state==='attention'?1:0,progress:node.state==='progress'?1:0,complete:node.state==='complete'?1:0,reviewed:node.reviewed?1:0}:{total:0,attention:0,progress:0,complete:0,reviewed:node.reviewed?1:0};
+  const own=node.kind==='outcome'?{total:1,attention:node.state==='attention'?1:0,progress:node.state==='progress'?1:0,complete:node.state==='complete'?1:0,reviewed:node.reviewed?1:0}:{total:0,attention:0,progress:0,complete:0,reviewed:!reviewFor&&node.reviewed?1:0};
   for(const child of node.children){const counts=summarize(child);for(const key of Object.keys(own))own[key]+=counts[key];}
   if(['root','area','group','person'].includes(node.kind)&&own.total){node.status=`${own.total} outcomes · ${own.attention} attention · ${own.complete} complete · ${own.reviewed} reviewed`;node.state=own.attention?'attention':own.progress?'progress':'unknown';}
   else if(node.reviewed)node.status+=' · Reviewed';
-  if(['area','group'].includes(node.kind)&&own.reviewed){
+  if(reviewFor&&['area','group'].includes(node.kind)){
+   const review=reviewFor(node.sourceId);
+   if(review.key==='reviewed'||review.key==='partial')node.status+=' · '+review.label;
+  }else if(!reviewFor&&['area','group'].includes(node.kind)&&own.reviewed){
    const ids=new Set([node.sourceId]);let changed=true;
    while(changed){changed=false;for(const topic of topics)if(ids.has(topic.parent)&&!ids.has(topic.id)){ids.add(topic.id);changed=true;}}
    const reviewed=[...ids].filter(id=>answers[id]?.reviewedAt||answers[id]?.status).length;

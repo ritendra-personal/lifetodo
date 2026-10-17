@@ -162,6 +162,9 @@ export function expandDiscovery(items) {
   if(choice)choice.outcomeQuestion=question;
  }
  const topics=[...items,...choiceNodes,...supplemental];
+ const connections=items.find(topic=>topic.id==='check:relationships:4');
+ topics.push({id:'connections:art',parent:connections.id,area:connections.area,title:'Art collaborators',group:'collaborators',question:'Who would you like to collaborate with?'});
+ for(const [slug,title] of [['producers','Producers'],['filmmakers','Filmmakers'],['actors','Actors'],['crew','Crew']])topics.push({id:'connections:art:'+slug,parent:'connections:art',area:connections.area,title,kind:'outcome-discovery',choices:[],expandedDiscovery:true,outcomeQuestion:`What collaboration would you like to build with ${title.toLowerCase()}?`});
  // Preserve saved IDs while organizing care activities beneath health needs.
  const health=appointments.area;
  const update=(id,changes)=>Object.assign(topics.find(topic=>topic.id===id),changes);
@@ -183,10 +186,10 @@ export function expandDiscovery(items) {
 export function assembleTopics(base, templates, data) {
  const replaced=new Map(templates.filter(t=>t.expandedDiscovery&&data.answers?.[t.id]?.status!=='uninterested'&&(data.answers?.[t.id]?.status||(data.links?.[t.id]||[]).length)).map(t=>[t.id,'discover:'+t.id]));
  const menus=templates.map(t=>({...t,id:replaced.get(t.id)||t.id,parent:replaced.get(t.parent)||t.parent}));
- const saved=templates.filter(t=>replaced.has(t.id)).map(t=>({...t,kind:null,group:null,expandedDiscovery:false,choices:null,suggested:false,parent:replaced.get(t.id),question:`Where are you with “${t.title}”?`}));
+ const saved=templates.filter(t=>replaced.has(t.id)).map(t=>({...t,kind:null,group:null,expandedDiscovery:false,choices:null,suggested:false,isOutcome:true,parent:replaced.get(t.id),question:`Where are you with “${t.title}”?`}));
  const concerns=(data.concerns||[]).map(topic=>{
   const original=topic.parent?.startsWith('discover:')?topic.parent.slice(9):null;
-  return original&&templates.some(item=>item.id===original)&&!replaced.has(original)?{...topic,parent:original}:topic;
+  return {...topic,isOutcome:true,...(original&&templates.some(item=>item.id===original)&&!replaced.has(original)?{parent:original}:{})};
  });
  return [...base,...menus,...saved,...concerns];
 }

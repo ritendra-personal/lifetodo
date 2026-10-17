@@ -41,7 +41,7 @@ test('sibling-next skips an excluded branch even when its direct status is empty
  const topics=[{id:'care'},{id:'first',parent:'care'},{id:'childcare',parent:'care'},{id:'later',parent:'care'}];
  const answers={'discover:childcare':{status:'uninterested'}};
  assert.equal(nextGuidedTopic('first',topics,answers).id,'later');
- assert.equal(nextReviewTopic('care',topics,{...answers,first:{reviewedAt:'2026-10-16'}}).id,'later');
+ assert.equal(nextReviewTopic('care',topics,{...answers,first:{status:'progress'}}).id,'later');
 });
 
 test('explicit reactivation handles both IDs and does not reopen independently excluded children',()=>{
