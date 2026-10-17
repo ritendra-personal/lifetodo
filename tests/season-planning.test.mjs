@@ -6,7 +6,7 @@ test('season plan includes the full final calendar year without missing or dupli
  for(const mode of ['week','fortnight','month']){
   const start=new Date(2026,9,16),end=new Date(2029,0,1);
   const rows=seasonPeriods(start,2,mode),days=rows.flatMap(row=>row.days);
-  assert.ok(days[0]<=start);
+  assert.equal(days[0].toDateString(),new Date(2026,0,1).toDateString());
   assert.equal(new Set(days.map(day=>day.toDateString())).size,days.length);
   assert.equal(days.at(-1).toDateString(),new Date(2028,11,31).toDateString());
   assert.ok(days.some(day=>day.getFullYear()===2028&&day.getMonth()===1&&day.getDate()===29));

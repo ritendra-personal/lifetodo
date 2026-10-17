@@ -4,13 +4,13 @@ const addDays=(date,count)=>new Date(date.getFullYear(),date.getMonth(),date.get
 let years=1,scale='week',weekends=false;
 
 export function seasonPeriods(today=new Date(),horizon=1,mode='week'){
- const start=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+ const start=new Date(today.getFullYear(),0,1);
  const end=new Date(start.getFullYear()+horizon+1,0,1);
  let cursor=mode==='month'?new Date(start.getFullYear(),start.getMonth(),1):addDays(start,-((start.getDay()+6)%7));
  const rows=[];
  while(cursor<end){
   const next=mode==='month'?new Date(cursor.getFullYear(),cursor.getMonth()+1,1):addDays(cursor,mode==='fortnight'?14:7);
-  const days=[];for(let date=cursor;date<next&&date<end;date=addDays(date,1))days.push(date);
+  const days=[];for(let date=cursor;date<next&&date<end;date=addDays(date,1))if(date>=start)days.push(date);
   rows.push({start:cursor,days});cursor=next;
  }
  return rows;
@@ -21,6 +21,7 @@ export function conflictingEvents(events,overlap){
 }
 
 export function renderSeasonPlanning(root,api){
+ const opening=!root.querySelector('.season-planning');
  const today=key(new Date()),rows=seasonPeriods(new Date(),years,scale);
  const label=date=>date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
  root.innerHTML=`<section class="season-planning"><div class="season-toolbar"><div class="view-mode-toggle" aria-label="Time scale">${[['week','Week'],['fortnight','Fortnight'],['month','Month']].map(([value,text])=>`<button type="button" data-season-scale="${value}" class="${scale===value?'active':''}">${text}</button>`).join('')}</div><label>Horizon<select data-season-years><option value="1"${years===1?' selected':''}>Next year</option><option value="2"${years===2?' selected':''}>Next two years</option></select></label><label class="season-weekends"><input type="checkbox" data-season-weekends${weekends?' checked':''}>Weekends only</label><span class="season-legend"><i></i>Overlapping events</span></div><div class="season-rows">${rows.map(row=>{
@@ -36,6 +37,11 @@ export function renderSeasonPlanning(root,api){
  root.querySelector('[data-season-weekends]').onchange=event=>{weekends=event.target.checked;renderSeasonPlanning(root,api);};
  root.querySelectorAll('[data-season-event]').forEach(button=>button.onclick=()=>api.open(button.dataset.seasonEvent));
  root.querySelectorAll('[data-season-add]').forEach(button=>button.onclick=()=>openDay(button.dataset.seasonAdd));
+ if(opening&&typeof requestAnimationFrame==='function')requestAnimationFrame(()=>{
+  if(!root.isConnected)return;
+  const target=[...root.querySelectorAll('[data-season-add]')].find(button=>button.dataset.seasonAdd>=today);
+  target?.closest('.season-row')?.scrollIntoView({block:'center'});
+ });
 
  function openDay(date){
   const day=new Date(date+'T00:00:00'),existing=api.events.filter(event=>api.occurs(event,day)&&event.status!=='cancelled');
