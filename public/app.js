@@ -1,9 +1,9 @@
-import {renderLifeMap} from './life-map.js?v=1.14.53';
+import {renderLifeMap} from './life-map.js?v=1.14.60';
 import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
 import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.59";
+const APP_VERSION = "1.14.60";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -247,7 +247,6 @@ const counts = {
   tasksByTaxonomy: document.querySelector("#count-tasks-by-taxonomy"),
   events: document.querySelector("#count-events"),
   calendar: document.querySelector("#count-calendar"),
-  projectTasks: document.querySelector("#count-project-tasks"),
   people: document.querySelector("#count-people"),
   peopleFilter: document.querySelector("#count-people-filter"),
   peopleCharts: document.querySelector("#count-people-charts"),
@@ -519,7 +518,6 @@ function validView(view) {
     "graph",
     "timeline",
     "tasks-by-taxonomy",
-    "project-tasks",
     "project-matrix",
     "events",
     "calendar",
@@ -545,7 +543,7 @@ function validView(view) {
     "focus-event",
     "search"
   ]);
-  if (["today", "upcoming", "backlog", "done"].includes(view)) return "tasks";
+  if (["today", "upcoming", "backlog", "done", "project-tasks"].includes(view)) return "tasks";
   return views.has(view) ? view : "home";
 }
 
@@ -3821,7 +3819,6 @@ function renderCounts() {
   counts.tasksByTaxonomy.textContent = state.tasks.filter((task) => parseIds(task.taxonomy_node_ids).length).length;
   counts.events.textContent = state.events.length;
   counts.calendar.textContent = state.events.length;
-  counts.projectTasks.textContent = state.tasks.filter((task) => task.project_id).length;
   counts.projectMatrix.textContent = state.projects.length;
   counts.people.textContent = state.people.length;
   counts.peopleFilter.textContent = state.people.length;
@@ -4745,10 +4742,6 @@ function renderTasks() {
   }
   if(state.view==='conflicts'){
     renderPlanningConflicts(els.taskList,{conflicts:state.conflicts,save:savePlanningConflict,remove:deletePlanningConflict,import:importPlanningConflicts,confirm:confirmAction,refresh:render});
-    return;
-  }
-  if (state.view === "project-tasks") {
-    renderProjectTasksView();
     return;
   }
   if (state.view === "project-matrix") {
@@ -8659,7 +8652,6 @@ function render() {
     graph: "Outcome to Task",
     timeline: "Timeline",
     "tasks-by-taxonomy": "Tasks by Taxonomy",
-    "project-tasks": "Project Tasks",
     "project-matrix": "Project Phases",
     events: "Events",
     calendar: "Calendar + Timeline",

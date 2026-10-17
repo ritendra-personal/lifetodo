@@ -1,4 +1,5 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.49';
+import {priorityItems,renderPriorityView,setOutcomeStatus} from './life-map-priorities.js?v=1.14.60';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.44';
 export function linkCandidates(records,type,linked=[],query='') {
@@ -254,7 +255,7 @@ export function placeQuestionSkip(section,step='question'){
 }
 let interviewSkipped=[];
 export function lifeMapPanelFromHash(hash){
- return ({'#ask-me':'interview','#guided-review':'explore','#my-map':'map'})[hash]||'map';
+ return ({'#ask-me':'interview','#guided-review':'explore','#my-map':'map','#priorities':'priorities'})[hash]||'map';
 }
 let lastPanelHash=null;
 let renderForHash;
@@ -299,6 +300,14 @@ export function renderLifeMap(root,api){
  const branch=branchStats(area.id,topics,data.answers,data.links,api.tasks);
  const coverage=coverageStats(area.id,topics,data.answers);
  const records=[...api.tasks.map(x=>['task',x]),...api.projects.map(x=>['project',x]),...(api.people||[]).map(x=>['person',x])];
+ if(panel==='priorities'){
+  const model=priorityItems(topics,data),changed=JSON.stringify(model.order)!==JSON.stringify(data.priorityOrder||[]);
+  if(!loading)data.priorityOrder=model.order;
+  renderPriorityView(root,{topics,data,tasks:api.tasks,notice:loading?'Loading…':notice,save:()=>save(false),openOutcome:go,openTask:api.openTask,changePanel});
+  if(loading)root.querySelectorAll('[data-priority-status],[data-priority-move],[data-priority-drag]').forEach(button=>{button.disabled=true;button.draggable=false;});
+  if(changed&&!loading)void save(false);
+  return;
+ }
  function suggestion(topic){
   if(topicReviewState(topic.id,topics,data.answers).key==='uninterested')return null;
   const a=data.answers[topic.id]||{};const r=recommendation(topic,a);if(!r)return null;
@@ -399,6 +408,7 @@ export function renderLifeMap(root,api){
  }
  if(panel!=='map'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
+ root.querySelector('[role="tablist"]').insertAdjacentHTML('beforeend','<button type="button" role="tab" aria-selected="false" data-panel="priorities">Priorities</button>');
  const breadcrumb=root.querySelector('.lm-breadcrumb');
  if(panel==='interview'&&selected!=='interview-empty')placeQuestionSkip(root.querySelector('.lm-interview'),step);
  breadcrumb.innerHTML=topicPath(current.id,topics).map((topic,index,path)=>
@@ -426,7 +436,7 @@ export function renderLifeMap(root,api){
   const write=async()=>{try{localStorage.setItem(key,JSON.stringify(snapshot));notice='Saved in this browser.';if(client&&owner){const {error}=await client.from('planner_life_map').upsert({user_id:owner,data:snapshot,updated_at:new Date().toISOString()});notice=error?'Saved here; account sync failed.':'Saved.';}if(loadedKey===key)api.render();}catch{notice='Save failed. Please retry.';api.render();}};
   saveQueue=saveQueue.then(write,write);return saveQueue;
  }
- function go(id){selected=id;if(panel!=='interview')panel='explore';step='question';api.render();}
+ function go(id){selected=id;step='question';if(panel==='priorities'){changePanel('explore');return;}if(panel!=='interview')panel='explore';api.render();}
  function next(){
   if(panel==='interview'){interviewSkipped.push(current.id);const candidate=pickInterviewQuestion(topics,data.answers,interviewSkipped);selected=candidate?.id||'interview-empty';interviewSkipped.push(selected);step='question';api.render();return;}
   const candidate=nextGuidedTopic(current.id,topics,data.answers);
@@ -436,11 +446,13 @@ export function renderLifeMap(root,api){
 
  root.querySelectorAll('[data-open-task]').forEach(link=>link.onclick=e=>{e.preventDefault();api.openTask(link.dataset.openTask);});
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
- root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{
-  const hash=({map:'#my-map',explore:'#guided-review',interview:'#ask-me'})[b.dataset.panel];
-  if(window.location.hash!==hash){window.history.pushState(null,'',hash);lastPanelHash=null;}
+ function changePanel(value){
+  const hash=({map:'#my-map',explore:'#guided-review',interview:'#ask-me',priorities:'#priorities'})[value];
+  if(window.location.hash!==hash)window.history.pushState(null,'',hash);
+  lastPanelHash=null;
   api.render();
- });
+ }
+ root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>changePanel(b.dataset.panel));
  root.querySelector('#lm-interview-restart')?.addEventListener('click',()=>{interviewSkipped=[];selected=pickInterviewQuestion(topics,data.answers)?.id||'interview-empty';interviewSkipped.push(selected);step='question';api.render();});
  root.querySelector('#lm-interest-filter')?.addEventListener('change',e=>{mapInterestFilter=e.target.value;api.render();});
  root.querySelector('#lm-hide-completed')?.addEventListener('change',e=>{mapHideCompleted=e.target.checked;api.render();});
@@ -484,7 +496,9 @@ export function renderLifeMap(root,api){
  root.querySelectorAll('[data-answer]').forEach(b=>b.onclick=async()=>{
   if(excludedTopic(current.id)){api.render();return;}
  root.querySelectorAll('[data-answer]').forEach(x=>x.disabled=true);
-  const status=b.dataset.answer;data.answers[current.id]={...answer,status,updatedAt:new Date().toISOString(),completedAt:status==='done'?(answer.completedAt||new Date().toISOString()):null};
+  const status=b.dataset.answer;
+  if(['done','unstarted','progress','unsure'].includes(status))setOutcomeStatus(data,current.id,status);
+  else data.answers[current.id]={...answer,status,updatedAt:new Date().toISOString(),completedAt:null};
   if(['unstarted','progress','unsure'].includes(status))step='timing';
   await save();
   if(['done','irrelevant','defer'].includes(status)){notice=status==='done'?`${current.title} recorded as taken care of.`:'Answer saved.';next();}

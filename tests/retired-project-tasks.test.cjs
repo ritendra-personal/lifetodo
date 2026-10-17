@@ -1,0 +1,10 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('public/app.js','utf8');
+const start=source.indexOf('function validView('),end=source.indexOf('\nfunction routeFromState()',start);
+const context=vm.createContext({});vm.runInContext(source.slice(start,end),context);
+assert.equal(context.validView('project-tasks'),'tasks');
+for(const view of ['tasks','projects','focus-project','focus-task','project-matrix'])assert.equal(context.validView(view),view);
+assert.ok(!fs.readFileSync('public/index.html','utf8').includes('data-view="project-tasks"'));
+assert.ok(!source.includes('counts.projectTasks.textContent'));
+assert.ok(!source.includes('renderProjectTasksView();'));
+console.log('Project Tasks navigation and route retired; existing task/project editors remain valid.');
