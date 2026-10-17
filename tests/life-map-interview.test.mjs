@@ -38,6 +38,8 @@ test('Ask me has one skip immediately after the question, without competing revi
   assert.equal(placed.id,'lm-next');
   assert.equal(placed.type,'button');
   if(hasSkip)assert.equal(placed,existing);
+  placeQuestionSkip(section,'action');
+  assert.equal(placed.textContent,'Next question');
  }
 });
 test('outcome deletion removes its branch and links, not linked task records',()=>{
