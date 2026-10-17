@@ -170,6 +170,11 @@ export function topicSecondaryStatus(id,topics,answers={}){
  if(createTopicExclusionResolver(topics,answers)(id))return '';
  return statuses[answers[id]?.status]||'';
 }
+export function orderTopicsByReview(items,topics,answers={}){
+ const rank={unreviewed:0,partial:0,reviewed:1,uninterested:2};
+ return items.map((topic,index)=>({topic,index,rank:rank[topicReviewState(topic.id,topics,answers).key]??0}))
+  .sort((a,b)=>a.rank-b.rank||a.index-b.index).map(item=>item.topic);
+}
 export function topicPath(id,topics){
  const byId=new Map(topics.map(topic=>[topic.id,topic])),path=[],seen=new Set();let current=byId.get(id);
  while(current&&!seen.has(current.id)){seen.add(current.id);path.unshift(current);current=byId.get(current.parent);}
@@ -292,7 +297,7 @@ export function renderLifeMap(root,api){
  const answer=data.answers[current.id]||{};
  const exclusion=excludedTopic(current.id);
  const isArea=baseTopics.some(t=>t.id===current.id);
- const children=topics.filter(t=>t.parent===current.id);
+ const children=orderTopicsByReview(topics.filter(t=>t.parent===current.id),topics,data.answers);
  const branch=branchStats(area.id,topics,data.answers,data.links,api.tasks);
  const coverage=coverageStats(area.id,topics,data.answers);
  const records=[...api.tasks.map(x=>['task',x]),...api.projects.map(x=>['project',x]),...(api.people||[]).map(x=>['person',x])];

@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {baseTopics, recommendation, branchStats} from '../public/life-map.js';
+import {baseTopics, recommendation, branchStats,orderTopicsByReview} from '../public/life-map.js';
+test('sibling lists keep unreviewed and partially reviewed topics ahead of reviewed and excluded ones',()=>{
+ const items=[{id:'course'},{id:'certification'},{id:'degree'},{id:'partial'},{id:'exam'},{id:'reviewed'}];
+ const topics=[...items,{id:'child1',parent:'partial'},{id:'child2',parent:'partial'}];
+ const answers={certification:{status:'uninterested'},child1:{reviewedAt:'2026-10-17'},reviewed:{status:'done'}};
+ const result=orderTopicsByReview(items,topics,answers);
+ assert.deepEqual(result.map(t=>t.id),['course','degree','partial','exam','reviewed','certification']);
+ assert.deepEqual(items.map(t=>t.id),['course','certification','degree','partial','exam','reviewed']);
+ assert.equal(result.at(-1).parent,undefined);
+});
 test('Health groups needs rather than mixing them with care activities',async()=>{
  const {discoveryTopics}=await import('../public/life-map.js');
  const topics=discoveryTopics();
