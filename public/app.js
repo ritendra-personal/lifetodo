@@ -1,8 +1,8 @@
 import {renderLifeMap} from './life-map.js?v=1.14.53';
-import {renderSeasonPlanning} from './season-planning.js?v=1.14.55';
+import {renderSeasonPlanning} from './season-planning.js?v=1.14.56';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.55";
+const APP_VERSION = "1.14.56";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];

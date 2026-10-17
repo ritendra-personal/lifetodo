@@ -5,7 +5,7 @@ let years=1,scale='week',weekends=false;
 
 export function seasonPeriods(today=new Date(),horizon=1,mode='week'){
  const start=new Date(today.getFullYear(),today.getMonth(),today.getDate());
- const end=new Date(start.getFullYear()+horizon,start.getMonth(),start.getDate());
+ const end=new Date(start.getFullYear()+horizon+1,0,1);
  let cursor=mode==='month'?new Date(start.getFullYear(),start.getMonth(),1):addDays(start,-((start.getDay()+6)%7));
  const rows=[];
  while(cursor<end){
