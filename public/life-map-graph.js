@@ -11,7 +11,7 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
   while(changed){changed=false;for(const topic of topics)if(visible.has(topic.id)&&topic.parent&&!visible.has(topic.parent)){visible.add(topic.parent);changed=true;}}
   topics=topics.filter(topic=>visible.has(topic.id));
  }
- const root={id:'life-root',label:'My life outside work',kind:'root',status:'',children:[]};
+ const root={id:'life-root',label:'My life',kind:'root',status:'',children:[]};
  const nodes=new Map();
  const included=new Set(topics.filter(t=>answers[t.id]?.reviewedAt || (answers[t.id]?.status && answers[t.id].status!=='irrelevant') || (links[t.id]||[]).length || (t.parent && !t.suggested && !t.id.startsWith('check:') && !t.id.startsWith('learn:'))).map(t=>t.id));
  for(const id of [...included]){let t=topics.find(t=>t.id===id);const seen=new Set();while(t?.parent&&!seen.has(t.id)){seen.add(t.id);included.add(t.parent);t=topics.find(x=>x.id===t.parent);}}

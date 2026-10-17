@@ -1,5 +1,5 @@
-import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.37';
-import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.42';
+import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.43';
+import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.43';
 export function linkCandidates(records,type,linked=[],query='') {
  const needle=query.trim().toLocaleLowerCase();
  return records.filter(([kind,item])=>kind===type && !(type==='task'&&item.parent_id) && !linked.includes(`${type}:${item.id}`) && labelFor(item).toLocaleLowerCase().includes(needle)).sort((a,b)=>labelFor(a[1]).localeCompare(labelFor(b[1])));
@@ -16,7 +16,8 @@ export const baseTopics = [
  ['future','Long-term security','Future planning','Are there future risks or major life decisions you want to prepare for?','Identify one unresolved future decision and the information you need.'],
  ['rest','Rest and enjoyment','Rest and enjoyment','Do you have enough space for rest and things you enjoy?','Identify one commitment to reduce or one enjoyable activity to make room for.'],
  ['community','Community and contribution','Community','Does your involvement in community or causes feel right for you?','Identify whether you want to contribute more, less, or differently.'],
- ['experiences','Experiences and possibilities','Experiences','Are there experiences or changes you keep hoping to make time for?','Choose one possibility worth exploring without committing to it yet.']
+ ['experiences','Experiences and possibilities','Experiences','Are there experiences or changes you keep hoping to make time for?','Choose one possibility worth exploring without committing to it yet.'],
+ ['career','Work and career','Work and career','If work is part of your life, does your current direction and working life fit what you want?','Identify one work-related responsibility, change, or possibility you want to review.']
 ].map(([id,area,title,question,action])=>({id,area,title,question,action}));
 export const probes={
  home:['Repairs, maintenance, or safety','Clutter, cleaning, or possessions','Meals, groceries, and household routines','Housing, rent, or an upcoming move','Transport, vehicle upkeep, and getting around','Pets and animal care'],
@@ -30,7 +31,8 @@ export const probes={
  future:['Long-term personal and family arrangements','Preparing for dependents or changing care needs','A move, family change, or major transition','Emergency readiness and important instructions','A major decision I have been avoiding','What I want the next chapter of life to look like'],
  rest:['Too many commitments or not enough downtime','Time to recharge without feeling guilty','Play, hobbies, and enjoyable activities','Boundaries around screens and availability','A break or holiday I want to plan','Something to simplify, delegate, or stop'],
  community:['Friends, groups, and local belonging','Volunteering, causes, or civic commitments','Faith, cultural life, or spiritual practices','Promises I have made to a group','Contributing in a sustainable way','Reducing involvement that no longer fits'],
- experiences:['Places I would like to visit','An experience or adventure to make possible','A lifestyle change I want to explore','A celebration or meaningful occasion','An idea for someday','Making time with people part of the experience']
+ experiences:['Places I would like to visit','An experience or adventure to make possible','A lifestyle change I want to explore','A celebration or meaningful occasion','An idea for someday','Making time with people part of the experience'],
+ career:['Direction and satisfaction','Responsibilities and working boundaries','Opportunities and work transitions','Pay, benefits, and work arrangements']
 };
 export function suggestedAction(topic, answer={}) {
  if(answer.next?.trim())return answer.next.trim();
@@ -77,7 +79,9 @@ const reminders = {
   ['Debt and commitments','Is there a debt, payment plan, or ongoing commitment you want to review?','Gather the details of one financial commitment to review.'],
   ['Insurance','Are there changes in your life that make your existing insurance worth reviewing?','List recent changes to discuss with your insurance provider.'],
   ['Longer-term plans','Do you have a financial goal or retirement question you have been putting off?','Write down the question you want to resolve about your longer-term finances.'],
-  ['Subscriptions','Are you paying for subscriptions or services you no longer want?','Review recurring charges and identify one you no longer need.']
+  ['Subscriptions','Are you paying for subscriptions or services you no longer want?','Review recurring charges and identify one you no longer need.'],
+  ['Everyday money management','Is there anything about cash flow, banking, or managing money that you want to review?','Choose one money-management question and gather the information you need.'],
+  ['Investments and financial choices','If investing is relevant to you, is there a decision or arrangement you want to review?','Write down the investment question and decide whether you want qualified advice.']
  ],
  health: [
   ['Appointments','Is there a medical, dental, vision, or other appointment you have been meaning to arrange?','Find the contact information and arrange the outstanding appointment.'],
@@ -101,7 +105,8 @@ const reminders = {
   ['Digital security','Are account recovery, important passwords, and device access arranged the way you want?','Review recovery access for one important account.'],
   ['Records and backups','Can you find important documents and recover important files if a device is lost?','Choose one set of important records to organize or back up.'],
   ['Bookings and follow-ups','Is there an appointment, booking, refund, or response you are waiting on?','Check the status of one outstanding request.'],
-  ['Recurring renewals','Are there recurring renewals you tend to remember at the last minute?','Record the next known renewal date.']
+  ['Recurring renewals','Are there recurring renewals you tend to remember at the last minute?','Record the next known renewal date.'],
+  ['Legal matters and agreements','Is there an agreement, legal matter, or rights-related question you want to clarify?','Gather the relevant documents and identify whether qualified legal help would be useful.']
  ]
 };
 export const supportKinds={
@@ -117,8 +122,8 @@ export function supportOutcome({id,parent,area,personId,personName,kind,title}){
 }
 const documentReminders = [
  ['passport','Passport','If you use a passport, is it current and suitable for your planned travel?','Check the passport details and any trip-specific requirements.'],
- ['real-id','REAL ID','Do you already have a REAL ID, or is it something you want to arrange?','Check the official issuing agency’s REAL ID application guidance.'],
- ['oci','OCI card','If overseas ties to India are relevant to you, is an OCI card something you want to arrange or update?','Check official OCI guidance to establish which application, if any, fits your circumstances.'],
+ ['real-id','REAL ID (United States, if applicable)','If a United States REAL ID is relevant to your circumstances, do you want to arrange or review it?','Check the official issuing agency’s REAL ID application guidance.'],
+ ['oci','OCI card (India, if applicable)','If overseas ties to India are relevant to you, is an OCI card something you want to arrange or update?','Check official OCI guidance to establish which application, if any, fits your circumstances.'],
  ['residency','Other residency or travel documents','Is there another citizenship, residency, visa, or travel document you need to arrange?','Identify the document and check the relevant official guidance.'],
  ['family-documents','Family documents','Are identity or travel documents for anyone you help care for taken care of?','Check whether someone you support needs help with an upcoming document.']
 ];
@@ -176,6 +181,9 @@ export function topicPath(id,topics){
  const byId=new Map(topics.map(topic=>[topic.id,topic])),path=[],seen=new Set();let current=byId.get(id);
  while(current&&!seen.has(current.id)){seen.add(current.id);path.unshift(current);current=byId.get(current.parent);}
  return path;
+}
+export function nextReviewTopic(id,topics,answers={}){
+ return topics.find(topic=>topic.parent===id&&['unreviewed','partial'].includes(topicReviewState(topic.id,topics,answers).key))||null;
 }
 export function removeCustomOutcome(map,id){
  if(!map.concerns.some(topic=>topic.id===id))return false;
@@ -390,7 +398,11 @@ export function renderLifeMap(root,api){
  root.querySelector('#lm-interview-restart')?.addEventListener('click',()=>{interviewSkipped=[];selected=pickInterviewQuestion(topics,data.answers)?.id||'interview-empty';interviewSkipped.push(selected);step='question';api.render();});
  root.querySelector('#lm-interest-filter')?.addEventListener('change',e=>{mapInterestFilter=e.target.value;api.render();});
  root.querySelector('#lm-hide-completed')?.addEventListener('change',e=>{mapHideCompleted=e.target.checked;api.render();});
- root.querySelector('#lm-guide')?.addEventListener('click',()=>{const pending=children.find(t=>t.group?topics.some(child=>child.parent===t.id&&!data.answers[child.id]?.status):!data.answers[t.id]?.status);go(pending?.id||children[0]?.id||current.id);});
+ root.querySelector('#lm-guide')?.addEventListener('click',()=>{
+  const pending=nextReviewTopic(current.id,topics,data.answers);
+  if(pending)go(pending.id);
+  else{notice='All topics here have been reviewed or excluded.';api.render();}
+ });
  root.querySelector('#lm-specific-outcome')?.addEventListener('submit',async e=>{
   e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;
   const existing=children.find(t=>t.title.toLowerCase()===title.toLowerCase());if(existing){go(existing.id);return;}

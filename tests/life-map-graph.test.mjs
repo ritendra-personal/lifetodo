@@ -73,5 +73,5 @@ test('suggested learning branches appear only for a selected outcome',()=>{
  assert.equal(buildLifeGraph({topics}).children.length,0);
  const graph=buildLifeGraph({topics:[...topics,{id:'my-dance',parent:'learn:dance',title:'Learn dance'}]});
  const labels=layoutLifeGraph(graph).nodes.map(n=>n.label);
- assert.deepEqual(labels,['My life outside work','Learning','Arts','Dance','Learn dance']);
+ assert.deepEqual(labels,['My life','Learning','Arts','Dance','Learn dance']);
 });

@@ -14,7 +14,9 @@ export const discoveryChoices = {
   ['Credit cards','A loan','Mortgage payments','Repayment planning','A recurring financial commitment'],
   ['Health insurance','Home or renters insurance','Vehicle insurance','Life insurance','Disability coverage','Beneficiary details'],
   ['Retirement planning','Long-term savings','Education costs','A financial decision','Finding professional advice'],
-  ['Streaming or media','Apps and software','Memberships','Utilities or phone plans','A service I no longer use']
+  ['Streaming or media','Apps and software','Memberships','Utilities or phone plans','A service I no longer use'],
+  ['Budget and cash flow','Bank accounts and access','Credit records or a financial dispute','Financial scams or identity theft'],
+  ['Investment goals and time horizon','Risk and diversification','Fees and account arrangements','A decision to discuss with an adviser']
  ],
  health: [
   ['Primary care','Dental care','Eye care','Mental health support','A specialist','Screening or preventive care'],
@@ -40,7 +42,8 @@ export const discoveryChoices = {
   ['Password management','Account recovery','Two-factor authentication','Device security','Access for a trusted person'],
   ['Important documents','Photos','Computer or phone backups','Finding records','Organizing shared information'],
   ['A booking','A refund','A delivery','A response I am waiting for','An application status'],
-  ['Identity documents','Insurance renewal','Memberships','Licenses or registrations','Household service renewals']
+  ['Identity documents','Insurance renewal','Memberships','Licenses or registrations','Household service renewals'],
+  ['An agreement or contract','A legal deadline or dispute','Understanding my rights','Finding qualified legal help']
  ],
  creative: [
   ['A story or script','Music','Film or video','Visual art','A performance','A creative concept'],
@@ -81,6 +84,12 @@ export const discoveryChoices = {
   ['A sustainable schedule','A smaller contribution','Sharing responsibility','Choosing where I can help'],
   ['Step back from a role','Reduce time commitments','Leave a group','Hand over a responsibility']
  ],
+ career: [
+  ['Direction and job satisfaction','A skill or qualification for work','Feedback or mentoring','Deciding what to continue or change'],
+  ['Current commitments and deadlines','Workload and boundaries','Working relationships','Workplace safety or accessibility'],
+  ['Job search or applications','Professional connections and portfolio','Self-employment or a business','A break, return to work, or retirement'],
+  ['Pay or compensation','Benefits or leave','Contracts and work permissions','Income continuity during a transition']
+ ],
  experiences: [
   ['A destination','Visiting family or friends','A local trip','A longer journey'],
   ['An outdoor adventure','A cultural experience','A performance or event','Trying something new'],
@@ -96,6 +105,21 @@ export const dentalChoices = [
  ['Gum treatment or follow-up','Complete my agreed gum-care treatment or follow-up','Check my dental care instructions and arrange the next follow-up'],
  ['Check-up or cleaning','Keep my dental check-up or cleaning up to date','Contact my dental practice to arrange my check-up or cleaning'],
  ['Tooth pain or another concern','Have my dental concern assessed','Contact my dental practice about the concern and ask for an assessment']
+];
+// Stable slugs keep these additions from changing existing choice-index IDs,
+// including previously answered "Something else" nodes.
+export const supplementalChoices = [
+ ['appointment:preventive','vaccines','Vaccinations or immunization records'],
+ ['appointment:preventive','checkups','Screenings or check-ups to discuss with my clinician'],
+ ['check:health:3','habits-support','Support with alcohol, substance use, or a compulsive habit'],
+ ['check:health:5','sexual-health','Sexual or reproductive health questions'],
+ ['check:health:5','changing-needs','Health changes at different life stages'],
+ ['check:admin:2','privacy','Privacy settings and sharing personal information'],
+ ['check:admin:2','old-accounts','Unused accounts and digital footprint'],
+ ['check:admin:3','digital-legacy','Digital accounts and instructions for someone I trust'],
+ ['check:future:0','decision-support','Who could make health or financial decisions if I could not'],
+ ['check:relationships:1','relationship-plans','Shared expectations, intimacy, or family plans'],
+ ['check:community:2','meaning','Purpose, values, or a personal reflective practice']
 ];
 export function expandDiscovery(items) {
  for (const topic of items) {
@@ -121,7 +145,11 @@ export function expandDiscovery(items) {
    choiceNodes.push({id:topic.id+':choice:'+index,parent:topic.id,area:topic.area,title,preset,action:action||topic.action,kind:'outcome-discovery',choices:[],expandedDiscovery:true});
   });
  }
- return [...items,...choiceNodes];
+ const supplemental=supplementalChoices.filter(([parent])=>items.some(topic=>topic.id===parent)).map(([parent,slug,title])=>{
+  const topic=items.find(item=>item.id===parent);
+  return {id:parent+':extra:'+slug,parent,area:topic.area,title,kind:'outcome-discovery',choices:[],expandedDiscovery:true,action:topic.action};
+ });
+ return [...items,...choiceNodes,...supplemental];
 }
 
 // Preserve old reviewed topics and links at their original IDs as explicit outcomes.

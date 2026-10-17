@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {baseTopics, recommendation, branchStats} from '../public/life-map.js';
 test('broad discovery starts without assumed personal obligations',()=>{
- assert.equal(baseTopics.length,12);
+ assert.equal(baseTopics.length,13);
  assert(!baseTopics.some(t=>/estate|oci|play story/i.test(t.title)));
  for(const status of [undefined,'well','irrelevant','defer','done'])assert.equal(recommendation(baseTopics[0],{status}),null);
 });
