@@ -594,6 +594,10 @@ textarea:focus {
   font-weight: 900;
 }
 
+.season-overlays{display:flex;flex-wrap:wrap;gap:10px;border:1px solid var(--line);padding:6px 10px;margin:0}.season-overlays legend{font-size:11px}.season-overlays input{width:16px;height:16px}
+.season-conflict-reference{display:block;background:#fef0c7;border-left:3px solid #b58105;padding:4px;margin:4px 0;font-size:11px;overflow-wrap:anywhere}
+.season-external-conflict{border-top:3px solid #b58105}.season-reference-warning{background:#fffaeb;border:1px solid #fedf89;padding:10px;margin:12px 0;font-size:12px}
+.conflict-row{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:10px 0}.conflict-row>[data-conflict-edit]{flex:1;min-width:0;background:transparent;border:0;text-align:left;overflow-wrap:anywhere}.conflict-row small{display:block;margin-top:6px;color:var(--muted)}.season-reference-note{font-size:12px;color:var(--muted)}
 .season-toolbar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:16px}
 .season-toolbar label{display:flex;align-items:center;gap:8px;font-size:13px}
 .season-toolbar select{width:auto}.season-weekends input{width:16px;height:16px}

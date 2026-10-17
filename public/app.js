@@ -1,8 +1,9 @@
 import {renderLifeMap} from './life-map.js?v=1.14.53';
-import {renderSeasonPlanning} from './season-planning.js?v=1.14.58';
+import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
+import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.58";
+const APP_VERSION = "1.14.59";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -86,6 +87,7 @@ function loadTaxonomies() {
 const state = {
   tasks: [],
   events: [],
+  conflicts: [],
   goals: [],
   ideas: [],
   projects: [],
@@ -522,6 +524,7 @@ function validView(view) {
     "events",
     "calendar",
     "season-planning",
+    "conflicts",
     "areas",
     "skills",
     "age-categories",
@@ -1517,6 +1520,7 @@ async function signOut() {
   state.privatePassphrase = "";
   state.tasks = [];
   state.events = [];
+  state.conflicts = [];
   state.eventsCloudReady = false;
   state.selectedId = null;
   loadLocal();
@@ -1550,6 +1554,7 @@ function loadLocal() {
   const rawProjectPhaseLinks = localStorage.getItem("planner-project-phase-links");
   state.tasks = ensureSortOrders(raw ? JSON.parse(raw).map(normalizeTask) : seedTasks());
   state.events = rawEvents ? JSON.parse(rawEvents).map(normalizeEvent) : [];
+  state.conflicts = JSON.parse(localStorage.getItem('planner-conflicts')||'[]');
   state.goals = rawGoals ? JSON.parse(rawGoals).map(normalizeGoal) : [];
   state.ideas = rawIdeas ? JSON.parse(rawIdeas).map(normalizeIdea) : [];
   state.projects = rawProjects ? JSON.parse(rawProjects).map(normalizeProject) : [];
@@ -1567,6 +1572,7 @@ function loadLocal() {
 function saveLocal(options = {}) {
   localStorage.setItem("planner-tasks", JSON.stringify(state.tasks));
   localStorage.setItem("planner-events", JSON.stringify(state.events));
+  localStorage.setItem('planner-conflicts',JSON.stringify(state.conflicts));
   localStorage.setItem("planner-goals", JSON.stringify(state.goals));
   localStorage.setItem("planner-ideas", JSON.stringify(state.ideas));
   localStorage.setItem("planner-projects", JSON.stringify(state.projects));
@@ -1589,6 +1595,7 @@ function backupData() {
     data: {
       tasks: state.tasks,
       events: state.events,
+      conflicts: state.conflicts,
       goals: state.goals,
       ideas: state.ideas,
       projects: state.projects,
@@ -1639,6 +1646,7 @@ function normalizeBackupData(fileData) {
   return {
     tasks: ensureSortOrders((data.tasks || []).map(normalizeTask)),
     events: (data.events || []).map(normalizeEvent),
+    conflicts: data.conflicts || [],
     goals: (data.goals || []).map(normalizeGoal),
     ideas: (data.ideas || []).map(normalizeIdea),
     projects: (data.projects || []).map(normalizeProject),
@@ -1670,6 +1678,7 @@ function normalizeBackupData(fileData) {
 function applyBackupData(data) {
   state.tasks = data.tasks;
   state.events = data.events;
+  state.conflicts = data.conflicts || [];
   state.goals = data.goals;
   state.ideas = data.ideas;
   state.projects = data.projects;
@@ -2003,6 +2012,7 @@ async function replaceCloudWithBackup(data) {
   data = { ...data, projectPhaseEntries: data.projectPhaseEntries.map((entry) => ({ ...entry, status_id: statusIdMap.get(entry.status_id) || null })) };
   const userFilter = `user_id=eq.${encodeURIComponent(state.user.id)}`;
   const deleteOrder = [
+    "planner_conflicts",
     "planner_events",
     "planner_person_private_attributes",
     "planner_project_taxonomy_nodes",
@@ -2060,6 +2070,7 @@ async function replaceCloudWithBackup(data) {
   await insertBackupRows("planner_project_phase_tasks", data.projectPhaseLinks.map(projectPhaseLinkPayload), "project phase links");
   await insertBackupRows("planner_project_phase_entries", data.projectPhaseEntries.map((entry) => ({ ...entry, user_id: state.user.id, status_id: entry.status_id || null })), "project phase entries");
   await insertBackupRows("planner_events", data.events.map(eventPayload), "events");
+  await insertBackupRows('planner_conflicts',(data.conflicts||[]).map(conflictPayload),'conflicts');
   await insertBackupRows("planner_task_goal_links", backupGoalLinks(data).map(taskGoalLinkPayload), "goal links");
   await insertBackupRows("planner_task_taxonomy_nodes", backupTaskTaxonomyLinks(data).map(taskTaxonomyLinkPayload), "task taxonomy links");
   await insertBackupRows("planner_project_people", data.projectAssignments.map(projectAssignmentPayload), "project people");
@@ -2323,6 +2334,8 @@ async function loadTasksNow() {
       console.warn("Supabase events unavailable; keeping events local", error);
     }
     const projectTaxonomyLinks = await loadProjectTaxonomyLinksData();
+    const {data:conflictRows,error:conflictsError}=await state.supabase.from('planner_conflicts').select('*').eq('user_id',state.user.id).order('start_date');
+    if(!conflictsError)state.conflicts=conflictRows||[];
     const projects = await loadProjectsData(projectTaxonomyLinks || []);
     const projectPhaseData = await loadProjectPhaseData();
     const goalLinks = await loadGoalLinksData();
@@ -4724,10 +4737,14 @@ function renderTasks() {
   }
   if(state.view==='season-planning'){
     renderSeasonPlanning(els.taskList,{
-      events:state.events,projects:state.projects,occurs:eventOccursOnDay,overlap:eventsOverlap,range:eventRangeLabel,
+      events:state.events,conflicts:state.conflicts,manageConflicts:()=>{state.view='conflicts';render();},projects:state.projects,occurs:eventOccursOnDay,overlap:eventsOverlap,range:eventRangeLabel,
       open:id=>focusObject('event',id,'season-planning'),
       save:event=>persistEvent(event,{render:false,requireCloud:true}),refresh:()=>render()
     });
+    return;
+  }
+  if(state.view==='conflicts'){
+    renderPlanningConflicts(els.taskList,{conflicts:state.conflicts,save:savePlanningConflict,remove:deletePlanningConflict,import:importPlanningConflicts,confirm:confirmAction,refresh:render});
     return;
   }
   if (state.view === "project-tasks") {
@@ -6522,6 +6539,38 @@ function renderFocusedEventView() {
 
 function calendarPeriodLabel(date, mode) {
   return new Intl.DateTimeFormat(undefined, mode === "month" ? { month: "long", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function conflictPayload(record){
+ return {id:record.id||makeId(),user_id:state.user?.id,name:record.name,start_date:record.start_date,end_date:record.end_date,category:record.category||'custom',notes:record.notes||'',source:record.source||'',source_key:record.source_key||null,created_at:record.created_at||nowIso(),updated_at:nowIso()};
+}
+async function writePlanningConflicts(operation){
+ try{
+  if(!isSupabaseReady())throw new Error('Sign in before saving conflicts to the database.');
+  showSyncMessage('Saving conflicts...');
+  const result=await operation();saveLocal({silent:true});showSyncMessage('Conflicts saved to database.');return result;
+ }catch(error){
+  state.syncError=`Conflict save failed: ${error.message}. If the conflicts table is missing, run migration 031_planning_conflicts.sql.`;
+  state.syncMessage='';renderSyncStatus();throw new Error(state.syncError);
+ }
+}
+function savePlanningConflict(record){
+ return writePlanningConflicts(async()=>{
+  if(!record.name?.trim()||!record.start_date||!record.end_date||record.end_date<record.start_date)throw new Error('Provide a name and valid date range.');
+  const saved=await upsertRowDirect('planner_conflicts',conflictPayload(record),null,'conflict');
+  if(!saved?.id)throw new Error('Database did not confirm the saved conflict.');
+  state.conflicts=[...state.conflicts.filter(item=>item.id!==saved.id),saved];return saved;
+ });
+}
+function importPlanningConflicts(records){
+ return writePlanningConflicts(async()=>{
+  const saved=await insertRowsDirect('planner_conflicts',records.map(conflictPayload),null,'conflicts');
+  if(saved.length!==records.length)throw new Error('Database did not confirm every imported conflict.');
+  state.conflicts=[...state.conflicts,...saved];return saved;
+ });
+}
+function deletePlanningConflict(id){
+ return writePlanningConflicts(async()=>{await deleteRowDirect('planner_conflicts',id,null,'conflict');state.conflicts=state.conflicts.filter(item=>item.id!==id);});
 }
 
 function renderCalendarView() {
@@ -8563,7 +8612,7 @@ function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
   const detailHiddenViews = ["graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
-  if (!task || state.view==='season-planning' || detailHiddenViews.includes(state.view)) {
+  if (!task || ['conflicts','season-planning'].includes(state.view) || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
     return;
@@ -8615,6 +8664,7 @@ function render() {
     events: "Events",
     calendar: "Calendar + Timeline",
     "season-planning": "Season Planning",
+    conflicts: "Conflicts",
     search: "Search",
     "focus-task": "Task",
     "focus-project": "Project",
@@ -8643,7 +8693,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["season-planning","graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["conflicts","season-planning","graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);

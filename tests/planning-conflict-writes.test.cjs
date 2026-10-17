@@ -1,0 +1,21 @@
+const {readFileSync}=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=readFileSync('public/app.js','utf8');
+const block=source.slice(source.indexOf('function conflictPayload('),source.indexOf('function renderCalendarView()'));
+(async()=>{
+ const context={state:{user:{id:'owner'},conflicts:[]},makeId:()=> 'new',nowIso:()=>new Date().toISOString(),isSupabaseReady:()=>true,showSyncMessage:()=>{},saveLocal:()=>{},renderSyncStatus:()=>{},upsertRowDirect:async()=>{throw Error('Network unavailable');}};
+ vm.createContext(context);vm.runInContext(block,context);
+ const record={name:'Community show',start_date:'2027-10-29',end_date:'2027-10-29'};
+ await assert.rejects(context.savePlanningConflict(record),/Conflict save failed/);
+ assert.equal(context.state.conflicts.length,0);
+ assert.match(context.state.syncError,/Network unavailable/);
+ context.upsertRowDirect=async(_,payload)=>payload;
+ await context.savePlanningConflict(record);
+ assert.equal(context.state.conflicts.length,1);
+ assert.equal(context.state.conflicts[0].user_id,'owner');
+ context.isSupabaseReady=()=>false;
+ await assert.rejects(context.savePlanningConflict(record),/Sign in/);
+ assert.equal(context.state.conflicts.length,1);
+ assert.ok(source.includes('conflicts: state.conflicts'));
+ assert.ok(source.includes("insertBackupRows('planner_conflicts'"));
+ console.log('Conflict writes confirm DB success, preserve state on failures, require authentication, and participate in backups.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

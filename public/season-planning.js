@@ -1,7 +1,10 @@
+import {conflictsOnDate} from './planning-conflicts.js?v=1.14.59';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key=date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 const addDays=(date,count)=>new Date(date.getFullYear(),date.getMonth(),date.getDate()+count);
 let years=1,scale='week',weekends=false;
+let overlays={us:true,india:true,custom:true};
+try{overlays={...overlays,...JSON.parse(localStorage.getItem('season-conflict-overlays')||'{}')};}catch{}
 
 export function seasonPeriods(today=new Date(),horizon=1,mode='week'){
  const start=new Date(today.getFullYear(),0,1);
@@ -32,6 +35,14 @@ export function renderSeasonPlanning(root,api){
    return `<div class="season-day ${date<today?'season-past':''} ${date===today?'season-today':''} ${conflicts.length?'season-conflict':''}"><button type="button" class="season-date" data-season-add="${date}" aria-label="Plan event for ${esc(label(day))}"><span>${esc(day.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}))}</span><span aria-hidden="true">+</span></button>${conflicts.length?`<small class="season-conflict-label">${conflicts.length} overlapping</small>`:''}${events.map(event=>`<button type="button" class="season-event ${event.status==='tentative'?'season-tentative':''} ${event.status==='cancelled'?'event-cancelled':''}" data-season-event="${esc(event.id)}"><strong>${esc(event.title)}</strong><small>${esc(event.status==='tentative'?'Tentative':event.all_day?'All day':api.range(event))}</small></button>`).join('')}</div>`;
   }).join('')}</div></section>`;
  }).join('')}</div></section>`;
+ root.querySelector('.season-toolbar').insertAdjacentHTML?.('beforeend',`<fieldset class="season-overlays"><legend>Conflicts</legend>${[['us','U.S. holidays'],['india','Indian festivals'],['custom','Custom']].map(([value,label])=>`<label><input type="checkbox" data-season-overlay="${value}"${overlays[value]?' checked':''}>${label}</label>`).join('')}</fieldset><button type="button" data-season-manage-conflicts>Manage conflicts</button>`);
+ root.querySelector('[data-season-manage-conflicts]').onclick=()=>api.manageConflicts();
+ root.querySelectorAll('[data-season-overlay]').forEach(input=>input.onchange=()=>{overlays[input.dataset.seasonOverlay]=input.checked;try{localStorage.setItem('season-conflict-overlays',JSON.stringify(overlays));}catch{}renderSeasonPlanning(root,api);});
+ root.querySelectorAll('.season-day').forEach(cell=>{
+  const date=cell.querySelector('[data-season-add]').dataset.seasonAdd;
+  const conflicts=conflictsOnDate(api.conflicts||[],date,overlays);
+  if(conflicts.length){cell.classList.add('season-external-conflict');cell.querySelector('.season-date').insertAdjacentHTML('afterend',conflicts.map(record=>`<span class="season-conflict-reference" title="${esc(record.notes||'External conflict')}">${esc(record.name)}</span>`).join(''));}
+ });
  root.querySelectorAll('[data-season-scale]').forEach(button=>button.onclick=()=>{scale=button.dataset.seasonScale;renderSeasonPlanning(root,api);});
  root.querySelector('[data-season-years]').onchange=event=>{years=Number(event.target.value);renderSeasonPlanning(root,api);};
  root.querySelector('[data-season-weekends]').onchange=event=>{weekends=event.target.checked;renderSeasonPlanning(root,api);};
@@ -48,6 +59,8 @@ export function renderSeasonPlanning(root,api){
   const dialog=document.createElement('dialog');dialog.className='season-dialog';
   dialog.innerHTML=`<div class="season-dialog-head"><h3>Plan ${esc(label(day))}</h3><button type="button" data-season-close aria-label="Close">×</button></div>${existing.length?`<div class="season-existing"><h4>Already planned</h4>${existing.map(event=>`<p><strong>${esc(event.title)}</strong> · ${esc(event.status==='tentative'?'Tentative':api.range(event))}</p>`).join('')}</div>`:''}<form><label>Event<input name="title" required maxlength="200" autocomplete="off"></label><div class="season-dialog-dates"><label>Start<input type="date" name="start" required value="${date}"></label><label>End<input type="date" name="end" required min="${date}" value="${date}"></label></div><label>Project<select name="project"><option value="">No project</option>${[...api.projects].sort((a,b)=>a.name.localeCompare(b.name)).map(project=>`<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')}</select></label><label>Status<select name="status"><option value="scheduled">Scheduled</option><option value="tentative" selected>Tentative</option></select></label><label>Notes<input name="notes"></label><p class="season-save-error" role="alert" hidden></p><button type="submit" class="primary-button">Add event</button></form>`;
   document.body.append(dialog);dialog.onclose=()=>dialog.remove();
+  const references=conflictsOnDate(api.conflicts||[],date,overlays);
+  if(references.length)dialog.querySelector('form').insertAdjacentHTML('beforebegin',`<div class="season-reference-warning"><strong>Known conflicts on this date</strong>${references.map(record=>`<p>${esc(record.name)}${record.notes?' · '+esc(record.notes):''}</p>`).join('')}</div>`);
   dialog.querySelector('[data-season-close]').onclick=()=>dialog.close();
   const form=dialog.querySelector('form'),start=form.elements.start,end=form.elements.end;
   start.onchange=()=>{end.min=start.value;if(end.value<start.value)end.value=start.value;};
