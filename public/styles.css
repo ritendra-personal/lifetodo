@@ -594,6 +594,19 @@ textarea:focus {
   font-weight: 900;
 }
 
+.year-calendar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:16px}
+.year-month{min-width:0;border-top:2px solid var(--line);padding-top:8px}
+.year-month h3{margin:0 0 10px;font-size:16px}
+.year-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.year-weekday{text-align:center;font-size:11px;color:var(--muted);padding:4px}
+.year-day{min-width:0;min-height:44px;border:1px solid var(--line);background:#fff}
+.year-day.occupied{background:#eef7f3}.year-day.today{outline:2px solid var(--teal);outline-offset:-2px}
+.year-day-add{width:100%;border:0;background:transparent;padding:4px;font-size:12px;text-align:left}
+.year-day-add:hover{background:#d8eee7}
+.year-event{display:block;width:100%;min-width:0;font-size:10px;padding:2px;margin:0 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1150px){.year-calendar{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.year-calendar{grid-template-columns:minmax(0,1fr)}}
+
 .sync-status-slot {
   height: 28px;
   min-height: 28px;

@@ -1,7 +1,7 @@
 import {renderLifeMap} from './life-map.js?v=1.14.53';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.53";
+const APP_VERSION = "1.14.54";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -111,7 +111,7 @@ const state = {
   projectTaskStatus: ["all", "open", "done"].includes(localStorage.getItem("project-task-status")) ? localStorage.getItem("project-task-status") : "open",
   projectTaskHierarchy: localStorage.getItem("project-task-hierarchy") !== "false",
   projectTaskFilter: localStorage.getItem("project-task-filter") || "",
-  calendarMode: ["month", "week"].includes(localStorage.getItem("calendar-mode")) ? localStorage.getItem("calendar-mode") : "month",
+  calendarMode: ["year", "month", "week"].includes(localStorage.getItem("calendar-mode")) ? localStorage.getItem("calendar-mode") : "month",
   calendarLayers: JSON.parse(localStorage.getItem("calendar-layers") || "null") || { projects: true, events: true, tasks: true },
   calendarTimelineZoom: Number(localStorage.getItem("calendar-timeline-zoom") || 84),
   calendarTimelineScale: ["year", "quarter", "month", "biweekly", "weekly", "daily"].includes(localStorage.getItem("calendar-timeline-scale")) ? localStorage.getItem("calendar-timeline-scale") : "month",
@@ -6516,6 +6516,7 @@ function calendarPeriodLabel(date, mode) {
 function renderCalendarView() {
   const mode = state.calendarMode;
   const cursor = new Date(state.calendarCursor);
+  if(mode==='year'){renderYearCalendar(cursor.getFullYear());return;}
   const start = mode === "month"
     ? new Date(cursor.getFullYear(), cursor.getMonth(), 1 - new Date(cursor.getFullYear(), cursor.getMonth(), 1).getDay())
     : new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - cursor.getDay());
@@ -6530,6 +6531,7 @@ function renderCalendarView() {
     </section>
   `;
   const grid = els.taskList.querySelector(".calendar-grid");
+  els.taskList.querySelector('.view-mode-toggle').insertAdjacentHTML('afterbegin','<button type="button" data-calendar-mode="year">Year</button>');
   for (const day of days) {
     const key = localDateKey(day);
     const cell = document.createElement("div");
@@ -6575,6 +6577,21 @@ function renderCalendarView() {
     grid.append(cell);
   }
   els.taskList.insertAdjacentHTML("beforeend", renderCalendarTimeline());
+}
+
+function renderYearCalendar(year){
+  const today=localDateKey(new Date());
+  const months=Array.from({length:12},(_,month)=>{
+    const first=new Date(year,month,1),count=new Date(year,month+1,0).getDate();
+    const cells=Array.from({length:first.getDay()},()=>'<div class="year-day-empty" aria-hidden="true"></div>');
+    for(let date=1;date<=count;date++){
+      const day=new Date(year,month,date),key=localDateKey(day);
+      const events=state.events.filter(item=>eventOccursOnDay(item,day)).sort(eventSort);
+      cells.push(`<div class="year-day ${key===today?'today':''} ${events.length?'occupied':''}"><button type="button" class="year-day-add" data-calendar-add-date="${key}" title="Add event on ${escapeHtml(day.toLocaleDateString())}" aria-label="Add event on ${escapeHtml(day.toLocaleDateString())}">${date}</button>${events.map(item=>`<button type="button" class="calendar-event year-event ${item.status==='cancelled'?'event-cancelled':''}" data-event-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</button>`).join('')}</div>`);
+    }
+    return `<section class="year-month"><h3>${first.toLocaleDateString(undefined,{month:'long'})}</h3><div class="year-month-grid">${['S','M','T','W','T','F','S'].map(label=>`<span class="year-weekday">${label}</span>`).join('')}${cells.join('')}</div></section>`;
+  });
+  els.taskList.innerHTML=`<section class="calendar-view"><div class="calendar-toolbar"><button type="button" class="ghost-button" data-calendar-dir="-1" aria-label="Previous year">‹</button><button type="button" class="ghost-button calendar-today">Today</button><strong>${year}</strong><button type="button" class="ghost-button" data-calendar-dir="1" aria-label="Next year">›</button><div class="view-mode-toggle"><button type="button" data-calendar-mode="year" class="active">Year</button><button type="button" data-calendar-mode="month">Month</button><button type="button" data-calendar-mode="week">Week</button></div></div><div class="year-calendar">${months.join('')}</div></section>`;
 }
 
 function renderTaxonomiesView() {
@@ -8861,9 +8878,19 @@ els.taskList.addEventListener("click", async (event) => {
     return;
   }
   const calendarNav = event.target.closest("[data-calendar-dir]");
+  const calendarAddDate=event.target.closest('[data-calendar-add-date]');
+  if(calendarAddDate){
+    const day=calendarAddDate.dataset.calendarAddDate;
+    state.view='events';render();
+    const form=els.taskList.querySelector('#event-form');
+    const start=new Date(day+'T00:00:00'),end=new Date(start.getFullYear(),start.getMonth(),start.getDate()+1);
+    populateEventForm(form,{all_day:true,start_at:start.toISOString(),end_at:end.toISOString()});
+    form.querySelector('[name="title"]').focus();
+    return;
+  }
   if (calendarNav) {
     const amount = Number(calendarNav.dataset.calendarDir) || 0;
-    state.calendarCursor = state.calendarMode === "month"
+    state.calendarCursor = state.calendarMode === "year" ? new Date(state.calendarCursor.getFullYear()+amount,0,1) : state.calendarMode === "month"
       ? new Date(state.calendarCursor.getFullYear(), state.calendarCursor.getMonth() + amount, 1)
       : new Date(state.calendarCursor.getFullYear(), state.calendarCursor.getMonth(), state.calendarCursor.getDate() + amount * 7);
     renderTasks();
@@ -8878,7 +8905,7 @@ els.taskList.addEventListener("click", async (event) => {
   }
   const calendarMode = event.target.closest("[data-calendar-mode]");
   if (calendarMode) {
-    state.calendarMode = calendarMode.dataset.calendarMode === "week" ? "week" : "month";
+    state.calendarMode = ['year','month','week'].includes(calendarMode.dataset.calendarMode)?calendarMode.dataset.calendarMode:'month';
     localStorage.setItem("calendar-mode", state.calendarMode);
     renderTasks();
     return;
