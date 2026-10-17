@@ -61,3 +61,9 @@ body:has(.lm-map-canvas){overflow:hidden}
 .lm-map-canvas>.lm-graph-scroll{flex:1;height:auto;min-height:0;max-height:none}
 @media(max-width:750px){.lm-layout:has(.lm-map-canvas){grid-template-rows:auto minmax(0,1fr)}.lm-layout:has(.lm-map-canvas)>.lm-area-nav{max-height:90px;flex-wrap:nowrap}}
 .life-map.lm-guided{max-width:none;width:100%;margin:0;padding:0;box-sizing:border-box}.lm-guided .lm-layout{grid-template-columns:200px minmax(0,1fr);gap:16px}.lm-guided .lm-area-nav{width:auto;min-width:0}.lm-guided .lm-interview{min-width:0}.lm-guided .lm-map-canvas{padding:0}.lm-guided .lm-toolbar{margin-bottom:12px}@media(max-width:750px){.lm-guided .lm-layout{grid-template-columns:1fr;gap:12px}}
+.lm-added-tasks{margin:16px 0}
+.lm-added-tasks h4{margin:0 0 6px;font-size:14px}
+.lm-added-tasks ol{margin:0;padding-left:24px}
+.lm-added-tasks li{padding:5px 0;overflow-wrap:anywhere}
+.lm-added-tasks a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+.lm-added-tasks small{margin-left:6px;color:#657188}

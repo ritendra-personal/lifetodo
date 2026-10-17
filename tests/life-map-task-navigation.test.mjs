@@ -1,6 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {taskEntryMarkup} from '../public/life-map.js';
+
+test('task entry shows saved tasks openly below the form with no unrelated outcome controls',()=>{
+ const html=taskEntryMarkup({title:'Repair <gate>'},[
+  {id:'first',title:'Call the repair company'},
+  {id:'second',title:'Send photos & measurements',status:'done'}
+ ],'Call the repair company');
+ assert(html.indexOf('</form>')<html.indexOf('Call the repair company'));
+ assert(html.includes('Tasks (2)'));
+ assert(html.includes('Send photos &amp; measurements'));
+ assert(html.includes('Repair &lt;gate&gt;'));
+ assert(html.includes('value=""'));
+ assert(html.includes('data-open-task="first"'));
+ assert(html.includes('Completed'));
+ assert(html.includes('Next question'));
+ assert(!/details|Not of interest|People involved|Supporting projects|Edit outcome|Link existing task/.test(html));
+});
 
 test('adding a task keeps the outcome open and clears the field for another task',async()=>{
  const source=readFileSync(new URL('../public/life-map.js',import.meta.url),'utf8');
