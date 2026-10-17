@@ -238,6 +238,16 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 let supportDraft={};
 let loadedKey='',data={answers:{},links:{},concerns:[]},notice='',loading=false;
 let selected='admin',panel='map',step='question',saveQueue=Promise.resolve();
+export function placeQuestionSkip(section){
+ section.querySelector('#lm-guide')?.remove();
+ const existing=section.querySelector('#lm-next');
+ const skip=existing||section.ownerDocument.createElement('button');
+ skip.id='lm-next';
+ skip.type='button';
+ skip.className='lm-next-prompt';
+ skip.textContent='Skip question';
+ section.querySelector('h3')?.after(skip);
+}
 let interviewSkipped=[];
 let mapInterestFilter='active';
 let mapHideCompleted=false;
@@ -369,9 +379,9 @@ export function renderLifeMap(root,api){
   content+=`<details class="lm-secondary"><summary>Edit outcome</summary><form id="lm-edit-outcome"><label>Title<input name="title" required maxlength="200" value="${esc(current.title)}"></label><label>Notes<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button class="lm-primary">Save changes</button></form><button id="lm-delete-outcome" class="danger-button" type="button">Delete outcome</button></details><dialog id="lm-delete-confirm" aria-labelledby="lm-delete-heading"><h3 id="lm-delete-heading">Delete this outcome?</h3><p>${esc(current.title)}</p><p>This removes the outcome, its nested outcomes, notes, and links. Tasks, projects, and people are not deleted.</p><form method="dialog"><button value="cancel">Cancel</button><button value="delete" class="danger-button">Delete outcome</button></form></dialog>`;
  }
  if(panel!=='map'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
- if(panel==='interview'&&selected!=='interview-empty'&&!content.includes('id="lm-next"'))content+='<button id="lm-next" class="lm-next-prompt">Another question →</button>';
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
  const breadcrumb=root.querySelector('.lm-breadcrumb');
+ if(panel==='interview'&&selected!=='interview-empty')placeQuestionSkip(root.querySelector('.lm-interview'));
  breadcrumb.innerHTML=topicPath(current.id,topics).map((topic,index,path)=>
   (index?'<span aria-hidden="true"> / </span>':'')+(index===path.length-1?`<span aria-current="page">${esc(topic.title)}</span>`:`<button data-go="${esc(topic.id)}">${esc(topic.title)}</button>`)
  ).join('');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics,topicReviewState,topicPath,removeCustomOutcome} from '../public/life-map.js';
+import {interviewCandidates,pickInterviewQuestion,baseTopics,discoveryTopics,topicReviewState,topicPath,removeCustomOutcome,placeQuestionSkip} from '../public/life-map.js';
 import {assembleTopics} from '../public/life-map-discovery.js';
 
 const topics=[
@@ -12,6 +12,19 @@ const topics=[
  {id:'specific',parent:'group'},
  {id:'discovery',parent:'home',kind:'support-discovery'}
 ];
+test('Ask me has one skip immediately after the question, without competing review navigation',()=>{
+ for(const hasSkip of [true,false]){
+  let removed=false,placed;
+  const existing={};
+  const section={ownerDocument:{createElement:()=>({})},querySelector:selector=>selector==='#lm-guide'?{remove:()=>{removed=true;}}:selector==='#lm-next'?(hasSkip?existing:null):{after:node=>{placed=node;}}};
+  placeQuestionSkip(section);
+  assert.equal(removed,true);
+  assert.equal(placed.textContent,'Skip question');
+  assert.equal(placed.id,'lm-next');
+  assert.equal(placed.type,'button');
+  if(hasSkip)assert.equal(placed,existing);
+ }
+});
 test('outcome deletion removes its branch and links, not linked task records',()=>{
  const task={id:'task'};
  const data={concerns:[{id:'a',parent:'home'},{id:'b',parent:'a'},{id:'c',parent:'home'}],answers:{a:{notes:'note'},b:{status:'progress'},c:{status:'done'}},links:{a:['task:'+task.id],b:['person:p'],c:['task:other']}};
