@@ -19,3 +19,11 @@ state.syncError='Database unavailable';context.renderSyncStatus();previousTimer(
 assert.equal(els.syncError.classList.contains('hidden'),false);
 assert.match(els.syncError.textContent,/Database unavailable/);
 console.log('Success expires without reappearing; active saving and errors remain visible.');
+const html=fs.readFileSync('public/index.html','utf8');
+const css=fs.readFileSync('public/styles.css','utf8');
+assert.match(html,/<div class="sync-status-slot">\s*<div id="sync-status"/);
+const slot=css.match(/\.sync-status-slot\s*\{([^}]+)\}/)[1];
+assert.match(slot,/height:\s*28px/);
+assert.match(slot,/min-height:\s*28px/);
+assert.match(slot,/overflow:\s*hidden/);
+console.log('Status visibility changes retain a fixed-height layout slot.');
