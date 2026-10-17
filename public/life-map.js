@@ -1,6 +1,6 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.62';
 import {concreteAction} from './life-map-actions.js?v=1.14.63';
-import {priorityItems,renderPriorityView,setOutcomeStatus} from './life-map-priorities.js?v=1.14.61';
+import {priorityItems,renderPriorityView,setOutcomeStatus,setOutcomeUrgency} from './life-map-priorities.js?v=1.14.68';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.44';
 export function linkCandidates(records,type,linked=[],query='') {
@@ -300,7 +300,7 @@ export function renderLifeMap(root,api){
   const model=priorityItems(topics,data),changed=JSON.stringify(model.order)!==JSON.stringify(data.priorityOrder||[]);
   if(!loading)data.priorityOrder=model.order;
   renderPriorityView(root,{topics,data,tasks:api.tasks,notice:loading?'Loading…':notice,save:()=>save(false),openOutcome:go,openTask:api.openTask,changePanel});
-  if(loading)root.querySelectorAll('[data-priority-status],[data-priority-move],[data-priority-drag]').forEach(button=>{button.disabled=true;button.draggable=false;});
+  if(loading)root.querySelectorAll('[data-priority-status],[data-priority-move],[data-priority-drag],[data-priority-sort],[data-priority-timing],[data-priority-deadline]').forEach(button=>{button.disabled=true;button.draggable=false;});
   if(changed&&!loading)void save(false);
   return;
  }
@@ -506,8 +506,8 @@ export function renderLifeMap(root,api){
   await save();
   if(['done','irrelevant','defer'].includes(status)){notice=status==='done'?`${current.title} recorded as taken care of.`:'Answer saved.';next();}
  });
- root.querySelectorAll('[data-timing]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,timing:b.dataset.timing};step='action';await save();});
- root.querySelector('#lm-deadline')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,deadline:new FormData(e.target).get('deadline')};step='action';await save();});
+ root.querySelectorAll('[data-timing]').forEach(b=>b.onclick=async()=>{setOutcomeUrgency(data,current.id,b.dataset.timing);step='action';await save();});
+ root.querySelector('#lm-deadline')?.addEventListener('submit',async e=>{e.preventDefault();setOutcomeUrgency(data,current.id,'date',new FormData(e.target).get('deadline'));step='action';await save();});
 
  root.querySelector('#lm-note')?.addEventListener('submit',async e=>{e.preventDefault();data.answers[current.id]={...answer,notes:new FormData(e.target).get('notes')};await save();});
  root.querySelector('#lm-mark-reviewed')?.addEventListener('click',async e=>{e.target.disabled=true;await save();});

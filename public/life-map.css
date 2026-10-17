@@ -44,6 +44,15 @@
 .lm-priorities .lm-priority-tasks li{margin:0;min-width:0;max-width:100%}
 .lm-priorities .lm-priority-tasks button{font-size:12px;line-height:1.4;padding:2px 0;text-decoration:underline;text-decoration-color:#b9c9bf;text-underline-offset:3px}
 .lm-priorities .lm-priority-finished{margin-top:16px;padding-top:8px}
+.lm-priorities-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:8px 0}
+.lm-priorities-heading h3{font-size:15px;margin:0}
+.lm-priorities-heading label{display:flex;align-items:center;gap:6px;font-size:12px}
+.lm-priorities-heading select{width:auto;font-size:12px;padding:4px 8px;min-height:28px}
+.lm-priorities .lm-priority-name{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;align-items:center}
+.lm-priorities .lm-priority-name>small{grid-column:1/-1}
+.lm-priority-urgency{display:flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:140px}
+.lm-priority-urgency select,.lm-priority-urgency input{width:100%;min-width:0;max-width:140px;min-height:25px;padding:3px 5px;font-size:11px}
+.lm-priorities .lm-priority-urgency .lm-overdue{color:#a72b20;font-weight:700;font-size:10px}
 .lm-priority-move [data-priority-drag]{cursor:grab;touch-action:none}.lm-priority-drop-target{outline:2px dashed #54876b;outline-offset:-2px}
 .lm-priorities{max-width:none;padding:0}.lm-priority-list{display:grid;gap:12px}.lm-priority-row{padding:14px 0;border-top:1px solid #ccd6d0;min-width:0}.lm-priority-heading{display:flex;align-items:center;gap:12px}.lm-priority-name{flex:1;min-width:0}.lm-priority-name small{display:block;color:#63706b;font-size:12px;overflow-wrap:anywhere}.lm-priority-name>button{display:block;text-align:left;background:transparent;border:0;padding:4px 0;font-size:18px;font-weight:700;overflow-wrap:anywhere;max-width:100%}.lm-priority-move{display:flex;gap:3px;flex-shrink:0}.lm-priority-move button{width:30px;height:32px;padding:0}.lm-priority-move [draggable=true]{cursor:grab}.lm-priority-rank{color:#63706b;font-size:13px}.lm-priority-statuses{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.lm-priority-statuses button{font-size:12px;padding:6px 10px;border:1px solid #ccd6d0;background:#fff;border-radius:4px}.lm-priority-statuses [aria-pressed=true]{background:#e2f0e7;border-color:#54876b;font-weight:700}.lm-priority-tasks{margin:0;padding-left:22px}.lm-priority-tasks li{margin:4px 0}.lm-priority-tasks button{background:transparent;border:0;text-align:left;font-size:13px;padding:4px;overflow-wrap:anywhere;max-width:100%}.lm-priority-task-done{opacity:.45;text-decoration:line-through}.lm-priority-finished{border-top:2px solid #a8bfb0;margin-top:28px;padding-top:12px}.lm-priority-completed{background:#f2f7f3}.lm-priorities h3 small{color:#63706b;font-size:13px;font-weight:400}.lm-priority-row:has([draggable=true]:active){outline:1px dashed #54876b}@media(max-width:600px){.lm-priority-heading{flex-wrap:wrap}.lm-priority-name{flex-basis:70%}.lm-priority-move{order:3}.lm-priority-statuses button{flex:1 1 40%}}
 /* The map owns its viewport; the surrounding page must not scroll it away. */

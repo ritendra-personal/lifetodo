@@ -1,10 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {priorityItems,reorderPriorities,setOutcomeStatus,renderPriorityView,priorityStatuses} from '../public/life-map-priorities.js';
+import {priorityItems,reorderPriorities,setOutcomeStatus,renderPriorityView,priorityStatuses,urgencyDate,setOutcomeUrgency} from '../public/life-map-priorities.js';
 import {topicReviewState,lifeMapPanelFromHash,renderLifeMap} from '../public/life-map.js';
 
 const topics=[{id:'home',title:'Home'},{id:'room',title:'Room',parent:'home',group:'discovery'},{id:'a',title:'Organize room',parent:'room'},{id:'b',title:'Repair shelf',parent:'home'},{id:'c',title:'Paint wall',parent:'home'},{id:'template',title:'Unanswered topic',parent:'home',kind:'outcome-discovery'}];
 function data(){return {answers:{a:{status:'unstarted'},b:{status:'progress'},c:{status:'unsure'}},links:{a:['task:t']},concerns:[],priorityOrder:['b','a','c']};}
+test('urgency ranks overdue then nearest due, keeping manual importance order unchanged',()=>{
+ const state=data();
+ setOutcomeUrgency(state,'a','date','2026-10-16');
+ setOutcomeUrgency(state,'b','month','','2026-10-17T12:00:00');
+ state.prioritySort='urgency';
+ assert.deepEqual(priorityItems(topics,state,new Date('2026-10-17T12:00:00')).active.map(t=>t.id),['a','b','c']);
+ assert.deepEqual(state.priorityOrder,['b','a','c']);
+ state.prioritySort='importance';
+ assert.deepEqual(priorityItems(topics,state).active.map(t=>t.id),['b','a','c']);
+ assert.equal(state.answers.a.status,'unstarted');
+});
+test('timeframes stay anchored and handle month ends and missing dates',()=>{
+ assert.equal(urgencyDate({timing:'month',timingSetAt:'2026-01-31T12:00:00'}),new Date('2026-02-28T12:00:00').getTime());
+ assert.equal(urgencyDate({timing:'week',reviewedAt:'2026-10-01T12:00:00'},new Date('2027-01-01')),new Date('2026-10-08T12:00:00').getTime());
+ assert.equal(urgencyDate({deadline:'2026-02-30'}),Infinity);
+ assert.equal(urgencyDate({timing:'someday'}),Infinity);
+ const state=data();setOutcomeUrgency(state,'a','date','2026-10-20');setOutcomeUrgency(state,'a','week');
+ assert.equal(state.answers.a.deadline,'');
+ assert.throws(()=>setOutcomeUrgency(state,'a','date','2026-02-30'));
+});
+test('urgency view hides manual movement and exposes editable timeframe and date controls',()=>{
+ const state=data();state.prioritySort='urgency';setOutcomeUrgency(state,'a','date','2026-10-20');
+ const root={innerHTML:'',querySelectorAll:()=>[]};
+ renderPriorityView(root,{topics,data:state,tasks:[],notice:'',save:async()=>{},openOutcome(){},openTask(){},changePanel(){}});
+ assert.match(root.innerHTML,/Outcome priorities/);
+ assert.match(root.innerHTML,/data-priority-sort/);
+ assert.match(root.innerHTML,/data-priority-deadline="a"/);
+ assert.doesNotMatch(root.innerHTML,/data-priority-move=/);
+ assert.doesNotMatch(root.innerHTML,/data-priority-drag=/);
+});
 test('leaf outcomes flatten in independent order while structural parents and untouched templates stay out',()=>{
  const state=data();
  assert.deepEqual(priorityItems(topics,state).active.map(topic=>topic.id),['b','a','c']);
