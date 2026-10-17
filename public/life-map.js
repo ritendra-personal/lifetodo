@@ -232,9 +232,9 @@ export function mapState(topic,answer={},tasks=[],now=Date.now()){
  return {key:'unknown',label:'Not reviewed'};
 }
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function taskEntryMarkup(current,tasks,suggestion=''){
+export function taskEntryMarkup(current,tasks,suggestion='',overview=false){
  const already=tasks.some(task=>task.title===suggestion);
- return `<h3>${esc(current.title)}</h3><form id="lm-create"><label>Task<input name="title" required maxlength="300" value="${esc(already?'':suggestion)}" placeholder="What will you do next?"></label><button class="lm-primary">Add task</button></form>${tasks.length?`<section class="lm-added-tasks" aria-label="Tasks for this outcome"><h4>Tasks (${tasks.length})</h4><ol>${tasks.map(task=>`<li><a data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)}</a>${task.status==='done'?' <small>Completed</small>':''}</li>`).join('')}</ol></section>`:''}<button class="lm-next-prompt" id="lm-next">Next question →</button>`;
+ return `${overview?'':`<h3>${esc(current.title)}</h3>`}<form id="lm-create"><label>Task<input name="title" required maxlength="300" value="${esc(already?'':suggestion)}" placeholder="What will you do next?"></label><button class="lm-primary">Add task</button></form>${tasks.length?`<section class="lm-added-tasks" aria-label="Tasks for this outcome"><h4>Tasks (${tasks.length})</h4><ol>${tasks.map(task=>`<li><a data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)}</a>${task.status==='done'?' <small>Completed</small>':''}</li>`).join('')}</ol></section>`:''}${overview?'':'<button class="lm-next-prompt" id="lm-next">Next question →</button>'}`;
 }
 let supportDraft={};
 let loadedKey='',data={answers:{},links:{},concerns:[]},notice='',loading=false;
@@ -336,6 +336,8 @@ export function renderLifeMap(root,api){
  });
  const mapped=mapAreas.flatMap(a=>a.outcomes);
  const allTasks=[...new Map(mapAreas.flatMap(a=>a.branch.tasks).map(t=>[t.id,t])).values()];
+ const compactOutcome=panel!=='map'&&!isArea&&!current.kind&&!current.group&&step==='question'&&!exclusion;
+ const questionDetails=compactOutcome?'':notesMarkup+linksMarkup+addMarkup;
  let content='';
  if(api.outcomeTaskGraph){
   const tree=buildOutcomeTaskGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,stateFor:mapState});
@@ -392,9 +394,13 @@ export function renderLifeMap(root,api){
   const tasks=refs.filter(ref=>ref.startsWith('task:')).map(ref=>api.tasks.find(task=>task.id===ref.slice(5))).filter(Boolean);
   content=taskEntryMarkup(current,tasks,suggestion(current)?.action||'');
  }else{
-  content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
+  content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${questionDetails}`;
  }
- if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action')content+=`<details class="lm-secondary lm-outcome-tasks"><summary>Tasks</summary>${outcomeList([current],true)}</details>`;
+ if(compactOutcome){
+  const tasks=(data.links[current.id]||[]).filter(ref=>ref.startsWith('task:')).map(ref=>api.tasks.find(task=>task.id===ref.slice(5))).filter(Boolean);
+  content+=taskEntryMarkup(current,tasks,'',true)+`<details class="lm-secondary lm-outcome-details"><summary>Details</summary>${notesMarkup}${linksMarkup}${linkPicker('task',current.id)}${addMarkup}`;
+ }
+ if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step!=='action'&&!compactOutcome)content+=`<details class="lm-secondary lm-outcome-tasks"><summary>Tasks</summary>${outcomeList([current],true)}</details>`;
  if(panel!=='map'&&selected!=='interview-empty'){
   if(exclusion)content=`<h3>${esc(current.title)}</h3><p>Not of interest · Reviewed</p>${exclusion.topicId===current.id?'<button id="lm-reopen-interest">Reopen this topic</button>':`<button data-go="${esc(exclusion.topicId)}">Manage excluded topic: ${esc(exclusion.title)}</button>`}`;
   else if(step!=='action')content+='<button id="lm-not-interested" class="lm-next-prompt">Not of interest</button>';
@@ -403,6 +409,7 @@ export function renderLifeMap(root,api){
   content+=`<details class="lm-secondary"><summary>Edit outcome</summary><form id="lm-edit-outcome"><label>Title<input name="title" required maxlength="200" value="${esc(current.title)}"></label><label>Notes<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button class="lm-primary">Save changes</button></form><button id="lm-delete-outcome" class="danger-button" type="button">Delete outcome</button></details><dialog id="lm-delete-confirm" aria-labelledby="lm-delete-heading"><h3 id="lm-delete-heading">Delete this outcome?</h3><p>${esc(current.title)}</p><p>This removes the outcome, its nested outcomes, notes, and links. Tasks, projects, and people are not deleted.</p><form method="dialog"><button value="cancel">Cancel</button><button value="delete" class="danger-button">Delete outcome</button></form></dialog>`;
  }
  if(panel!=='map'&&step!=='action'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
+ if(compactOutcome)content+='</details>';
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
  root.querySelector('[role="tablist"]').insertAdjacentHTML('beforeend','<button type="button" role="tab" aria-selected="false" data-panel="priorities">Priorities</button>');
  const breadcrumb=root.querySelector('.lm-breadcrumb');

@@ -36,3 +36,11 @@ test('adding a task keeps the outcome open and clears the field for another task
  assert.equal(input.value,'');
  assert.equal(input.focused,true);
 });
+
+test('overview reuses single-line entry without duplicating the outcome heading or navigation',()=>{
+ const html=taskEntryMarkup({title:'Outcome'},[{id:'one',title:'First task'}],'',true);
+ assert(!html.includes('<h3>'));
+ assert(!html.includes('lm-next'));
+ assert(html.includes('id="lm-create"'));
+ assert(html.includes('First task'));
+});
