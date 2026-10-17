@@ -17,6 +17,7 @@ test('urgency ranks overdue then nearest due, keeping manual importance order un
  assert.equal(state.answers.a.status,'unstarted');
 });
 test('timeframes stay anchored and handle month ends and missing dates',()=>{
+ assert.equal(urgencyDate({timing:'day',timingSetAt:'2026-12-31T12:00:00'}),new Date('2027-01-01T12:00:00').getTime());
  assert.equal(urgencyDate({timing:'month',timingSetAt:'2026-01-31T12:00:00'}),new Date('2026-02-28T12:00:00').getTime());
  assert.equal(urgencyDate({timing:'week',reviewedAt:'2026-10-01T12:00:00'},new Date('2027-01-01')),new Date('2026-10-08T12:00:00').getTime());
  assert.equal(urgencyDate({deadline:'2026-02-30'}),Infinity);
@@ -24,6 +25,12 @@ test('timeframes stay anchored and handle month ends and missing dates',()=>{
  const state=data();setOutcomeUrgency(state,'a','date','2026-10-20');setOutcomeUrgency(state,'a','week');
  assert.equal(state.answers.a.deadline,'');
  assert.throws(()=>setOutcomeUrgency(state,'a','date','2026-02-30'));
+});
+test('within a day ranks before a week and survives save and reload',()=>{
+ const state=data();const now='2026-10-17T12:00:00';
+ setOutcomeUrgency(state,'a','day','',now);setOutcomeUrgency(state,'b','week','',now);
+ state.prioritySort='urgency';
+ assert.deepEqual(priorityItems(topics,JSON.parse(JSON.stringify(state))).active.map(t=>t.id),['a','b','c']);
 });
 test('urgency view hides manual movement and exposes editable timeframe and date controls',()=>{
  const state=data();state.prioritySort='urgency';setOutcomeUrgency(state,'a','date','2026-10-20');

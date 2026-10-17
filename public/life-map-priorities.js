@@ -3,7 +3,7 @@ import {createTopicExclusionResolver} from './life-map-review.js?v=1.14.44';
 export const priorityStatuses=[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure']];
 const complete=status=>['done','well'].includes(status);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export const urgencyChoices=[['','Not specified'],['week','Within a week'],['month','Within a month'],['quarter','Within 3 months'],['year','Within a year'],['two-years','Within 2 years'],['decade','Within a decade'],['date','Specific date']];
+export const urgencyChoices=[['','Not specified'],['day','Within a day'],['week','Within a week'],['month','Within a month'],['quarter','Within 3 months'],['year','Within a year'],['two-years','Within 2 years'],['decade','Within a decade'],['date','Specific date']];
 export function urgencyDate(answer={},now=new Date()){
  if(answer.deadline){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(answer.deadline))return Infinity;
@@ -12,12 +12,12 @@ export function urgencyDate(answer={},now=new Date()){
   return date.getFullYear()===year&&date.getMonth()===month-1&&date.getDate()===day?date.getTime():Infinity;
  }
  const months={month:1,quarter:3,year:12,'two-years':24,decade:120}[answer.timing];
- if(!months&&!['soon','week'].includes(answer.timing))return Infinity;
+ if(!months&&!['day','soon','week'].includes(answer.timing))return Infinity;
  const date=new Date(answer.timingSetAt||answer.reviewedAt||answer.updatedAt||now);
  if(!Number.isFinite(date.getTime()))return Infinity;
  date.setHours(12,0,0,0);
  if(months){const day=date.getDate();date.setDate(1);date.setMonth(date.getMonth()+months);const last=new Date(date.getFullYear(),date.getMonth()+1,0).getDate();date.setDate(Math.min(day,last));}
- else date.setDate(date.getDate()+7);
+ else date.setDate(date.getDate()+(answer.timing==='day'?1:7));
  return date.getTime();
 }
 export function setOutcomeUrgency(data,id,timing,deadline='',now=new Date().toISOString()){
