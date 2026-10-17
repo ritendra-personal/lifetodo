@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {baseTopics, recommendation, branchStats,orderTopicsByReview} from '../public/life-map.js';
+import {baseTopics, recommendation, branchStats,orderTopicsByReview,groupTopicsByReview} from '../public/life-map.js';
+test('reviewed and excluded choices are separate footer groups while partial branches remain active',()=>{
+ const items=[{id:'reviewed'},{id:'partial'},{id:'new'},{id:'excluded'}];
+ const topics=[...items,{id:'child1',parent:'partial'},{id:'child2',parent:'partial'}];
+ const answers={reviewed:{reviewedAt:'2026-10-17'},child1:{status:'done'},excluded:{status:'uninterested'}};
+ const groups=groupTopicsByReview(items,topics,answers);
+ assert.deepEqual(groups.active.map(t=>t.id),['partial','new']);
+ assert.deepEqual(groups.reviewed.map(t=>t.id),['reviewed']);
+ assert.deepEqual(groups.excluded.map(t=>t.id),['excluded']);
+});
 test('sibling lists keep unreviewed and partially reviewed topics ahead of reviewed and excluded ones',()=>{
  const items=[{id:'course'},{id:'certification'},{id:'degree'},{id:'partial'},{id:'exam'},{id:'reviewed'}];
  const topics=[...items,{id:'child1',parent:'partial'},{id:'child2',parent:'partial'}];

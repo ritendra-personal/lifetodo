@@ -175,6 +175,14 @@ export function orderTopicsByReview(items,topics,answers={}){
  return items.map((topic,index)=>({topic,index,rank:rank[topicReviewState(topic.id,topics,answers).key]??0}))
   .sort((a,b)=>a.rank-b.rank||a.index-b.index).map(item=>item.topic);
 }
+export function groupTopicsByReview(items,topics,answers={}){
+ const result={active:[],reviewed:[],excluded:[]};
+ for(const topic of orderTopicsByReview(items,topics,answers)){
+  const state=topicReviewState(topic.id,topics,answers).key;
+  result[state==='uninterested'?'excluded':state==='reviewed'?'reviewed':'active'].push(topic);
+ }
+ return result;
+}
 export function hasFallbackChoice(children){
  return children.some(topic=>/^something else$/i.test(topic.title.trim()));
 }
@@ -314,9 +322,8 @@ export function renderLifeMap(root,api){
  const answer=data.answers[current.id]||{};
  const exclusion=excludedTopic(current.id);
  const isArea=baseTopics.some(t=>t.id===current.id);
- const allChildren=orderTopicsByReview(outcomeMenuChildren(current.id,topics),topics,data.answers);
- const excludedChildren=allChildren.filter(topic=>excludedTopic(topic.id));
- const children=allChildren.filter(topic=>!excludedTopic(topic.id));
+ const reviewGroups=groupTopicsByReview(outcomeMenuChildren(current.id,topics),topics,data.answers);
+ const children=reviewGroups.active;
  const branch=branchStats(area.id,topics,data.answers,data.links,api.tasks);
  const coverage=coverageStats(area.id,topics,data.answers);
  const records=[...api.tasks.map(x=>['task',x]),...api.projects.map(x=>['project',x]),...(api.people||[]).map(x=>['person',x])];
@@ -434,7 +441,9 @@ export function renderLifeMap(root,api){
  }
  if(panel!=='map'&&step!=='action'&&selected!=='interview-empty')content+=`<div class="lm-review-marker">${answer.reviewedAt||answer.status?`<small>Reviewed${answer.reviewedAt?' · '+esc(new Date(answer.reviewedAt).toLocaleDateString()):''}</small>`:'<button id="lm-mark-reviewed">Mark reviewed</button>'}</div>`;
  if(compactOutcome)content+='</details>';
- if(panel!=='map'&&!exclusion&&excludedChildren.length)content+=`<section class="lm-excluded-topics" aria-label="Excluded topics"><h4>Not of interest</h4><div class="lm-topic-menu">${excludedChildren.map(topic=>`<button data-go="${esc(topic.id)}"><span>${esc(topic.title)}</span>${reviewMarker(topic)}</button>`).join('')}</div></section>`;
+ if(panel!=='map'&&!exclusion)for(const [label,items] of [['Reviewed',reviewGroups.reviewed],['Not of interest',reviewGroups.excluded]]){
+  if(items.length)content+=`<section class="lm-excluded-topics" aria-label="${label} topics"><h4>${label}</h4><div class="lm-topic-menu">${items.map(topic=>`<button data-go="${esc(topic.id)}"><span>${esc(topic.title)}</span>${reviewMarker(topic)}</button>`).join('')}</div></section>`;
+ }
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
  root.querySelector('[role="tablist"]').insertAdjacentHTML('beforeend','<button type="button" role="tab" aria-selected="false" data-panel="priorities">Priorities</button>');
  const breadcrumb=root.querySelector('.lm-breadcrumb');
