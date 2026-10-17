@@ -161,7 +161,21 @@ export function expandDiscovery(items) {
   const choice=choiceNodes.find(topic=>topic.id==='check:career:0:choice:'+index);
   if(choice)choice.outcomeQuestion=question;
  }
- return [...items,...choiceNodes,...supplemental];
+ const topics=[...items,...choiceNodes,...supplemental];
+ // Preserve saved IDs while organizing care activities beneath health needs.
+ const health=appointments.area;
+ const update=(id,changes)=>Object.assign(topics.find(topic=>topic.id===id),changes);
+ update('check:health:4',{title:'A health concern or condition',question:'What health concern, condition, or treatment needs attention?'});
+ update('check:health:2',{title:'Everyday wellbeing',question:'What would help you feel and function better day to day?'});
+ update('check:health:3',{title:'Mental and emotional wellbeing',question:'What part of your mental or emotional wellbeing would you like to address?'});
+ for(const id of ['check:health:0','check:health:1','check:health:5'])update(id,{parent:'check:health:4'});
+ topics.push({id:'health:prevention',parent:'health',area:health,title:'Preventive health',group:'health-needs',question:'What preventive care would you like to keep up to date?'});
+ update('appointment:preventive',{parent:'health:prevention'});
+ update('appointment:mental',{parent:'check:health:3'});
+ topics.push({id:'health:support',parent:'health',area:health,title:'Supporting someone else’s health',kind:'outcome-discovery',choices:[],expandedDiscovery:true,outcomeQuestion:'Who needs your support, and what health outcome would you like to help them with?'});
+ const surgery='health:surgery';
+ topics.push({id:surgery,parent:'check:health:4',area:health,title:'Surgery or a procedure',kind:'outcome-discovery',choices:[],expandedDiscovery:true,outcomeQuestion:'What surgery or procedure needs to be arranged or completed?'});
+ return topics;
 }
 
 // Preserve old reviewed topics and links at their original IDs as explicit outcomes.

@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {baseTopics, recommendation, branchStats} from '../public/life-map.js';
+test('Health groups needs rather than mixing them with care activities',async()=>{
+ const {discoveryTopics}=await import('../public/life-map.js');
+ const topics=discoveryTopics();
+ assert.deepEqual(topics.filter(t=>t.parent==='health').map(t=>t.title).sort(),[
+  'A health concern or condition','Everyday wellbeing','Mental and emotional wellbeing','Preventive health','Supporting someone else’s health'
+ ].sort());
+ for(const id of ['check:health:0','check:health:1','check:health:5','health:surgery'])assert.equal(topics.find(t=>t.id===id).parent,'check:health:4');
+ assert.equal(topics.find(t=>t.id==='appointment:preventive').parent,'health:prevention');
+ assert(topics.find(t=>t.id==='appointment:dental:choice:0'));
+ assert.equal(new Set(topics.map(t=>t.id)).size,topics.length);
+});
 test('broad discovery starts without assumed personal obligations',()=>{
  assert.equal(baseTopics.length,13);
  assert(!baseTopics.some(t=>/estate|oci|play story/i.test(t.title)));
