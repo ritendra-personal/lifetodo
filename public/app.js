@@ -1,7 +1,8 @@
 import {renderLifeMap} from './life-map.js?v=1.14.53';
+import {renderSeasonPlanning} from './season-planning.js?v=1.14.55';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.54";
+const APP_VERSION = "1.14.55";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -520,6 +521,7 @@ function validView(view) {
     "project-matrix",
     "events",
     "calendar",
+    "season-planning",
     "areas",
     "skills",
     "age-categories",
@@ -4720,6 +4722,14 @@ function renderTasks() {
     renderCalendarView();
     return;
   }
+  if(state.view==='season-planning'){
+    renderSeasonPlanning(els.taskList,{
+      events:state.events,projects:state.projects,occurs:eventOccursOnDay,overlap:eventsOverlap,range:eventRangeLabel,
+      open:id=>focusObject('event',id,'season-planning'),
+      save:event=>persistEvent(event,{render:false,requireCloud:true}),refresh:()=>render()
+    });
+    return;
+  }
   if (state.view === "project-tasks") {
     renderProjectTasksView();
     return;
@@ -6320,6 +6330,7 @@ function eventFormMarkup(event = {}) {
     <label class="field-label">Status
       <select name="status">
         <option value="scheduled">Scheduled</option>
+        <option value="tentative">Tentative</option>
         <option value="completed">Completed</option>
         <option value="cancelled">Cancelled</option>
       </select>
@@ -8552,7 +8563,7 @@ function renderDetail() {
   const task = state.tasks.find((item) => item.id === state.selectedId);
 
   const detailHiddenViews = ["graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
-  if (!task || detailHiddenViews.includes(state.view)) {
+  if (!task || state.view==='season-planning' || detailHiddenViews.includes(state.view)) {
     els.emptyDetail.classList.remove("hidden");
     els.detailForm.classList.add("hidden");
     return;
@@ -8603,6 +8614,7 @@ function render() {
     "project-matrix": "Project Phases",
     events: "Events",
     calendar: "Calendar + Timeline",
+    "season-planning": "Season Planning",
     search: "Search",
     "focus-task": "Task",
     "focus-project": "Project",
@@ -8631,7 +8643,7 @@ function render() {
   };
   const focusViews = ["focus-task", "focus-project", "focus-goal", "focus-person", "focus-idea", "focus-event"];
   const isFocusView = focusViews.includes(state.view);
-  const isPlanningView = ["graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
+  const isPlanningView = ["season-planning","graph","life-map","home", "goals", "goal-assignments", "people-projects", "people", "people-filter", "people-charts", "projects", "project-filter", "project-charts", "ideas", "areas", "skills", "age-categories", "relationships", "project-types", "project-statuses", "phase-statuses", "roles", "venues", "taxonomies", "project-phases", "tasks-by-taxonomy", "project-tasks", "project-matrix", "events", "calendar", "search", "backup", ...focusViews].includes(state.view);
 
   setDensity(state.density);
   document.documentElement.style.setProperty("--detail-width", `${state.detailWidth}px`);
