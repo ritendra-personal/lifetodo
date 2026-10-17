@@ -249,14 +249,24 @@ export function placeQuestionSkip(section){
  section.querySelector('h3')?.after(skip);
 }
 let interviewSkipped=[];
+export function lifeMapPanelFromHash(hash){
+ return ({'#ask-me':'interview','#guided-review':'explore','#my-map':'map'})[hash]||'map';
+}
+let lastPanelHash=null;
+let renderForHash;
+if(typeof window!=='undefined'){
+ window.addEventListener('hashchange',()=>renderForHash?.());
+ window.addEventListener('popstate',()=>renderForHash?.());
+}
 let mapInterestFilter='active';
 let mapHideCompleted=false;
 const labelFor=(item)=>item?.title||item?.name||[item?.first_name,item?.last_name].filter(Boolean).join(' ')||'Unavailable record';
 
 export function renderLifeMap(root,api){
+ renderForHash=()=>{if(root.isConnected)api.render();};
  const key='seven-lives-map:'+api.userKey;
  if(loadedKey!==key){
-  loadedKey=key;supportDraft={};selected='admin';panel='map';step='question';interviewSkipped=[];mapInterestFilter='active';mapHideCompleted=false;
+  loadedKey=key;supportDraft={};selected='admin';panel='map';step='question';interviewSkipped=[];mapInterestFilter='active';mapHideCompleted=false;lastPanelHash=null;
   try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{},concerns:[]};}catch{data={answers:{},links:{},concerns:[]};}
   notice='Saved in this browser.';
   if(api.client&&api.userId){loading=true;api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle().then(({data:row,error})=>{
@@ -267,6 +277,11 @@ export function renderLifeMap(root,api){
  }
  data.answers ||= {};data.links ||= {};data.concerns ||= [];
  const topics=assembleTopics(baseTopics,discoveryTopics(),data);
+ const panelHash=window.location.hash;
+ if(panelHash!==lastPanelHash){
+  lastPanelHash=panelHash;panel=lifeMapPanelFromHash(panelHash);step='question';
+  if(panel==='interview'){interviewSkipped=[];selected=pickInterviewQuestion(topics,data.answers)?.id||'interview-empty';interviewSkipped.push(selected);}
+ }
  if(selected.startsWith('discover:')&&!topics.some(topic=>topic.id===selected)&&topics.some(topic=>topic.id===selected.slice(9)))selected=selected.slice(9);
  const excludedTopic=createTopicExclusionResolver(topics,data.answers);
  if(panel==='interview'&&excludedTopic(selected)){selected=pickInterviewQuestion(topics,data.answers,interviewSkipped)?.id||'interview-empty';step='question';}
@@ -417,7 +432,11 @@ export function renderLifeMap(root,api){
 
  root.querySelectorAll('[data-open-task]').forEach(link=>link.onclick=e=>{e.preventDefault();api.openTask(link.dataset.openTask);});
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
- root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{panel=b.dataset.panel;if(panel==='interview'){interviewSkipped=[];selected=pickInterviewQuestion(topics,data.answers)?.id||'interview-empty';interviewSkipped.push(selected);step='question';}api.render();});
+ root.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{
+  const hash=({map:'#my-map',explore:'#guided-review',interview:'#ask-me'})[b.dataset.panel];
+  if(window.location.hash!==hash){window.history.pushState(null,'',hash);lastPanelHash=null;}
+  api.render();
+ });
  root.querySelector('#lm-interview-restart')?.addEventListener('click',()=>{interviewSkipped=[];selected=pickInterviewQuestion(topics,data.answers)?.id||'interview-empty';interviewSkipped.push(selected);step='question';api.render();});
  root.querySelector('#lm-interest-filter')?.addEventListener('change',e=>{mapInterestFilter=e.target.value;api.render();});
  root.querySelector('#lm-hide-completed')?.addEventListener('change',e=>{mapHideCompleted=e.target.checked;api.render();});
