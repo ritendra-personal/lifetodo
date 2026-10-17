@@ -12,6 +12,21 @@ const topics=[
  {id:'specific',parent:'group'},
  {id:'discovery',parent:'home',kind:'support-discovery'}
 ];
+test('working life uses concrete choices and specific follow-up questions without changing record IDs',()=>{
+ const templates=discoveryTopics();
+ const topic=templates.find(t=>t.id==='check:career:0');
+ assert.equal(topic.title,'Your working life');
+ assert.match(topic.question,/improve or change.*working life/);
+ for(let index=0;index<4;index++){
+  const choice=templates.find(t=>t.id==='check:career:0:choice:'+index);
+  assert.ok(choice);
+  assert.ok(choice.outcomeQuestion.endsWith('?'));
+ }
+ const saved={answers:{'check:career:0:choice:0':{status:'uninterested'}},links:{},concerns:[]};
+ const assembled=assembleTopics(baseTopics,templates,saved);
+ assert.ok(assembled.some(t=>t.id==='check:career:0:choice:0'));
+ assert.equal(saved.answers['check:career:0:choice:0'].status,'uninterested');
+});
 test('Ask me has one skip immediately after the question, without competing review navigation',()=>{
  for(const hasSkip of [true,false]){
   let removed=false,placed;

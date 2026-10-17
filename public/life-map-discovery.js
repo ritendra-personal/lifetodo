@@ -85,7 +85,7 @@ export const discoveryChoices = {
   ['Step back from a role','Reduce time commitments','Leave a group','Hand over a responsibility']
  ],
  career: [
-  ['Direction and job satisfaction','A skill or qualification for work','Feedback or mentoring','Deciding what to continue or change'],
+  ['Enjoying my work','Developing work skills or qualifications','Getting feedback or mentoring','Deciding my career direction'],
   ['Current commitments and deadlines','Workload and boundaries','Working relationships','Workplace safety or accessibility'],
   ['Job search or applications','Professional connections and portfolio','Self-employment or a business','A break, return to work, or retirement'],
   ['Pay or compensation','Benefits or leave','Contracts and work permissions','Income continuity during a transition']
@@ -149,6 +149,18 @@ export function expandDiscovery(items) {
   const topic=items.find(item=>item.id===parent);
   return {id:parent+':extra:'+slug,parent,area:topic.area,title,kind:'outcome-discovery',choices:[],expandedDiscovery:true,action:topic.action};
  });
+ const workingLife=items.find(topic=>topic.id==='check:career:0');
+ if(workingLife)workingLife.question='Is there anything you would like to improve or change about your working life?';
+ const workQuestions=[
+  'What would make your day-to-day work more satisfying?',
+  'What work skill or qualification would you like to develop?',
+  'What would you like feedback or mentoring to help you with?',
+  'What decision about your career would you like to work through?'
+ ];
+ for(const [index,question] of workQuestions.entries()){
+  const choice=choiceNodes.find(topic=>topic.id==='check:career:0:choice:'+index);
+  if(choice)choice.outcomeQuestion=question;
+ }
  return [...items,...choiceNodes,...supplemental];
 }
 

@@ -1,4 +1,4 @@
-import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.43';
+import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.49';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.44';
 export function linkCandidates(records,type,linked=[],query='') {
@@ -33,7 +33,7 @@ export const probes={
  rest:['Too many commitments or not enough downtime','Time to recharge without feeling guilty','Play, hobbies, and enjoyable activities','Boundaries around screens and availability','A break or holiday I want to plan','Something to simplify, delegate, or stop'],
  community:['Friends, groups, and local belonging','Volunteering, causes, or civic commitments','Faith, cultural life, or spiritual practices','Promises I have made to a group','Contributing in a sustainable way','Reducing involvement that no longer fits'],
  experiences:['Places I would like to visit','An experience or adventure to make possible','A lifestyle change I want to explore','A celebration or meaningful occasion','An idea for someday','Making time with people part of the experience'],
- career:['Direction and satisfaction','Responsibilities and working boundaries','Opportunities and work transitions','Pay, benefits, and work arrangements']
+ career:['Your working life','Responsibilities and working boundaries','Opportunities and work transitions','Pay, benefits, and work arrangements']
 };
 export function suggestedAction(topic, answer={}) {
  if(answer.next?.trim())return answer.next.trim();
@@ -343,7 +343,7 @@ export function renderLifeMap(root,api){
  }else if(panel==='map'){
   content=`<div class="lm-map-filters"><label class="lm-interest-filter">Show<select id="lm-interest-filter">${[['active','Active topics'],['all','All topics'],['excluded','Not interested only']].map(([value,label])=>`<option value="${value}"${value===mapInterestFilter?' selected':''}>${label}</option>`).join('')}</select></label><label class="lm-hide-completed"><input id="lm-hide-completed" type="checkbox"${mapHideCompleted?' checked':''}>Hide completed</label></div>`+graphMarkup(graph);
   }else if(current.kind==='outcome-discovery'){
-  content=`<small>${esc(current.title)}</small><h3>What specific result would you like?</h3><form id="lm-specific-outcome"><label>Specific outcome<input name="title" required maxlength="200" value="${esc(current.preset||'')}" placeholder="${esc(current.title==='Something else'?'Name one specific result you want':'What specifically would you like for '+current.title.toLowerCase()+'?')}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Add separate outcomes for separate needs. Next: progress, timing, and tasks.</p><button data-go="${esc(current.parent)}" class="lm-next-prompt">Nothing to add here right now</button>${outcomeList(children)}`;
+  content=`<small>${esc(current.title)}</small><h3>${esc(current.outcomeQuestion||'What specific result would you like?')}</h3><form id="lm-specific-outcome"><label>Specific outcome<input name="title" required maxlength="200" value="${esc(current.preset||'')}" placeholder="${esc(current.title==='Something else'?'Name one specific result you want':'What specifically would you like for '+current.title.toLowerCase()+'?')}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Add separate outcomes for separate needs. Next: progress, timing, and tasks.</p><button data-go="${esc(current.parent)}" class="lm-next-prompt">Nothing to add here right now</button>${outcomeList(children)}`;
  }else if(current.kind==='care-outcome'){
   content=`<small>${esc(topics.find(t=>t.id===current.parent)?.title)} · ${esc(current.title)}</small><h3>What specifically do you want to have in place?</h3><form id="lm-care-outcome"><label>Outcome<input name="title" required maxlength="200" placeholder="${current.title==='Glucose monitoring'?'For example: Have my glucose monitor set up and in use':'Name one specific care need or result'}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Track each need separately, using the care plan agreed with your clinician.</p>${outcomeList(children)}`;
  }else if(current.kind==='milestone-discovery'){
