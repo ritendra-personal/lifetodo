@@ -10,7 +10,7 @@ export function seasonPeriods(today=new Date(),horizon=1,mode='week'){
  const rows=[];
  while(cursor<end){
   const next=mode==='month'?new Date(cursor.getFullYear(),cursor.getMonth()+1,1):addDays(cursor,mode==='fortnight'?14:7);
-  const days=[];for(let date=cursor;date<next&&date<end;date=addDays(date,1))if(date>=start)days.push(date);
+  const days=[];for(let date=cursor;date<next;date=addDays(date,1))days.push(date);
   rows.push({start:cursor,days});cursor=next;
  }
  return rows;
