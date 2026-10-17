@@ -385,6 +385,12 @@ export function renderLifeMap(root,api){
  breadcrumb.innerHTML=topicPath(current.id,topics).map((topic,index,path)=>
   (index?'<span aria-hidden="true"> / </span>':'')+(index===path.length-1?`<span aria-current="page">${esc(topic.title)}</span>`:`<button data-go="${esc(topic.id)}">${esc(topic.title)}</button>`)
  ).join('');
+ if(panel==='interview'&&selected!=='interview-empty'){
+  breadcrumb.classList.add('lm-question-context');
+  const count=root.querySelector('.lm-interview > p.lm-subtle');
+  if(count){count.className='lm-question-count';root.querySelector('.lm-toolbar').append(count);}
+  root.querySelector('.lm-interview > small')?.remove();
+ }
  if(panel==='explore'&&!isArea&&!current.kind&&!current.group&&step==='question'){
   const heading=root.querySelector('.lm-interview h3');
   if(heading)heading.textContent=current.title;
