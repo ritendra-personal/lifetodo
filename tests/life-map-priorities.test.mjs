@@ -57,6 +57,7 @@ test('view includes parent context, task edit links, four status controls and ac
  assert.match(root.innerHTML,/aria-label="Move Repair shelf up" disabled/);
  assert.match(root.innerHTML,/data-priority-status="unsure"/);
  assert.doesNotMatch(root.innerHTML,/Not relevant/);
+ assert.doesNotMatch(root.innerHTML,/No linked tasks/);
  assert.match(root.innerHTML,/Completed/);
  assert.equal(lifeMapPanelFromHash('#priorities'),'priorities');
 });

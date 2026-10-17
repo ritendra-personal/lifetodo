@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Priorities layout QA</title></head><body>
+<script type="module">
+import {renderPriorityView} from '/life-map-priorities.js?v=1.14.61';
+if(!location.search){
+ document.body.innerHTML='<h1>Isolated Priorities layout checks</h1><pre id="results">Loading viewport checks...</pre>'+[[1280,720],[1440,900],[390,844]].map(([w,h])=>`<h2>${w} × ${h}</h2><iframe title="${w} × ${h}" src="?frame=${w}" width="${w}" height="${h}" style="border:1px solid #999"></iframe>`).join('');
+ const results=[];window.addEventListener('message',event=>{if(event.data?.type==='priority-layout'){results.push(event.data);document.querySelector('#results').textContent=JSON.stringify(results,null,2);}});
+}else{
+ const html=await(await fetch('/index.html')).text();const parsed=new DOMParser().parseFromString(html,'text/html');
+ for(const link of parsed.querySelectorAll('link[rel=stylesheet]'))document.head.append(link.cloneNode());
+ document.body.className='has-sync-message';document.body.innerHTML=parsed.body.innerHTML;
+ document.querySelectorAll('script').forEach(script=>script.remove());
+ const main=document.querySelector('.workspace'),header=main.querySelector('.topbar');
+ header.querySelector('#today-label').textContent='Saturday, October 17';header.querySelector('#view-title').textContent='Life map';
+ main.replaceChildren(header);const slot=document.createElement('div');slot.className='sync-status-slot';main.append(slot);
+ const root=document.createElement('div');main.append(root);
+ const topics=[{id:'home',title:'Home'},{id:'room',parent:'home',title:'Home organization',group:'discovery'},...Array.from({length:12},(_,index)=>({id:'outcome-'+index,parent:'room',title:index%3===0?'Organize the room and finish the remaining shelves':'Outcome '+(index+1)}))];
+ const data={answers:{},links:{},concerns:topics.slice(2)};
+ const tasks=[];topics.slice(2).forEach((topic,index)=>{data.answers[topic.id]={status:'progress'};if(index%2){const id='task-'+index;tasks.push({id,title:'Make progress on the next practical step',status:'active'});data.links[topic.id]=['task:'+id];}});
+ renderPriorityView(root,{topics,data,tasks,notice:'Isolated test data',save:async()=>{},openOutcome(){},openTask(){},changePanel(){}});
+ await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ const rows=[...root.querySelectorAll('.lm-priority-row')],groups=[...root.querySelectorAll('.lm-priority-statuses')];
+ const result={type:'priority-layout',width:innerWidth,height:innerHeight,visibleRows:rows.filter(row=>row.getBoundingClientRect().bottom<=innerHeight).length,rowHeights:rows.map(row=>Math.round(row.getBoundingClientRect().height)),horizontalOverflow:document.documentElement.scrollWidth>innerWidth,emptyTaskLabels:root.textContent.includes('No linked tasks')};
+ result.overlappingStatusButtons=groups.some(group=>{const buttons=[...group.children];return buttons.some((a,i)=>buttons.slice(i+1).some(b=>{const x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return x.left<y.right-1&&x.right>y.left+1&&x.top<y.bottom-1&&x.bottom>y.top+1;}));});
+ parent.postMessage(result,location.origin);
+}
+</script></body></html>

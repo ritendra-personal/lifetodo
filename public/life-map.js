@@ -1,5 +1,5 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.49';
-import {priorityItems,renderPriorityView,setOutcomeStatus} from './life-map-priorities.js?v=1.14.60';
+import {priorityItems,renderPriorityView,setOutcomeStatus} from './life-map-priorities.js?v=1.14.61';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.44';
 export function linkCandidates(records,type,linked=[],query='') {
