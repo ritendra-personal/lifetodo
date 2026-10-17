@@ -1,6 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildLifeGraph,layoutLifeGraph} from '../public/life-map-graph.js';
+import {buildLifeGraph,layoutLifeGraph,graphMarkup} from '../public/life-map-graph.js';
+import {mapState} from '../public/life-map.js';
+test('explicit completion has a non-color indicator, including completed groups',()=>{
+ const options={topics:[{id:'area',title:'Home'},{id:'group',parent:'area',title:'Organization',group:'discovery'},{id:'done',parent:'group',title:'Declutter',suggested:false}],answers:{group:{status:'well'},done:{status:'done'}},stateFor:mapState};
+ const tree=buildLifeGraph(options);
+ const group=tree.children[0].children[0];
+ assert.equal(group.state,'complete');
+ assert.equal(group.children[0].state,'complete');
+ const markup=graphMarkup(tree);
+ assert.match(markup,/lm-complete-check/);
+ assert.match(markup,/Completed — Declutter/);
+ assert.match(markup,/Taken care of/);
+});
+test('hide completed removes done leaves but preserves unfinished descendants and source data',()=>{
+ const options={topics:[{id:'area',title:'Home'},{id:'finished',parent:'area',title:'Finished'},{id:'parent',parent:'area',title:'Done parent'},{id:'pending',parent:'parent',title:'Unfinished child'}],answers:{finished:{status:'done'},parent:{status:'well'},pending:{status:'progress'}},stateFor:mapState};
+ const before=JSON.stringify(options);
+ const collect=node=>[node,...node.children.flatMap(collect)];
+ const hidden=collect(buildLifeGraph({...options,hideCompleted:true}));
+ assert.ok(!hidden.some(node=>node.sourceId==='finished'));
+ assert.ok(hidden.some(node=>node.sourceId==='pending'));
+ assert.match(hidden.find(node=>node.sourceId==='parent').status,/Unfinished items below/);
+ assert.equal(JSON.stringify(options),before);
+ assert.ok(collect(buildLifeGraph(options)).some(node=>node.sourceId==='finished'));
+ assert.equal(buildLifeGraph({...options,answers:{finished:{status:'done'},parent:{status:'done'},pending:{status:'done'}},hideCompleted:true}).children.length,0);
+});
+test('unfinished subtasks keep completed task and outcome ancestors accessible',()=>{
+ const options={topics:[{id:'area',title:'Home'},{id:'outcome',parent:'area',title:'Outcome'}],answers:{outcome:{status:'done'}},links:{outcome:['task:parent','task:child']},tasks:[{id:'parent',title:'Done task',status:'done'},{id:'child',parent_id:'parent',title:'Open subtask',status:'active'}],stateFor:mapState,hideCompleted:true};
+ const tree=buildLifeGraph(options);
+ const outcome=tree.children[0].children[0];
+ assert.equal(outcome.state,'complete');
+ assert.equal(outcome.children[0].children[0].taskId,'child');
+ assert.match(outcome.children[0].status,/Unfinished items below/);
+});
 test('not interested branches hide by default and can be isolated or included',()=>{
  const options={topics:[{id:'area',title:'Home'},{id:'hidden',parent:'area',title:'Hidden'},{id:'child',parent:'hidden',title:'Child'},{id:'active',parent:'area',title:'Active'}],answers:{hidden:{status:'uninterested'},child:{status:'progress'},active:{status:'progress'}}};
  const labels=tree=>[tree.label,...tree.children.flatMap(child=>labels(child))];
