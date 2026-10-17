@@ -1,4 +1,5 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.62';
+import {concreteAction} from './life-map-actions.js?v=1.14.63';
 import {priorityItems,renderPriorityView,setOutcomeStatus} from './life-map-priorities.js?v=1.14.61';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.44';
@@ -37,16 +38,7 @@ export const probes={
  career:['Your working life','Responsibilities and working boundaries','Opportunities and work transitions','Pay, benefits, and work arrangements']
 };
 export function suggestedAction(topic, answer={}) {
- if(answer.next?.trim())return answer.next.trim();
- const label=topic.title;
- if(answer.status==='unsure')return `Find out what is already covered for “${label}” and what, if anything, needs attention.`;
- if(answer.support==='person')return `Contact the person who can help move “${label}” forward.`;
- if(answer.support==='decision')return `List the options for “${label}” and choose one small next step.`;
- if(answer.support==='information')return `Find the missing information needed for “${label}”.`;
- if(answer.support==='overwhelmed')return `Break “${label}” into a first step that fits in 15 minutes.`;
- if(answer.support==='waiting')return `Check what you are waiting for on “${label}” and decide when to follow up.`;
- if(topic.parent)return `Choose and take one small step toward “${label}”.`;
- return topic.action;
+ return concreteAction(topic,answer);
 }
 export const statuses={unstarted:'Not started / needs attention',stuck:'Started, but stuck',progress:'In progress',well:'Working well / in place',review:'Needs updating',unsure:'Not sure',irrelevant:'Not relevant',uninterested:'Not of interest',defer:'Not now',done:'Completed'};
 export function recommendation(topic,answer={}){
@@ -311,9 +303,8 @@ export function renderLifeMap(root,api){
  function suggestion(topic){
   if(topicReviewState(topic.id,topics,data.answers).key==='uninterested')return null;
   const a=data.answers[topic.id]||{};const r=recommendation(topic,a);if(!r)return null;
-  if(!a.next&&!a.support)r.action=topic.action;
   const people=records.filter(([type,item])=>type==='person'&&(data.links[topic.id]||[]).includes('person:'+item.id)).map(([,item])=>labelFor(item));
-  if(people.length&&a.support==='person'&&!a.next)r.action=`Arrange a conversation with ${people.join(', ')} about ${topic.title.toLowerCase()}.`;
+  if(people.length&&a.support==='person'&&!a.next)r.action=`Message ${people.join(', ')} to arrange a time to discuss: ${topic.title}`;
   return r;
  }
  function reviewMarker(topic){
@@ -394,7 +385,7 @@ export function renderLifeMap(root,api){
   content=`<small>${esc(current.title)}</small><h3>How soon does this need attention?</h3><div class="lm-answer-buttons">${[['week','Within a week'],['month','Within a month'],['quarter','Within a quarter (3 months)'],['year','Within a year'],['decade','Within a decade']].map(([v,l])=>`<button data-timing="${v}">${l}</button>`).join('')}</div><details class="lm-secondary"><summary>There is a specific deadline</summary><form id="lm-deadline"><label>Deadline<input type="date" name="deadline" required value="${esc(answer.deadline||'')}"></label><button>Continue</button></form></details>`;
  }else if(step==='action'){
   const r=suggestion(current);const already=api.tasks.some(t=>(data.links[current.id]||[]).includes('task:'+t.id)&&t.title===r?.action);
-  content=`<small>${esc(current.title)}</small><h3>${answer.timing==='unknown'?'Let’s clarify the next step':'A manageable next step'}</h3><form id="lm-create"><label>Suggested action<input name="title" required value="${esc(already?'':r?.action||current.action)}" placeholder="A concrete action you can take"></label><button class="lm-primary"  >Add task</button></form>${linkPicker('task',current.id)}<button class="lm-next-prompt" id="lm-next">Continue without adding a task →</button>${linksMarkup}${notesMarkup}`;
+  content=`<small>${esc(current.title)}</small><h3>A concrete next task</h3><form id="lm-create"><label>${r?.action?'Suggested task — edit before adding':'What will you do next?'}<input name="title" required value="${esc(already?'':r?.action||'')}" placeholder="For example: call the clinic to book the appointment"></label><button class="lm-primary"  >Add task</button></form>${linkPicker('task',current.id)}<button class="lm-next-prompt" id="lm-next">Continue without adding a task →</button>${linksMarkup}${notesMarkup}`;
  }else{
   content=`<small>${esc(current.personName?current.personName+' · '+current.title:current.title)}</small><h3>${esc(current.question)}</h3>${answer.status?`<p class="lm-current-answer">${esc(statuses[answer.status])} · change your answer below</p>`:''}<div class="lm-answer-buttons">${[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure'],['irrelevant','Not relevant'],['defer','Ask me later']].map(([v,l])=>`<button data-answer="${v}" aria-pressed="${answer.status===v}">${l}</button>`).join('')}</div><button class="lm-next-prompt" id="lm-next">Skip for now →</button>${notesMarkup}${linksMarkup}${addMarkup}`;
  }
