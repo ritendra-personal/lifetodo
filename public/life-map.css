@@ -26,4 +26,17 @@
 .lm-question-context [aria-current=page]{font-size:28px;line-height:1.25;font-weight:750;color:#194c36}
 .lm-question-count{margin:0;font-size:12px;color:#64786c;white-space:nowrap}
 .lm-toolbar:has(.lm-question-count){flex-wrap:wrap}
+/* The map owns its viewport; the surrounding page must not scroll it away. */
+body:has(.lm-map-canvas){overflow:hidden}
+.workspace:has(.lm-map-canvas){height:100dvh;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.workspace:has(.lm-map-canvas)>.topbar,.workspace:has(.lm-map-canvas)>.sync-status-slot{flex-shrink:0}
+.planner-grid:has(.lm-map-canvas),.task-board:has(.lm-map-canvas),#task-list:has(.lm-map-canvas){display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.life-map:has(.lm-map-canvas){display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.life-map:has(.lm-map-canvas)>.lm-toolbar,.life-map:has(.lm-map-canvas)>.lm-backup{flex-shrink:0}
+.lm-layout:has(.lm-map-canvas){flex:1;min-height:0;overflow:hidden;align-items:stretch}
+.lm-layout:has(.lm-map-canvas)>.lm-area-nav{min-height:0;overflow:auto}
+.lm-guided .lm-map-canvas{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.lm-map-canvas>.lm-map-filters,.lm-map-canvas>.lm-graph-controls,.lm-map-canvas>.lm-graph-help{flex-shrink:0}
+.lm-map-canvas>.lm-graph-scroll{flex:1;height:auto;min-height:0;max-height:none}
+@media(max-width:750px){.lm-layout:has(.lm-map-canvas){grid-template-rows:auto minmax(0,1fr)}.lm-layout:has(.lm-map-canvas)>.lm-area-nav{max-height:90px;flex-wrap:nowrap}}
 .life-map.lm-guided{max-width:none;width:100%;margin:0;padding:0;box-sizing:border-box}.lm-guided .lm-layout{grid-template-columns:200px minmax(0,1fr);gap:16px}.lm-guided .lm-area-nav{width:auto;min-width:0}.lm-guided .lm-interview{min-width:0}.lm-guided .lm-map-canvas{padding:0}.lm-guided .lm-toolbar{margin-bottom:12px}@media(max-width:750px){.lm-guided .lm-layout{grid-template-columns:1fr;gap:12px}}
