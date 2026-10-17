@@ -173,6 +173,10 @@ export function topicReviewState(id,topics,answers={}) {
  if(reviewed===branch.length)return {key:'reviewed',label:'Reviewed',reviewed,total:branch.length};
  return {key:'partial',label:own&&reviewed===1?'Reviewed · subtopics not reviewed':`Partially reviewed · ${reviewed} topic${reviewed===1?'':'s'}`,reviewed,total:branch.length};
 }
+export function topicSecondaryStatus(id,topics,answers={}){
+ if(createTopicExclusionResolver(topics,answers)(id))return '';
+ return statuses[answers[id]?.status]||'';
+}
 export function topicPath(id,topics){
  const byId=new Map(topics.map(topic=>[topic.id,topic])),path=[],seen=new Set();let current=byId.get(id);
  while(current&&!seen.has(current.id)){seen.add(current.id);path.unshift(current);current=byId.get(current.parent);}
@@ -376,7 +380,7 @@ export function renderLifeMap(root,api){
    content=`<h3>${esc(current.question)}</h3><div class="lm-answer-buttons"><button id="lm-support-yes">Yes — choose a person</button><button data-support-answer="well">Everyone is supported for now</button><button id="lm-support-unsure">Help me think</button><button data-support-answer="defer">Come back to this later</button></div>${step==='support-think'?'<p>Think about a parent managing a change, a partner pursuing a goal, a child needing guidance, or a friend who could use practical help. Is there someone you want to check in with?</p>':''}${outcomeList(outcomes)}`;
   }
  }else if(isArea||current.group){
-  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Review next topic</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}"><span>${esc(t.title)}</span><span class="lm-topic-review">${reviewMarker(t)}${data.answers[t.id]?.status?`<small>${esc(statuses[data.answers[t.id].status])}</small>`:''}</span></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
+  content=`<h3>${isArea?'What would you like to check?':esc(current.question)}</h3><button class="lm-primary" id="lm-guide">Review next topic</button><div class="lm-topic-menu">${children.map(t=>`<button data-go="${esc(t.id)}"><span>${esc(t.title)}</span><span class="lm-topic-review">${reviewMarker(t)}${topicSecondaryStatus(t.id,topics,data.answers)?`<small>${esc(topicSecondaryStatus(t.id,topics,data.answers))}</small>`:''}</span></button>`).join('')}</div>${addMarkup}${linksMarkup}`;
  }else if(step==='timing'){
   content=`<small>${esc(current.title)}</small><h3>How soon does this need attention?</h3><div class="lm-answer-buttons">${[['week','Within a week'],['month','Within a month'],['quarter','Within a quarter (3 months)'],['year','Within a year'],['decade','Within a decade']].map(([v,l])=>`<button data-timing="${v}">${l}</button>`).join('')}</div><details class="lm-secondary"><summary>There is a specific deadline</summary><form id="lm-deadline"><label>Deadline<input type="date" name="deadline" required value="${esc(answer.deadline||'')}"></label><button>Continue</button></form></details>`;
  }else if(step==='action'){
