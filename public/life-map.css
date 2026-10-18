@@ -124,3 +124,4 @@ body:has(.lm-map-canvas){overflow:hidden}
 @media(max-width:520px){.life-map .lm-toolbar [role=tablist]{width:100%}.life-map .lm-toolbar [role=tab]{padding:7px 8px;white-space:normal}}
 @media(max-width:1050px){.lm-priorities .lm-priority-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.lm-priorities .lm-priority-tasks{grid-column:1/-1;margin-left:0}}
 @media(max-width:600px){.lm-priorities .lm-priority-row{grid-template-columns:minmax(0,1fr)}.lm-priorities .lm-priority-heading{flex-wrap:nowrap}.lm-priorities .lm-priority-move{order:0}.lm-priorities .lm-priority-tasks{grid-column:1}}
+.lm-existing-outcome { margin-top: 16px; padding-top: 12px; border-top: 1px solid #d7deea; max-width: 640px; }

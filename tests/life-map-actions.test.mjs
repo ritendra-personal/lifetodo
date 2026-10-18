@@ -9,7 +9,7 @@ test('task suggestions use the specific outcome rather than inherited generic ac
   ['Master bedroom needs to be decluttered','Clear one surface'],
   ['Mortgage payment','Open the latest statement'],
   ['Renew passport','Check the official application'],
-  ['Back up family photos','Gather the relevant files'],
+  ['Back up family photos','Run a backup'],
   ['Run a backup','Run a backup'],
   ['Learn guitar','Find an introductory lesson'],
   ['Finish my script','Write the next paragraph'],

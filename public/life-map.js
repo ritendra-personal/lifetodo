@@ -1,5 +1,7 @@
-import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.75';
-import {concreteAction} from './life-map-actions.js?v=1.14.63';
+import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.77';
+import {concreteAction} from './life-map-actions.js?v=1.14.77';
+import {existingOutcome} from './life-map-structure.js?v=1.14.77';
+import {renderOutcomePicker} from './outcome-picker.js?v=1.14.76';
 import {priorityItems,renderPriorityView,setOutcomeStatus,setOutcomeUrgency,urgencyChoices} from './life-map-priorities.js?v=1.14.76';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.75';
@@ -12,7 +14,7 @@ export const baseTopics = [
  ['money','Financial wellbeing','Finances','How confident do you feel about your financial responsibilities and plans?','Identify one financial question or responsibility that needs attention.'],
  ['health','Health and wellbeing','Health','How well are your health needs and everyday wellbeing being looked after?','Identify one health need or routine you want to address.'],
  ['relationships','Relationships and belonging','Relationships','Are your important relationships getting the attention you want to give them?','Choose one relationship you would like to give attention to.'],
- ['care','Care and responsibilities','People depending on you','Are the responsibilities you carry for other people manageable and covered?','Identify one responsibility that needs support, sharing, or a next step.'],
+ ['care','Care and responsibilities','Care and responsibilities','Are the responsibilities you carry for other people manageable and covered?','Identify one responsibility that needs support, sharing, or a next step.'],
  ['admin','Life administration','Life admin','Are your paperwork, renewals, and practical arrangements under control?','Identify one administrative issue and clarify its next step.'],
  ['creative','Creative life','Creative ambitions','Are your creative ambitions moving forward in a way that feels meaningful?','Choose one creative outcome and define a small next milestone.'],
  ['growth','Personal growth','Learning and growth','Is there something you want to become better at or explore?','Choose a small experiment toward something you want to learn.'],
@@ -121,7 +123,7 @@ const documentReminders = [
  ['residency','Other residency or travel documents','Is there another citizenship, residency, visa, or travel document you need to arrange?','Identify the document and check the relevant official guidance.'],
  ['family-documents','Family documents','Are identity or travel documents for anyone you help care for taken care of?','Check whether someone you support needs help with an upcoming document.']
 ];
-export function discoveryTopics(){
+export function discoveryTopics({refine=true}={}){
  const items=[];
  for(const area of baseTopics){
   const rows=reminders[area.id]||probes[area.id].map(label=>[label,`Is “${label.toLowerCase()}” something you would like to address, or is it already taken care of?`,`Identify one manageable next step for ${label.toLowerCase()}.`]);
@@ -149,7 +151,7 @@ export function discoveryTopics(){
   const needs=slug==='diabetes'?['Glucose monitoring','Medication routine','Supplies and refills','Appointments and tests','Questions for my care team','Something else']:['Monitoring or equipment','Medication routine','Supplies and refills','Appointments and follow-ups','Everyday support or accessibility','Something else'];
   needs.forEach((need,index)=>items.push({id:parent+':'+index,parent,area:ongoing.area,title:need,kind:'care-outcome'}));
  }
- return expandDiscovery(items).map(item=>({...item,suggested:true}));
+ return expandDiscovery(items,{refine}).map(item=>({...item,suggested:true}));
 }
 export function coverageStats(id,topics,answers){
  const branch=branchStats(id,topics,answers,{},[]).topics.filter(t=>t.id!==id&&!t.group&&!t.kind);
@@ -168,6 +170,10 @@ export function topicReviewState(id,topics,answers={}) {
   const status=answers[topic.id]?.status;
   if(topic.isOutcome)return {reviewed:1,total:1};
   const descendants=children.get(topic.id)||[];
+  if(topic.reviewOptional){
+   const branch=branchStats(topic.id,topics,answers,{},[]).topics;
+   if(!branch.some(item=>item.isOutcome||answers[item.id]?.status))return {reviewed:0,total:0};
+  }
   if(descendants.length){
    return descendants.reduce((sum,child)=>{const value=count(child);return {reviewed:sum.reviewed+value.reviewed,total:sum.total+value.total};},{reviewed:0,total:0});
   }
@@ -217,7 +223,7 @@ export function topicPath(id,topics){
  return path;
 }
 export function nextReviewTopic(id,topics,answers={}){
- return outcomeMenuChildren(id,topics).find(topic=>['unreviewed','partial'].includes(topicReviewState(topic.id,topics,answers).key))||null;
+ return outcomeMenuChildren(id,topics).find(topic=>!topic.reviewOptional&&['unreviewed','partial'].includes(topicReviewState(topic.id,topics,answers).key))||null;
 }
 export function nextGuidedTopic(id,topics,answers={}){
  const current=topics.find(topic=>topic.id===id);if(!current)return null;
@@ -241,13 +247,13 @@ export function interviewCandidates(topics,answers={},skipped=[]) {
  const byId=new Map(topics.map(topic=>[topic.id,topic])),excluded=new Set(skipped);
  const isExcluded=createTopicExclusionResolver(topics,answers);
  return topics.filter(topic=>{
-  if(!topic.parent||excluded.has(topic.id)||isExcluded(topic.id)||topicReviewState(topic.id,topics,answers).key==='reviewed')return false;
+  if(!topic.parent||topic.reviewOptional||excluded.has(topic.id)||isExcluded(topic.id)||topicReviewState(topic.id,topics,answers).key==='reviewed')return false;
   const directAreaChild=!byId.get(topic.parent)?.parent;
   if((topic.group||topic.kind)&&!directAreaChild)return false;
   let parent=byId.get(topic.parent);const seen=new Set([topic.id]);
   while(parent){
    if(seen.has(parent.id))return false;seen.add(parent.id);
-   if(parent.isOutcome||['irrelevant','uninterested'].includes(answers[parent.id]?.status))return false;
+   if(parent.reviewOptional||parent.isOutcome||['irrelevant','uninterested'].includes(answers[parent.id]?.status))return false;
    // Detailed branches require context established by the guided review.
    if(parent.parent&&(parent.group||parent.kind)&&!topics.some(child=>child.parent===parent.id&&answers[child.id]?.status))return false;
    parent=byId.get(parent.parent);
@@ -420,7 +426,7 @@ export function renderLifeMap(root,api){
  }
  function reviewMarker(topic){
   const review=topicReviewState(topic.id,topics,data.answers);
-  return `<span class="lm-review-badge lm-review-${review.key}">${esc(review.label)}</span>`;
+  return `<span class="lm-review-badge lm-review-${review.key}" title="Reviewed means an outcome was recorded or the topic was excluded; it does not mean the work is complete.">${esc(topic.reviewOptional&&review.total===0?'Optional':review.label)}</span>`;
  }
  const recs=topics.filter(t=>t.parent&&!t.group&&!t.kind).map(suggestion).filter(Boolean).sort((a,b)=>b.score-a.score);
  function linkPicker(type,id){
@@ -464,19 +470,16 @@ export function renderLifeMap(root,api){
  }else if(current.kind==='care-outcome'){
   content=`<small>${esc(topics.find(t=>t.id===current.parent)?.title)} · ${esc(current.title)}</small><h3>What specifically do you want to have in place?</h3><form id="lm-care-outcome"><label>Outcome<input name="title" required maxlength="200" placeholder="${current.title==='Glucose monitoring'?'For example: Have my glucose monitor set up and in use':'Name one specific care need or result'}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Track each need separately, using the care plan agreed with your clinician.</p>${outcomeList(children)}`;
  }else if(current.kind==='milestone-discovery'){
-  content=`<h3>What creative milestone would you like to reach?</h3><form id="lm-milestone"><label>Milestone<input name="title" required maxlength="200" placeholder="For example: Win an Oscar, publish a book, or hold a solo exhibition"></label><button class="lm-primary">Continue</button></form><p class="lm-subtle">An ambition can be uncertain. Connect it to projects and actions you can influence.</p>${outcomeList(children)}`;
+  content=`<h3>What creative milestone would you like to reach?</h3><form id="lm-milestone"><label>Milestone<input name="title" required maxlength="200" placeholder="For example: Finish a first draft or submit a film to a festival"></label><button class="lm-primary">Continue</button></form>${outcomeList(children)}`;
  }else if(current.kind==='learning-choice'){
-  content=`<h3>${esc(current.question)}</h3><div class="lm-answer-buttons"><button data-learning-intent="Explore">Explore it</button><button data-learning-intent="Learn">Start learning</button><button data-learning-intent="Improve">Improve my skills</button></div>${outcomeList(children)}${addMarkup}`;
+  content=`<h3>What would you like to be able to do?</h3><form id="lm-learning-outcome"><label>Outcome<input name="title" required maxlength="200" placeholder="${esc('For example: '+(current.title==='A new language'?'Hold a simple conversation in Spanish':'Build confidence with '+current.title.toLowerCase()))}"></label><button class="lm-primary">Save outcome</button></form>${outcomeList(children)}`;
  }else if(current.kind==='learning-discovery'){
   const prompts=[['What would you like to learn?','For example: Learn to dance'],['What habit would you like to develop?','For example: Read regularly'],['What qualification would you like to work toward?','Name a course or qualification'],['What would you like to feel more confident about?','Describe a change that matters to you'],['What interest would you like to try?','For example: Try pottery'],['What would you like to stop pursuing?','Name something you want to let go of']];
   const [question,placeholder]=prompts[Number(current.id.split(':').at(-1))]||prompts[0];
   content=`<h3>${question}</h3><form id="lm-learning-outcome"><label>Your goal<input name="title" required maxlength="200" placeholder="${placeholder}"></label><button class="lm-primary">Continue</button></form><p class="lm-subtle">Start with a few words. Next we’ll work out where you are and a manageable next step.</p>${children.length?`<h4>Your goals</h4>${children.map(t=>`<button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>${esc(statuses[data.answers[t.id]?.status]||'Continue →')}</small></button>`).join('')}`:''}${linksMarkup}`;
  }else if(current.kind==='relationship-discovery'){
-  if(step==='relationship-action'){
-   const choices=current.id.endsWith(':2')?['Have a conversation','Say thank you','Apologize','Something else']:current.id.endsWith(':3')?['Discuss a boundary','Make time for myself','Something else']:['Send a message','Arrange a call','Meet up','Something else'];
-   content=`<small>${esc(supportDraft.personName)}</small><h3>How would you like to connect?</h3><div class="lm-answer-buttons">${choices.map(label=>`<button data-relationship-action="${esc(label)}">${esc(label)}</button>`).join('')}</div>${step==='relationship-custom'?'':''}`;
-  }else if(step==='relationship-custom'){
-   content=`<h3>What would you like to do with ${esc(supportDraft.personName)}?</h3><form id="lm-relationship-custom"><label>Outcome<input name="title" required maxlength="200"></label><button>Continue</button></form>`;
+  if(['relationship-action','relationship-custom'].includes(step)){
+   content=`<h3>What would you like to change or maintain with ${esc(supportDraft.personName)}?</h3><form id="lm-relationship-custom"><label>Outcome<input name="title" required maxlength="200" placeholder="${esc('For example: Stay in regular contact with '+supportDraft.personName)}"></label><button class="lm-primary">Save outcome</button></form>`;
   }else{
    content=`<h3>Who is this about?</h3><form id="lm-relationship-person"><label>Choose an existing person<select name="personId"><option value="">Choose a person…</option>${(api.people||[]).map(p=>`<option value="${esc(p.id)}">${esc(labelFor(p))}</option>`).join('')}</select></label><fieldset><legend>Or create a person</legend><label>First name<input name="firstName" maxlength="120"></label><label>Last name (optional)<input name="lastName" maxlength="120"></label></fieldset><p class="lm-subtle">Continue creates a People record. You can add other details in People later.</p><button class="lm-primary">Continue</button></form>${outcomeList(children)}<button id="lm-next">Skip for now</button>`;
   }
@@ -520,6 +523,10 @@ export function renderLifeMap(root,api){
  if(panel!=='map'&&!exclusion)for(const [label,items] of [['Reviewed',reviewGroups.reviewed],['Not of interest',reviewGroups.excluded]]){
   if(items.length)content+=`<section class="lm-excluded-topics" aria-label="${label} topics"><h4>${label}</h4><div class="lm-topic-menu">${items.map(topic=>`<button data-go="${esc(topic.id)}"><span>${esc(topic.title)}</span>${reviewMarker(topic)}</button>`).join('')}</div></section>`;
  }
+ if(panel!=='map'&&!exclusion&&!current.isOutcome&&step!=='action'&&selected!=='interview-empty'){
+  if(current.relatedTopic){const related=topics.find(topic=>topic.id===current.relatedTopic);if(related)content+=`<button type="button" data-go="${esc(related.id)}">Explore ${esc(related.title)}</button>`;}
+  content+='<div class="lm-existing-outcome"></div>';
+ }
  root.innerHTML=`<div class="life-map lm-guided"><div class="lm-toolbar"><div role="tablist" aria-label="Life map views">${[['map','My map'],['explore','Guided review'],['interview','Ask me']].map(([v,l])=>`<button role="tab" aria-selected="${panel===v}" data-panel="${v}">${l}</button>`).join('')}</div><span class="lm-storage" role="status">${esc(loading?'Loading…':notice)}</span></div><div class="lm-layout ${panel==='interview'?'lm-random-layout':''}">${panel==='interview'?'':nav}<section class="lm-interview ${panel==='map'?'lm-map-canvas':''}"><nav class="lm-breadcrumb" ${panel==='map'||selected==='interview-empty'?'hidden':''}><button data-go="${area.id}">${esc(area.title)}</button>${current.parent&&current.parent!==area.id?`<span> / </span><button data-go="${esc(current.parent)}">${esc(topics.find(t=>t.id===current.parent)?.title)}</button>`:''}</nav>${panel==='interview'&&selected!=='interview-empty'?`<p class="lm-subtle">${interviewCandidates(topics,data.answers).length} questions remaining</p>`:''}${content}</section></div><details class="lm-backup"><summary>Backup</summary><button id="lm-export">Export life map</button></details></div>`;
  root.querySelector('[role="tablist"]').insertAdjacentHTML('beforeend','<button type="button" role="tab" aria-selected="false" data-panel="priorities">Priorities</button>');
  const breadcrumb=root.querySelector('.lm-breadcrumb');
@@ -548,7 +555,14 @@ export function renderLifeMap(root,api){
   try{await persistLifeMapData(api);if(loadedKey===key)api.render();return true;}
   catch(error){notice='Save failed: '+error.message;api.render();return false;}
  }
+ function openMatchingOutcome(title){
+  const match=existingOutcome(topics,title);
+  if(!match)return false;
+  notice='Opened your existing outcome; no duplicate was created.';go(match.id);return true;
+ }
  function go(id){selected=id;step='question';if(panel==='priorities'){changePanel('explore');return;}if(panel!=='interview')panel='explore';api.render();}
+ const existingHost=root.querySelector('.lm-existing-outcome');
+ if(existingHost)renderOutcomePicker(existingHost,{outcomes:lifeMapTaskContext(api).outcomes,label:'Open an existing outcome',onPick:async id=>go(id)});
  function next(){
   if(panel==='interview'){interviewSkipped.push(current.id);const candidate=pickInterviewQuestion(topics,data.answers,interviewSkipped);selected=candidate?.id||'interview-empty';interviewSkipped.push(selected);step='question';api.render();return;}
   const candidate=nextGuidedTopic(current.id,topics,data.answers);
@@ -576,7 +590,7 @@ export function renderLifeMap(root,api){
  });
  root.querySelector('#lm-specific-outcome')?.addEventListener('submit',async e=>{
   e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;
-  const existing=children.find(t=>t.title.toLowerCase()===title.toLowerCase());if(existing){go(existing.id);return;}
+  if(openMatchingOutcome(title))return;
   e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();
   data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:current.action||`Identify the first practical step toward: ${title}.`});
   selected=id;step='question';await save();
@@ -594,11 +608,9 @@ export function renderLifeMap(root,api){
  root.querySelector('#lm-relationship-person')?.addEventListener('submit',e=>savePersonSelection(e,'relationship-action'));
  root.querySelector('#lm-support-person')?.addEventListener('submit',e=>savePersonSelection(e,'support-kind'));
 
- async function createRelationship(title){const id=crypto.randomUUID();const outcomeTitle=current.id.endsWith(':0')?`Stay connected with ${supportDraft.personName}`:current.id.endsWith(':1')?`Spend meaningful time with ${supportDraft.personName}`:current.id.endsWith(':2')?`Resolve an important conversation with ${supportDraft.personName}`:`Maintain healthy boundaries with ${supportDraft.personName}`;data.concerns.push({id,parent:current.id,area:area.area,title:outcomeTitle,personId:supportDraft.personId,personName:supportDraft.personName,question:`Where are you with “${outcomeTitle}”?`,action:title});if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];selected=id;step='timing';data.answers[id]={status:'unstarted'};await save();}
- root.querySelectorAll('[data-relationship-action]').forEach(b=>b.onclick=async()=>{const action=b.dataset.relationshipAction;if(action==='Something else'){step='relationship-custom';api.render();return;}b.disabled=true;await createRelationship(`${action} — ${supportDraft.personName}`);});
+ async function createRelationship(title){if(openMatchingOutcome(title))return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,personId:supportDraft.personId,personName:supportDraft.personName,question:`Where are you with “${title}”?`});if(supportDraft.personId)data.links[id]=['person:'+supportDraft.personId];selected=id;step='question';await save();}
  root.querySelector('#lm-relationship-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(title){e.target.querySelector('button').disabled=true;await createRelationship(title);}});
- root.querySelectorAll('[data-learning-intent]').forEach(b=>b.onclick=async()=>{b.disabled=true;const intent=b.dataset.learningIntent;const title=`${intent} ${current.title.toLowerCase()}`;const existing=children.find(t=>t.title===title);if(existing){go(existing.id);return;}const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:intent==='Explore'?`Try one introductory ${current.title.toLowerCase()} session to see if you enjoy it.`:intent==='Improve'?`Choose one ${current.title.toLowerCase()} skill to practise this week.`:`Find a beginner ${current.title.toLowerCase()} lesson and choose a first session.`});selected=id;step='question';await save();});
- root.querySelector('#lm-learning-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`,action:`Choose one small practice session, introductory lesson, or resource to begin: ${title}.`});selected=id;step='question';await save();});
+ root.querySelector('#lm-learning-outcome')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title||openMatchingOutcome(title))return;e.target.querySelector('button').disabled=true;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`});selected=id;step='question';await save();});
  root.querySelector('#lm-support-yes')?.addEventListener('click',()=>{supportDraft={};step='person';api.render();});
  root.querySelector('#lm-support-unsure')?.addEventListener('click',()=>{step='support-think';api.render();});
  root.querySelectorAll('[data-support-answer]').forEach(b=>b.onclick=async()=>{data.answers[current.id]={...answer,status:b.dataset.supportAnswer,updatedAt:new Date().toISOString()};await save();next();});
@@ -645,7 +657,7 @@ export function renderLifeMap(root,api){
   reopenTopicInterest(current.id,data.answers);step='question';await save(false);
  });
  root.querySelector('#lm-next')?.addEventListener('click',next);
- root.querySelector('#lm-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title)return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`What is the status of ${title.toLowerCase()}?`,action:`Choose one next step for ${title.toLowerCase()}.`});selected=id;step='question';await save();});
+ root.querySelector('#lm-custom')?.addEventListener('submit',async e=>{e.preventDefault();const title=new FormData(e.target).get('title').trim();if(!title||openMatchingOutcome(title))return;const id=crypto.randomUUID();data.concerns.push({id,parent:current.id,area:area.area,title,question:`Where are you with “${title}”?`});selected=id;step='question';await save();});
  root.querySelectorAll('.lm-link-picker').forEach(picker=>{
   const type=picker.dataset.linkType,id=picker.dataset.linkOutcome,input=picker.querySelector('[data-link-search]'),results=picker.querySelector('[data-link-results]');
   input.addEventListener('input',()=>{

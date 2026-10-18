@@ -15,7 +15,7 @@ const topics=[
 test('working life uses concrete choices and specific follow-up questions without changing record IDs',()=>{
  const templates=discoveryTopics();
  const topic=templates.find(t=>t.id==='check:career:0');
- assert.equal(topic.title,'Your working life');
+ assert.equal(topic.title,'Work satisfaction and development');
  assert.match(topic.question,/improve or change.*working life/);
  for(let index=0;index<4;index++){
   const choice=templates.find(t=>t.id==='check:career:0:choice:'+index);

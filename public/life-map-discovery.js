@@ -1,3 +1,4 @@
+import {refineLifeMapStructure} from './life-map-structure.js?v=1.14.77';
 // Possibilities, not assumed obligations. Each choice still requires confirmation.
 export const discoveryChoices = {
  home: [
@@ -121,7 +122,7 @@ export const supplementalChoices = [
  ['check:relationships:1','relationship-plans','Shared expectations, intimacy, or family plans'],
  ['check:community:2','meaning','Purpose, values, or a personal reflective practice']
 ];
-export function expandDiscovery(items) {
+export function expandDiscovery(items,{refine=true}={}) {
  for (const topic of items) {
   if (topic.group || (topic.kind && topic.kind !== 'learning-discovery') || ['check:admin:passport','check:admin:real-id','check:admin:oci'].includes(topic.id)) continue;
   const parts=topic.id.split(':');
@@ -178,7 +179,7 @@ export function expandDiscovery(items) {
  topics.push({id:'health:support',parent:'health',area:health,title:'Supporting someone else’s health',kind:'outcome-discovery',choices:[],expandedDiscovery:true,outcomeQuestion:'Who needs your support, and what health outcome would you like to help them with?'});
  const surgery='health:surgery';
  topics.push({id:surgery,parent:'check:health:4',area:health,title:'Surgery or a procedure',kind:'outcome-discovery',choices:[],expandedDiscovery:true,outcomeQuestion:'What surgery or procedure needs to be arranged or completed?'});
- return topics;
+ return refine?refineLifeMapStructure(topics):topics;
 }
 
 // Preserve old reviewed topics and links at their original IDs as explicit outcomes.

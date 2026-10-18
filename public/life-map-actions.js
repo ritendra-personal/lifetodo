@@ -44,9 +44,14 @@ export function concreteAction(topic, answer={}) {
  const title=topic.title?.trim()||'';
  if(!title)return '';
  if(answer.status==='unsure'||answer.support==='information')return '';
+ if(/\b(cancel|stop|quit|leave|pause|avoid|reduce|end|withdraw|no longer|not to|do not|don't|without)\b/i.test(title))return '';
  if(answer.support==='decision')return `Write the options and one advantage and drawback of each for: ${title}`;
  if(answer.support==='waiting')return `Send a follow-up requesting an update on: ${title}`;
  if(topic.personName)return `Message ${topic.personName} to arrange a time to discuss: ${title}`;
+ // Do not turn stopping, avoiding, or supporting someone into starting the activity.
+ if(/\b(help|support|care for|someone else|friend|partner|parent|child)\b/i.test(title))return '';
+ if(/\b(back\s*up|backup)\b/i.test(title))return `Run a backup and check that a saved file can be opened — ${title}`;
+ if(/\b(apply|application)\b.*\b(job|role|position)\b/i.test(title))return `Read the job requirements and list the application materials needed — ${title}`;
  const rule=actions.find(([pattern])=>pattern.test(title));
  return rule ? (typeof rule[1]==='function'?rule[1](title):`${rule[1]} — ${title}`) : '';
 }
