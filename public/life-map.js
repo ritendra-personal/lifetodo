@@ -2,6 +2,7 @@ import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.77'
 import {concreteAction} from './life-map-actions.js?v=1.14.77';
 import {existingOutcome} from './life-map-structure.js?v=1.14.77';
 import {renderOutcomePicker} from './outcome-picker.js?v=1.14.76';
+import {lifeMapReviewProgress,reviewProgressMarkup} from './life-map-progress.js?v=1.14.78';
 import {priorityItems,renderPriorityView,setOutcomeStatus,setOutcomeUrgency,urgencyChoices} from './life-map-priorities.js?v=1.14.76';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.75';
@@ -464,7 +465,8 @@ export function renderLifeMap(root,api){
  if(panel==='interview'&&selected==='interview-empty'){
   content=`<h3>No more questions in this round</h3><p>${interviewCandidates(topics,data.answers).length?'You skipped the remaining questions.':'The available questions have been reviewed. You can explore more topics in Guided review.'}</p><button id="lm-interview-restart">Start another round</button>`;
  }else if(panel==='map'){
-  content=`<div class="lm-map-filters"><label class="lm-interest-filter">Show<select id="lm-interest-filter">${[['active','Active topics'],['all','All topics'],['excluded','Not interested only']].map(([value,label])=>`<option value="${value}"${value===mapInterestFilter?' selected':''}>${label}</option>`).join('')}</select></label><label class="lm-hide-completed"><input id="lm-hide-completed" type="checkbox"${mapHideCompleted?' checked':''}>Hide completed</label></div>`+graphMarkup(graph);
+  const progress=lifeMapReviewProgress(topics,data.answers);
+  content=(loading?'<div class="lm-review-progress">Loading review progress…</div>':reviewProgressMarkup(progress))+`<div class="lm-map-filters"><label class="lm-interest-filter">Show<select id="lm-interest-filter">${[['active','Active topics'],['all','All topics'],['excluded','Not interested only']].map(([value,label])=>`<option value="${value}"${value===mapInterestFilter?' selected':''}>${label}</option>`).join('')}</select></label><label class="lm-hide-completed"><input id="lm-hide-completed" type="checkbox"${mapHideCompleted?' checked':''}>Hide completed</label></div>`+graphMarkup(graph);
   }else if(current.kind==='outcome-discovery'){
   content=`<small>${esc(current.title)}</small><h3>${esc(current.outcomeQuestion||'What specific result would you like?')}</h3><form id="lm-specific-outcome"><label>Specific outcome<input name="title" required maxlength="200" value="${esc(current.preset||'')}" placeholder="${esc(current.title==='Something else'?'Name one specific result you want':'What specifically would you like for '+current.title.toLowerCase()+'?')}"></label><button class="lm-primary">Save outcome and continue</button></form><p class="lm-subtle">Add separate outcomes for separate needs. Next: progress, timing, and tasks.</p>${outcomeList(children)}`;
  }else if(current.kind==='care-outcome'){
@@ -560,7 +562,11 @@ export function renderLifeMap(root,api){
   if(!match)return false;
   notice='Opened your existing outcome; no duplicate was created.';go(match.id);return true;
  }
- function go(id){selected=id;step='question';if(panel==='priorities'){changePanel('explore');return;}if(panel!=='interview')panel='explore';api.render();}
+ if(!loading&&panel!=='map'&&selected!=='interview-empty'&&!data.answers[current.id]?.visitedAt){
+  data.answers[current.id]={...(data.answers[current.id]||{}),visitedAt:new Date().toISOString()};void save(false);
+ }
+ function go(id){selected=id;step='question';const firstVisit=!loading&&!data.answers[id]?.visitedAt;if(firstVisit)data.answers[id]={...(data.answers[id]||{}),visitedAt:new Date().toISOString()};if(panel==='priorities'){changePanel('explore');}else{if(panel!=='interview')panel='explore';api.render();}if(firstVisit)void save(false);}
+ root.querySelectorAll('[data-review-target]').forEach(button=>button.onclick=()=>go(decodeURIComponent(button.dataset.reviewTarget)));
  const existingHost=root.querySelector('.lm-existing-outcome');
  if(existingHost)renderOutcomePicker(existingHost,{outcomes:lifeMapTaskContext(api).outcomes,label:'Open an existing outcome',onPick:async id=>go(id)});
  function next(){
