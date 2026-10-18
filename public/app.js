@@ -5,7 +5,7 @@ import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
 import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.78";
+const APP_VERSION = "1.14.79";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -5822,7 +5822,7 @@ async function saveProjectPhaseCell(form) {
   const existingEntry = projectPhaseEntryFor(projectId, phaseId);
   const notes = form.querySelector("[name='phaseTaskNotes']")?.value.trim() || "";
   const statusId = form.querySelector("[name='phaseStatusId']")?.value || "";
-  if (!orderedPhaseStatuses().some((status) => status.id === statusId)) throw new Error("Choose a fixed phase status. Run the fixed phase statuses migration if the list is missing.");
+  if (statusId && !orderedPhaseStatuses().some((status) => status.id === statusId)) throw new Error("Choose a fixed phase status. Run the fixed phase statuses migration if the list is missing.");
   if (!project || !state.projectPhases.some((phase) => phase.id === phaseId)) throw new Error("Select a project and phase.");
   const phase = state.projectPhases.find((item) => item.id === phaseId);
   if ((phase.project_type_id || "") !== (project.project_type_id || "")) throw new Error("This phase belongs to a different project type.");
@@ -5888,11 +5888,15 @@ function orderedPhaseStatuses() {
   });
 }
 
+function phaseStatusChoices() {
+  return [{ id: "", name: "Not reviewed", color: "#94a3b8" }, ...orderedPhaseStatuses()];
+}
+
 function projectPhaseCompletion(projectId, phases) {
-  const statuses = phases.map((phase) => phaseStatusNameForId(projectPhaseEntryFor(projectId, phase.id)?.status_id) || "Not started");
+  const statuses = phases.map((phase) => phaseStatusNameForId(projectPhaseEntryFor(projectId, phase.id)?.status_id) || "Not reviewed");
   const applicable = statuses.filter((name) => name !== "Not relevant");
   const completed = applicable.filter((name) => name === "Completed").length;
-  const rank = applicable.reduce((sum, name) => sum + Math.max(0, defaultPhaseStatuses.findIndex((status) => status.name === name)), 0);
+  const rank = applicable.reduce((sum, name) => sum + Math.max(0, 1 + defaultPhaseStatuses.findIndex((status) => status.name === name)), 0);
   return { completed, total: applicable.length, fraction: applicable.length ? completed / applicable.length : null, rank: applicable.length ? rank / applicable.length : 0 };
 }
 
@@ -5945,7 +5949,7 @@ function renderProjectPhaseMatrixView() {
       <div class="matrix-toolbar">
         ${phaseProjectTypeControl()}
         <button type="button" class="phase-apply-sort">Sort by ${state.phaseNextSort === "least" ? "least" : "most"} complete first</button>
-        <div class="matrix-legend">${orderedPhaseStatuses().map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
+        <div class="matrix-legend">${phaseStatusChoices().map((status) => `<span><i class="matrix-legend-dot" style="background:${phaseStatusTone(status.name).color}"></i>${escapeHtml(status.name)}</span>`).join("")}</div>
       </div>
       ${selectedProject && selectedPhase ? `
         <dialog class="matrix-assignment-panel phase-cell-dialog" aria-labelledby="phase-dialog-title">
@@ -5954,8 +5958,8 @@ function renderProjectPhaseMatrixView() {
           <form class="matrix-cell-form" data-matrix-project-id="${selectedProject.id}" data-matrix-phase-id="${selectedPhase.id}">
             <label class="matrix-notes-field">Notes<textarea name="phaseTaskNotes" rows="2" placeholder="Optional notes for this project phase">${escapeHtml(selectedEntry?.notes || "")}</textarea></label>
             <small class="phase-note-save-status" role="status"></small>
-            <input type="hidden" name="phaseStatusId" value="${selectedEntry?.status_id || phaseStatusIdForName("Not started")}">
-            <fieldset class="phase-status-choices"><legend>Choose status to save</legend>${orderedPhaseStatuses().map((status) => `<button type="submit" class="phase-status-choice" name="chosenPhaseStatus" value="${status.id}" aria-pressed="${status.id === (selectedEntry?.status_id || phaseStatusIdForName("Not started"))}" style="--status-color:${phaseStatusTone(status.name).color}">${escapeHtml(status.name)}</button>`).join("")}</fieldset>
+            <input type="hidden" name="phaseStatusId" value="${selectedEntry?.status_id || ""}">
+            <fieldset class="phase-status-choices"><legend>Choose status to save</legend>${phaseStatusChoices().map((status) => `<button type="submit" class="phase-status-choice" name="chosenPhaseStatus" value="${status.id}" aria-pressed="${status.id === (selectedEntry?.status_id || "")}" style="--status-color:${phaseStatusTone(status.name).color}">${escapeHtml(status.name)}</button>`).join("")}</fieldset>
           </form>
           <details class="phase-dialog-tasks"><summary>Linked tasks (${selectedLinks.length})</summary><div class="matrix-add-row"><select name="matrixTaskId" aria-label="Existing project task"><option value="">Select existing project task...</option>${availableTasks.map((task) => `<option value="${task.id}">${escapeHtml(task.title)}</option>`).join("")}</select><button class="matrix-add-task-button" type="button"${availableTasks.length ? "" : " disabled"}>Link task</button></div>
           <div class="matrix-assigned-tasks">${selectedLinks.map((link) => {
@@ -5976,7 +5980,7 @@ function renderProjectPhaseMatrixView() {
               const completion = projectPhaseCompletion(project.id, phases);
               return `<tr><th class="matrix-project-name" style="width:${state.matrixProjectColumnWidth}px; min-width:${state.matrixProjectColumnWidth}px;"><button class="link-button matrix-project-link" type="button" data-matrix-project-id="${project.id}">${escapeHtml(project.name)}</button><small>${completion.fraction === null ? "N/A" : Math.round(completion.fraction * 100) + "% complete"} · ${projectTasks.length} task${projectTasks.length === 1 ? "" : "s"}</small></th>${phases.map((phase) => {
                 const entry = projectPhaseEntryFor(project.id, phase.id);
-                const statusLabel = phaseStatusNameForId(entry?.status_id) || "Not started";
+                const statusLabel = phaseStatusNameForId(entry?.status_id) || "Not reviewed";
                 const status = phaseStatusTone(statusLabel);
                 const count = projectPhaseLinksFor(project.id, phase.id).length;
                 return `<td><button class="matrix-cell ${status.className}" style="--phase-status-color:${status.color};" type="button" data-matrix-cell="true" data-matrix-project-id="${project.id}" data-matrix-phase-id="${phase.id}" title="${escapeHtml(entry?.notes || statusLabel)}"><span class="matrix-cell-status"></span><strong>${escapeHtml(statusLabel)}${entry?.notes?.trim() ? '<span class="phase-note-indicator" aria-label="Has note">▤</span>' : ""}</strong><small>${count} task${count === 1 ? "" : "s"}</small></button></td>`;

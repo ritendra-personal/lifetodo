@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
 const source = fs.readFileSync("public/app.js", "utf8");
-const names = ["saveProjectPhaseCell", "projectPhaseEntryFor", "renderProjectPhaseMatrixView", "projectPhaseLinksFor", "phaseStatusTone", "phaseStatusNameForId", "phaseStatusIdForName", "selectedPhaseProjectTypeId", "phasesForProjectType", "phaseProjectTypeControl", "orderedPhaseStatuses", "projectPhaseCompletion"];
+const names = ["saveProjectPhaseCell", "projectPhaseEntryFor", "renderProjectPhaseMatrixView", "projectPhaseLinksFor", "phaseStatusTone", "phaseStatusNameForId", "phaseStatusIdForName", "selectedPhaseProjectTypeId", "phasesForProjectType", "phaseProjectTypeControl", "orderedPhaseStatuses", "phaseStatusChoices", "projectPhaseCompletion"];
 const functions = names.map((name) => {
   const start = source.search(new RegExp("(?:async )?function " + name + "\\("));
   assert.ok(start >= 0, name);
@@ -43,7 +43,11 @@ const form = {
 };
 (async () => {
   context.renderProjectPhaseMatrixView();
-  assert.match(context.els.taskList.innerHTML, /Not started/);
+  assert.match(context.els.taskList.innerHTML, /Not reviewed/);
+  assert.equal(context.phaseStatusTone('Not reviewed').color,'#94a3b8');
+  assert.equal(context.phaseStatusChoices()[0].name,'Not reviewed');
+  assert.match(context.els.taskList.innerHTML, /name="phaseStatusId" value=""/);
+  assert.equal(state.projectPhaseEntries.length,0,'Rendering untouched cells does not create entries');
   assert.match(context.els.taskList.innerHTML, /2 tasks/);
   assert.doesNotMatch(context.els.taskList.innerHTML, /phaseTaskTitle|Save phase task/);
   assert.match(context.els.taskList.innerHTML, /<dialog/);
@@ -56,6 +60,11 @@ const form = {
   await context.saveProjectPhaseCell(form);
   assert.equal(writes[0].table, "planner_project_phase_entries");
   assert.equal(writes[0].payload.notes, "Phase notes");
+  const unreviewedForm={...form,querySelector:selector=>({value:selector.includes('Notes')?'Keep these notes':''})};
+  await context.saveProjectPhaseCell(unreviewedForm);
+  assert.equal(writes.at(-1).payload.status_id,null,'Not reviewed uses the existing nullable status field');
+  assert.equal(state.projectPhaseEntries[0].notes,'Keep these notes');
+  await context.saveProjectPhaseCell(form);
   fail = true;
   await assert.rejects(context.saveProjectPhaseCell(form), /Database unavailable/);
   state.projectPhaseEntriesCloudReady = false;
