@@ -1,6 +1,6 @@
 import {expandDiscovery,assembleTopics} from './life-map-discovery.js?v=1.14.75';
 import {concreteAction} from './life-map-actions.js?v=1.14.63';
-import {priorityItems,renderPriorityView,setOutcomeStatus,setOutcomeUrgency,urgencyChoices} from './life-map-priorities.js?v=1.14.69';
+import {priorityItems,renderPriorityView,setOutcomeStatus,setOutcomeUrgency,urgencyChoices} from './life-map-priorities.js?v=1.14.76';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.75';
 export function linkCandidates(records,type,linked=[],query='') {
@@ -278,10 +278,11 @@ export function outcomeEntryMarkup(){
 }
 export function taskEntryMarkup(current,tasks,suggestion='',overview=false){
  const already=tasks.some(task=>task.title===suggestion);
- return `${overview?'':`<h3>${esc(current.title)}</h3>`}<form id="lm-create"><label>Task<input name="title" required maxlength="300" value="${esc(already?'':suggestion)}" placeholder="What will you do next?"></label><button class="lm-primary">Add task</button></form>${tasks.length?`<section class="lm-added-tasks" aria-label="Tasks for this outcome"><h4>Tasks (${tasks.length})</h4><ol>${tasks.map(task=>`<li><a data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)}</a>${task.status==='done'?' <small>Completed</small>':''}</li>`).join('')}</ol></section>`:''}${overview?'':'<button class="lm-next-prompt" id="lm-next">Next question →</button>'}`;
+ return `${overview?'':`<h3>${esc(current.title)}</h3>`}<form id="lm-create"><label>Task<input name="title" required maxlength="300" value="${esc(already?'':suggestion)}" placeholder="What will you do next?"></label><button class="lm-primary">Add task</button></form>${tasks.length?`<section class="lm-added-tasks" aria-label="Tasks for this outcome"><h4>Tasks (${tasks.length})</h4><ol>${tasks.map(task=>`<li class="${task.status==='done'?'lm-task-completed':''}"><input type="checkbox" data-toggle="${esc(task.id)}" aria-label="Complete ${esc(task.title)}"${task.status==='done'?' checked':''}><a data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)}</a>${task.status==='done'?' <small>Completed</small>':''}</li>`).join('')}</ol></section>`:''}${overview?'':'<button class="lm-next-prompt" id="lm-next">Next question →</button>'}`;
 }
 let supportDraft={};
 let loadedKey='',data={answers:{},links:{},concerns:[]},notice='',loading=false;
+let loadPromise=Promise.resolve(),loadError='';
 let selected='admin',panel='map',step='question',saveQueue=Promise.resolve();
 export function placeQuestionSkip(section,step='question'){
  section.querySelector('#lm-guide')?.remove();
@@ -307,19 +308,80 @@ let mapInterestFilter='active';
 let mapHideCompleted=false;
 const labelFor=(item)=>item?.title||item?.name||[item?.first_name,item?.last_name].filter(Boolean).join(' ')||'Unavailable record';
 
+export function ensureLifeMapLoaded(api){
+ const key='seven-lives-map:'+api.userKey;
+ if(loadedKey===key)return loadPromise;
+ loadedKey=key;supportDraft={};selected='admin';panel='map';step='question';interviewSkipped=[];mapInterestFilter='active';mapHideCompleted=false;lastPanelHash=null;loadError='';loading=false;
+ try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{},concerns:[]};}catch{data={answers:{},links:{},concerns:[]};}
+ data.answers||={};data.links||={};data.concerns||=[];notice='Saved in this browser.';
+ if(!api.userId){loadPromise=Promise.resolve();return loadPromise;}
+ loading=true;
+ loadPromise=(async()=>{
+  try{
+   const result=api.readLifeMap?await api.readLifeMap():await api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle();
+   if(result.error)throw result.error;
+   if(loadedKey!==key)return;
+   if(result.data?.data)data=result.data.data;
+   data.answers||={};data.links||={};data.concerns||=[];notice='Connected to your account.';
+  }catch(error){if(loadedKey===key){loadError=error.message||'Could not load outcome links.';notice='Outcome links could not be loaded. Retry before editing.';}}
+  finally{if(loadedKey===key){loading=false;api.render?.();}}
+ })();
+ return loadPromise;
+}
+
+export function lifeMapTaskContext(api){
+ ensureLifeMapLoaded(api);
+ const topics=assembleTopics(baseTopics,discoveryTopics(),data),excluded=createTopicExclusionResolver(topics,data.answers);
+ const outcomes=topics.filter(topic=>topic.isOutcome&&!excluded(topic.id)).map(topic=>({id:topic.id,title:topic.title,area:topic.area,projectId:(data.links[topic.id]||[]).find(ref=>ref.startsWith('project:'))?.slice(8)||'',path:topicPath(topic.id,topics).map(item=>item.title).join(' / ')})).sort((a,b)=>a.path.localeCompare(b.path));
+ return {outcomes,links:data.links,loading,error:loadError};
+}
+export function retryLifeMapLoad(api){loadedKey='';return ensureLifeMapLoaded(api);}
+
+export async function persistLifeMapData(api){
+ const key=loadedKey,snapshot=JSON.parse(JSON.stringify(data));
+ const write=async()=>{
+  localStorage.setItem(key,JSON.stringify(snapshot));
+  if(api.userId){
+   if(loadError)throw new Error(loadError);
+   const payload={user_id:api.userId,data:snapshot,updated_at:new Date().toISOString()};
+   if(api.writeLifeMap)await api.writeLifeMap(payload);
+   else {const result=await api.client.from('planner_life_map').upsert(payload);if(result.error)throw result.error;}
+  }
+  if(loadedKey===key)notice=api.userId?'Saved.':'Saved in this browser.';
+ };
+ saveQueue=saveQueue.catch(()=>{}).then(write);
+ return saveQueue;
+}
+
+export async function setTaskOutcome(api,taskId,outcomeId,remove=false){
+ await ensureLifeMapLoaded(api);
+ if(loadError)throw new Error(loadError);
+ const context=lifeMapTaskContext(api);
+ if(!context.outcomes.some(outcome=>outcome.id===outcomeId))throw new Error('Choose an existing outcome.');
+ const refs=data.links[outcomeId]||[],ref='task:'+taskId;
+ data.links[outcomeId]=remove?refs.filter(item=>item!==ref):[...new Set([...refs,ref])];
+ try{await persistLifeMapData(api);}
+ catch(error){
+  const currentRefs=data.links[outcomeId]||[];
+  data.links[outcomeId]=refs.includes(ref)?[...new Set([...currentRefs,ref])]:currentRefs.filter(item=>item!==ref);
+  localStorage.setItem(loadedKey,JSON.stringify(data));throw error;
+ }
+}
+export async function createTaskForOutcome(api,outcomeId,title,existingTaskId=''){
+ await ensureLifeMapLoaded(api);
+ if(loadError)throw new Error(loadError);
+ const outcome=lifeMapTaskContext(api).outcomes.find(item=>item.id===outcomeId);
+ if(!outcome)throw new Error('This outcome is unavailable.');
+ const task=existingTaskId?api.tasks.find(item=>item.id===existingTaskId):await api.createTask({title:title.trim(),area:outcome.area||'',project_id:outcome.projectId,notes:'Life map outcome: '+outcome.title,priority:'Medium'});
+ if(!task)throw new Error('Task was not saved. Please retry.');
+ try{await setTaskOutcome(api,task.id,outcomeId);return task;}
+ catch(error){error.taskId=task.id;throw error;}
+}
+
 export function renderLifeMap(root,api){
  renderForHash=()=>{if(root.isConnected)api.render();};
  const key='seven-lives-map:'+api.userKey;
- if(loadedKey!==key){
-  loadedKey=key;supportDraft={};selected='admin';panel='map';step='question';interviewSkipped=[];mapInterestFilter='active';mapHideCompleted=false;lastPanelHash=null;
-  try{data=JSON.parse(localStorage.getItem(key))||{answers:{},links:{},concerns:[]};}catch{data={answers:{},links:{},concerns:[]};}
-  notice='Saved in this browser.';
-  if(api.client&&api.userId){loading=true;api.client.from('planner_life_map').select('data').eq('user_id',api.userId).maybeSingle().then(({data:row,error})=>{
-   if(loadedKey!==key)return;
-   if(!error&&row?.data)data=row.data;
-   notice=error?'Cloud unavailable; changes will also be kept in this browser.':'Connected to your account.';loading=false;api.render();
-  }).catch(()=>{if(loadedKey===key){loading=false;notice='Cloud unavailable; browser storage is available.';api.render();}});}
- }
+ ensureLifeMapLoaded(api);
  data.answers ||= {};data.links ||= {};data.concerns ||= [];
  const topics=assembleTopics(baseTopics,discoveryTopics(),data);
  const panelHash=window.location.hash;
@@ -344,7 +406,7 @@ export function renderLifeMap(root,api){
  if(panel==='priorities'){
   const model=priorityItems(topics,data),changed=JSON.stringify(model.order)!==JSON.stringify(data.priorityOrder||[]);
   if(!loading)data.priorityOrder=model.order;
-  renderPriorityView(root,{topics,data,tasks:api.tasks,notice:loading?'Loading…':notice,save:()=>save(false),openOutcome:go,openTask:api.openTask,changePanel});
+  renderPriorityView(root,{topics,data,tasks:api.tasks,notice:loading?'Loading…':notice,save:()=>save(false),refresh:api.render,openOutcome:go,openTask:api.openTask,changePanel,addTask:(id,title,taskId)=>createTaskForOutcome(api,id,title,taskId),toggleTask:async id=>{const task=api.tasks.find(item=>item.id===id);if(!task)throw new Error('Task not found.');const saved=await api.createTask({...task,status:task.status==='done'?'active':'done',completed_at:task.status==='done'?null:new Date().toISOString()});if(!saved)throw new Error('Task was not saved.');api.render();}});
   if(loading)root.querySelectorAll('[data-priority-status],[data-priority-move],[data-priority-drag],[data-priority-sort],[data-priority-timing],[data-priority-deadline]').forEach(button=>{button.disabled=true;button.draggable=false;});
   if(changed&&!loading)void save(false);
   return;
@@ -373,7 +435,7 @@ export function renderLifeMap(root,api){
  const notesMarkup=`<details class="lm-secondary"><summary>Add a note</summary><form id="lm-note"><label>Note<textarea name="notes" rows="3">${esc(answer.notes||'')}</textarea></label><button>Save note</button></form></details>`;
  const addMarkup=outcomeEntryMarkup();
  function outcomeList(items,expanded=false){if(!expanded)return items.length?`<h4>Outcomes</h4>${items.map(topic=>{const count=(data.links[topic.id]||[]).filter(ref=>ref.startsWith('task:')).length;return `<button class="lm-review-row" data-go="${esc(topic.id)}"><strong>${esc(topic.title)}</strong><span class="lm-topic-review">${reviewMarker(topic)}<small>${esc(statuses[data.answers[topic.id]?.status]||'Status not set')} · ${count} task${count===1?'':'s'}</small></span></button>`;}).join('')}`:'';return items.length?`<h4>Outcomes under this topic</h4>${items.map(t=>{const tasks=api.tasks.filter(task=>(data.links[t.id]||[]).includes('task:'+task.id));return `<div class="lm-outcome-item"><button class="lm-review-row" data-go="${esc(t.id)}"><strong>${esc(t.title)}</strong><small>Outcome · Review →</small></button>${tasks.length?`<p>Tasks — concrete actions</p>${tasks.map(task=>`<a class="lm-review-row" data-open-task="${esc(task.id)}" href="?view=focus-task&id=${encodeURIComponent(task.id)}">${esc(task.title)} — Open task</a><button data-unlink="task:${esc(task.id)}" data-link-outcome="${esc(t.id)}">Unlink task</button>`).join('')}`:`<p>No tasks yet</p>`}<details><summary>Add task</summary><form data-inline-task="${esc(t.id)}"><label>Task title<input name="title" required maxlength="300" placeholder="What concrete action will you take?"></label><button class="lm-primary">Create task</button></form></details>${linkPicker('task',t.id)}</div>`;}).join('')}`:'';}
- const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${panel!=='map'&&area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${data.answers[t.id]?.status==='uninterested'?'Not of interest · Reviewed':c.complete+' taken care of'+(c.reviewed?' · '+c.reviewed+' reviewed':'')}</small></button>`;}).join('')}</aside>`;
+ const nav=`<aside class="lm-area-nav">${baseTopics.map(t=>{const c=coverageStats(t.id,topics,data.answers);return `<button class="lm-topic ${panel!=='map'&&area.id===t.id?'selected':''}" data-go="${t.id}"><strong>${esc(t.title)}</strong><small>${data.answers[t.id]?.status==='uninterested'?'Not of interest · Reviewed':c.complete+' taken care of'+(c.reviewed?' · '+c.reviewed+' reviewed':'')}</small></button>`;}).join('')}</aside><label class="lm-mobile-area">Life area<select data-life-area>${baseTopics.map(topic=>`<option value="${topic.id}"${area.id===topic.id?' selected':''}>${esc(topic.title)}</option>`).join('')}</select></label>`;
  const mapAreas=baseTopics.map(domain=>{
   const b=branchStats(domain.id,topics,data.answers,data.links,api.tasks);
   const outcomes=b.topics.filter(t=>t.id!==domain.id&&!t.group&&!t.kind&&(data.answers[t.id]?.status||data.concerns.some(c=>c.id===t.id)||(data.links[t.id]||[]).length));
@@ -483,9 +545,8 @@ export function renderLifeMap(root,api){
  }
  async function save(markReviewed=true){
   if(markReviewed)data.answers[current.id]={...(data.answers[current.id]||{}),reviewedAt:data.answers[current.id]?.reviewedAt||new Date().toISOString()};
-  const snapshot=JSON.parse(JSON.stringify(data));const owner=api.userId;const client=api.client;
-  const write=async()=>{try{localStorage.setItem(key,JSON.stringify(snapshot));notice='Saved in this browser.';if(client&&owner){const {error}=await client.from('planner_life_map').upsert({user_id:owner,data:snapshot,updated_at:new Date().toISOString()});notice=error?'Saved here; account sync failed.':'Saved.';}if(loadedKey===key)api.render();}catch{notice='Save failed. Please retry.';api.render();}};
-  saveQueue=saveQueue.then(write,write);return saveQueue;
+  try{await persistLifeMapData(api);if(loadedKey===key)api.render();return true;}
+  catch(error){notice='Save failed: '+error.message;api.render();return false;}
  }
  function go(id){selected=id;step='question';if(panel==='priorities'){changePanel('explore');return;}if(panel!=='interview')panel='explore';api.render();}
  function next(){
@@ -497,6 +558,7 @@ export function renderLifeMap(root,api){
 
  root.querySelectorAll('[data-open-task]').forEach(link=>link.onclick=e=>{e.preventDefault();api.openTask(link.dataset.openTask);});
  root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+ root.querySelector('[data-life-area]')?.addEventListener('change',event=>go(event.target.value));
  function changePanel(value){
   const hash=({map:'#my-map',explore:'#guided-review',interview:'#ask-me',priorities:'#priorities'})[value];
   if(window.location.hash!==hash)window.history.pushState(null,'',hash);

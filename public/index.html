@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Seven Lives</title>
-    <link rel="stylesheet" href="/life-map.css?v=1.14.73">
+    <link rel="stylesheet" href="/life-map.css?v=1.14.76">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?v=1.14.71">
+    <link rel="stylesheet" href="/styles.css?v=1.14.76">
   </head>
   <body>
     <div class="shell">
@@ -20,7 +20,8 @@
           </div>
         </div>
 
-        <nav class="views" aria-label="Planner views">
+        <button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button" aria-expanded="false" aria-controls="planner-navigation-links">Menu</button>
+        <nav id="planner-navigation-links" class="views" aria-label="Planner views">
           <button class="view-button active" data-view="home" type="button">Home <span id="count-home">0</span></button>
           <button class="view-button" data-view="life-map" type="button">Life map</button>
           <div class="nav-group-label">Key Objects</div>
@@ -115,6 +116,8 @@
           <div class="planning-section-head">
             <h4>Add new Task</h4>
           </div>
+          <div id="quick-task-entry"></div>
+          <details class="advanced-task-entry"><summary>More task options</summary>
           <form id="task-form" class="task-form">
             <label class="field-label">Title
               <input id="title" name="title" type="text" placeholder="New task" autocomplete="off" required>
@@ -152,6 +155,7 @@
             </label></details>
             <button class="primary-button form-submit" type="submit">Add</button>
           </form>
+          </details>
         </section>
 
         <section class="tag-panel task-tag-panel hidden" aria-label="Tag filters">
@@ -286,6 +290,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=1.14.75" type="module"></script>
+    <script src="/app.js?v=1.14.76" type="module"></script>
   </body>
 </html>

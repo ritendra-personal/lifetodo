@@ -1,9 +1,11 @@
-import {renderLifeMap} from './life-map.js?v=1.14.75';
+import {renderLifeMap,lifeMapTaskContext,setTaskOutcome,retryLifeMapLoad} from './life-map.js?v=1.14.76';
+import {renderOutcomePicker,taskOutcomeIds} from './outcome-picker.js?v=1.14.76';
+import {renderQuickTaskEntry} from './quick-task-entry.js?v=1.14.76';
 import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
 import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.75";
+const APP_VERSION = "1.14.76";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -3759,7 +3761,7 @@ function filteredTasks() {
       if (state.view === "graph" || state.view === "timeline") return task.status !== "done" || state.showDone;
       const taskFilter = state.view === "tasks" ? state.taskFilter : state.view;
       if (taskFilter === "done") return task.status === "done";
-      if (task.status === "done" && !state.showDone) return false;
+      if (task.status === "done" && !state.showDone && !contextCompletedTasks.has(task.id)) return false;
       return taskDateBucket(task) === taskFilter;
     })
     .filter((task) => {
@@ -4586,8 +4588,43 @@ function renderParentControls() {
   }
 }
 
+let quickTaskDraft={title:'',outcomeId:'',taskId:'',saving:false,error:''};
+let quickTaskOwner='';
+const contextCompletedTasks=new Set();
+const mobileNavToggle=document.querySelector('#mobile-nav-toggle');
+mobileNavToggle.addEventListener('click',()=>{const open=document.querySelector('.sidebar').classList.toggle('mobile-nav-open');mobileNavToggle.setAttribute('aria-expanded',String(open));});
+document.querySelector('#planner-navigation-links').addEventListener('click',event=>{if(event.target.closest('[data-view]')){document.querySelector('.sidebar').classList.remove('mobile-nav-open');mobileNavToggle.setAttribute('aria-expanded','false');}});
+function lifeMapApi(){
+ return {userKey:state.user?.id||state.plannerKey||'local',userId:state.user?.id,client:state.supabase,render,
+  readLifeMap:async()=>({data:(await supabaseRestMutation(`planner_life_map?user_id=eq.${encodeURIComponent(state.user.id)}&select=data`))?.[0]||null}),
+  writeLifeMap:payload=>supabaseRestMutation('planner_life_map?on_conflict=user_id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify(payload)})};
+}
+async function updateTaskOutcome(taskId,outcomeId,remove=false){
+ try{await setTaskOutcome(lifeMapApi(),taskId,outcomeId,remove);state.syncError='';showSyncMessage('Saved task outcome.');render();}
+ catch(error){state.syncError='Outcome was not saved: '+error.message;render();throw error;}
+}
+function attachTaskOutcomePicker(host,task){
+ const context=lifeMapTaskContext(lifeMapApi());
+ renderOutcomePicker(host,{outcomes:context.outcomes,selected:taskOutcomeIds(context.links,task.id),disabled:context.loading||Boolean(context.error),error:context.error,onPick:id=>updateTaskOutcome(task.id,id),onRemove:id=>updateTaskOutcome(task.id,id,true)});
+}
+function renderFastTaskEntry(){
+ const api=lifeMapApi();
+ if(quickTaskOwner!==api.userKey){quickTaskOwner=api.userKey;quickTaskDraft={title:'',outcomeId:'',taskId:'',saving:false,error:''};contextCompletedTasks.clear();}
+ const context=lifeMapTaskContext(api),host=document.querySelector('#quick-task-entry');
+ renderQuickTaskEntry(host,{context,draft:quickTaskDraft,refresh:render,onRetry:async()=>{await retryLifeMapLoad(lifeMapApi());render();},onCreate:async draft=>{
+  const outcome=context.outcomes.find(item=>item.id===draft.outcomeId);
+  if(!outcome)throw new Error('Select an existing outcome.');
+  const task=draft.taskId?state.tasks.find(item=>item.id===draft.taskId):await persistTask(normalizeTask({title:draft.title,area:outcome.area||'',project_id:outcome.projectId||'',due_date:defaultDueDateForView(),priority:'Medium'}));
+  if(!task)throw new Error('Task was not saved. '+(state.syncError||'Please retry.'));
+  draft.taskId=task.id;
+  try{await updateTaskOutcome(task.id,draft.outcomeId);}
+  catch(error){error.taskId=task.id;throw error;}
+ }});
+}
+
 function renderTasks() {
-  if(["life-map","graph"].includes(state.view)){renderLifeMap(els.taskList,{outcomeTaskGraph:state.view==="graph",openOutcome:()=>{state.view="life-map";render();},userKey:state.user?.id||state.plannerKey||"local",userId:state.user?.id,client:state.supabase,tasks:state.tasks,projects:state.projects,goals:state.goals,people:state.people,createTask:persistTask,openTask:id=>focusObject("task",id,state.view),createPerson:person=>persistPerson(person,{requireCloud:Boolean(state.user),render:false}),render});return;}
+  if(['tasks','today','upcoming','backlog','done'].includes(state.view))renderFastTaskEntry();
+  if(["life-map","graph"].includes(state.view)){renderLifeMap(els.taskList,{...lifeMapApi(),outcomeTaskGraph:state.view==="graph",openOutcome:()=>{state.view="life-map";render();},tasks:state.tasks,projects:state.projects,goals:state.goals,people:state.people,createTask:persistTask,openTask:id=>focusObject("task",id,state.view),createPerson:person=>persistPerson(person,{requireCloud:Boolean(state.user),render:false}),render});return;}
   if (state.view === "focus-task") {
     renderFocusedTaskView();
     return;
@@ -4835,6 +4872,8 @@ function renderTask(task, depth, childCount) {
       }
     }
     els.taskList.append(button);
+    const outcomeHost=document.createElement('div');
+    outcomeHost.className='task-outcome-assignment';button.append(outcomeHost);attachTaskOutcomePicker(outcomeHost,task);
 }
 
 function tasksForGoal(goalId) {
@@ -5009,6 +5048,8 @@ function renderFocusedTaskView() {
   form.querySelector("[name='dueDate']").value = task.due_date || "";
   form.querySelector("[name='tags']").value = task.tags.join(", ");
   fillTaxonomyPicker(form.querySelector(".taxonomy-picker"), task.taxonomy_node_ids);
+  const outcomeHost=document.createElement('div');outcomeHost.className='task-outcome-assignment';
+  form.querySelector('.detail-actions').before(outcomeHost);attachTaskOutcomePicker(outcomeHost,task);
 }
 
 function renderFocusedGoalView() {
@@ -8626,6 +8667,9 @@ function renderDetail() {
   detail.due.value = task.due_date || "";
   els.completeButton.classList.toggle("reopen", task.status === "done");
   els.completeButton.innerHTML = `<span aria-hidden="true">${task.status === "done" ? "↺" : "✓"}</span>${task.status === "done" ? "Reopen task" : "Mark done"}`;
+  let outcomeHost=els.detailForm.querySelector('.task-outcome-assignment');
+  if(!outcomeHost){outcomeHost=document.createElement('div');outcomeHost.className='task-outcome-assignment';els.detailForm.append(outcomeHost);}
+  attachTaskOutcomePicker(outcomeHost,task);
 }
 
 function render() {
@@ -8726,11 +8770,12 @@ function render() {
   syncBrowserHistory();
 }
 
-async function toggleTaskStatus(id) {
+async function toggleTaskStatus(id, { confirm = true } = {}) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
   const done = task.status !== "done";
-  if (done && !(await confirmAction(`Mark "${task.title}" as done?`, { title: "Confirm done", acceptLabel: "Mark done" }))) return;
+  if (done && confirm && !(await confirmAction(`Mark "${task.title}" as done?`, { title: "Confirm done", acceptLabel: "Mark done" }))) return;
+  if(!confirm&&done)contextCompletedTasks.add(task.id);
   return patchTaskWithFeedback(task.id, { status: done ? "done" : "active", completed_at: done ? nowIso() : null });
 }
 
@@ -9317,7 +9362,7 @@ els.taskList.addEventListener("click", async (event) => {
     const item = check.closest(".task-item");
     if (item) {
       event.stopPropagation();
-      await toggleTaskStatus(item.dataset.id);
+      await toggleTaskStatus(item.dataset.id, { confirm: false });
     }
     return;
   }

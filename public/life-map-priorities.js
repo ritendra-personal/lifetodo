@@ -65,14 +65,19 @@ export function reorderPriorities(data,active,id,targetId){
  return true;
 }
 
-export function renderPriorityView(root,{topics,data,tasks,notice,save,openOutcome,openTask,changePanel}){
+const taskDraftCache=new WeakMap();
+export function renderPriorityView(root,{topics,data,tasks,notice,save,openOutcome,openTask,changePanel,addTask,toggleTask,refresh}){
  const model=priorityItems(topics,data);
+ if(!taskDraftCache.has(data))taskDraftCache.set(data,new Map());
+ const drafts=taskDraftCache.get(data);
  const byUrgency=data.prioritySort==='urgency';
  const byId=new Map(topics.map(topic=>[topic.id,topic]));
  function path(topic){const names=[],seen=new Set([topic.id]);let parent=byId.get(topic.parent);while(parent&&!seen.has(parent.id)){seen.add(parent.id);names.unshift(parent.title);parent=byId.get(parent.parent);}return names.join(' / ');}
  function row(topic,index,finished){
   const answer=data.answers[topic.id]||{},refs=new Set(data.links[topic.id]||[]),linked=tasks.filter(task=>refs.has('task:'+task.id));
-  const taskMarkup=linked.length?`<ul class="lm-priority-tasks">${linked.map(task=>`<li class="${task.status==='done'?'lm-priority-task-done':''}"><button type="button" data-priority-task="${esc(task.id)}">${task.status==='done'?'✓ ':''}${esc(task.title)}</button></li>`).join('')}</ul>`:'';
+  const listMarkup=linked.length?`<ul class="lm-priority-tasks">${linked.map(task=>`<li class="${task.status==='done'?'lm-priority-task-done':''}">${toggleTask?`<input type="checkbox" data-priority-task-toggle="${esc(task.id)}" aria-label="Complete ${esc(task.title)}"${task.status==='done'?' checked':''}>`:''}<button type="button" data-priority-task="${esc(task.id)}">${esc(task.title)}</button></li>`).join('')}</ul>`:'';
+  const draft=drafts.get(topic.id)||{title:'',taskId:'',saving:false,error:''};drafts.set(topic.id,draft);
+  const taskMarkup=addTask?`<div class="lm-priority-task-area">${listMarkup}${finished?'':`<form data-outcome-add="${esc(topic.id)}"><input name="title" aria-label="New task for ${esc(topic.title)}" placeholder="Add a task…" required maxlength="300" value="${esc(draft.title)}"${draft.saving||draft.taskId?' disabled':''}><button type="submit" title="Add task" aria-label="Add task to ${esc(topic.title)}"${draft.saving?' disabled':''}>+</button></form>`}<p class="priority-task-error" role="alert">${esc(draft.error)}</p></div>`:listMarkup;
   const timing=answer.deadline?'date':answer.timing==='soon'?'week':answer.timing||'';
   const deadline=urgencyDate(answer),overdue=Number.isFinite(deadline)&&deadline<new Date().setHours(0,0,0,0);
   const urgency=`<div class="lm-priority-urgency"><select data-priority-timing="${esc(topic.id)}" aria-label="Needed by for ${esc(topic.title)}">${urgencyChoices.map(([value,label])=>`<option value="${value}"${timing===value?' selected':''}>${label}</option>`).join('')}</select>${timing==='date'?`<input type="date" data-priority-deadline="${esc(topic.id)}" aria-label="Deadline for ${esc(topic.title)}" value="${esc(answer.deadline||'')}">`:''}${overdue?'<small class="lm-overdue">Overdue</small>':''}</div>`;
@@ -85,6 +90,18 @@ export function renderPriorityView(root,{topics,data,tasks,notice,save,openOutco
  root.querySelectorAll('[data-priority-panel]').forEach(button=>button.onclick=()=>changePanel(button.dataset.priorityPanel));
  root.querySelectorAll('[data-priority-open]').forEach(button=>button.onclick=()=>openOutcome(button.dataset.priorityOpen));
  root.querySelectorAll('[data-priority-task]').forEach(button=>button.onclick=()=>openTask(button.dataset.priorityTask));
+ root.querySelectorAll('[data-priority-task-toggle]').forEach(input=>input.onchange=async()=>{input.disabled=true;try{await toggleTask(input.dataset.priorityTaskToggle);}catch(error){input.checked=!input.checked;input.disabled=false;const message=input.closest('article').querySelector('[role=alert]');if(message)message.textContent=error.message;}});
+ root.querySelectorAll('[data-outcome-add]').forEach(form=>{
+  const draft=drafts.get(form.dataset.outcomeAdd),input=form.querySelector('input');
+  input.oninput=()=>{draft.title=input.value;};
+  form.onsubmit=async event=>{
+   event.preventDefault();if(draft.saving)return;draft.title=input.value.trim();if(!draft.title)return;
+   draft.saving=true;form.querySelector('button').disabled=true;
+   try{await addTask(form.dataset.outcomeAdd,draft.title,draft.taskId);draft.title='';draft.taskId='';draft.error='';}
+   catch(error){draft.error=error.message;if(error.taskId)draft.taskId=error.taskId;}
+   finally{draft.saving=false;if(refresh)refresh();else await save();root.querySelector?.(`[data-outcome-add="${form.dataset.outcomeAdd}"] input`)?.focus();}
+  };
+ });
  root.querySelectorAll('[data-priority-status]').forEach(button=>button.onclick=async()=>{button.disabled=true;setOutcomeStatus(data,button.dataset.id,button.dataset.priorityStatus);await save();});
  root.querySelectorAll('[data-priority-move]').forEach(button=>button.onclick=async()=>{
   const index=model.active.findIndex(topic=>topic.id===button.dataset.id),offset=button.dataset.priorityMove==='up'?-1:1;
