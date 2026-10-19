@@ -5,7 +5,7 @@ import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
 import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.81";
+const APP_VERSION = "1.14.82";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -7502,7 +7502,7 @@ function makePeopleReadRow(person, index = 0) {
   const skillCell=row.querySelectorAll("span")[skillIndex];skillCell.classList.add('people-filter-values');
   for(const id of person.skill_ids){const name=state.skills.find(skill=>skill.id===id)?.name;if(name)skillCell.append(makePeopleAnnotationFilter('skill',id,name));}
   row.querySelector(".person-projects").append(...personProjectPills(person));
-  row.querySelector("button").dataset.personEditId = person.id;
+  row.querySelector(".person-edit-button").dataset.personEditId = person.id;
   applyPersonRelationshipTone(row, relationshipNameForId(person.relationship_type_id));
   return row;
 }

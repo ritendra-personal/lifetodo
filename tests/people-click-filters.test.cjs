@@ -28,6 +28,8 @@ test('read rows render separate accessible filter buttons rather than a single s
  const row=extract('makePeopleReadRow');
  assert(row.includes("makePeopleAnnotationFilter('relationship'"));
  assert(row.includes("makePeopleAnnotationFilter('skill'"));
+ assert(row.includes('row.querySelector(".person-edit-button").dataset.personEditId'));
+ assert(!row.includes('row.querySelector("button").dataset.personEditId'));
  assert(extract('makePeopleAnnotationFilter').includes("button.setAttribute('aria-label',button.title)"));
  assert(source.includes("event.target.closest('[data-people-filter-kind]')"));
 });
