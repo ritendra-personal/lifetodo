@@ -5,7 +5,7 @@ import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
 import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.80";
+const APP_VERSION = "1.14.81";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -7024,6 +7024,7 @@ function renderPeopleFilterView() {
   roleSelect.value = roleFilter;
   const people = sortedPeople(filteredPeople(skillFilter, relationshipFilter, projectFilter, roleFilter, genderFilter, ageFilter, raceFilter));
   const list = els.taskList.querySelector(".people-list");
+  const count=document.createElement('p');count.className='people-filter-count';count.setAttribute('role','status');count.textContent=`${people.length} of ${state.people.length} people`;els.taskList.querySelector('.people-filter-bar').after(count);
   if (!people.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state people-empty";
@@ -7451,6 +7452,24 @@ function renderProjectChartsView() {
   );
 }
 
+function applyPeopleAnnotationFilter(kind, id) {
+  if(kind==='skill'&&!state.skills.some(item=>item.id===id))return;
+  if(kind==='relationship'&&(!isPrivatePeopleUnlocked()||!state.relationshipTypes.some(item=>item.id===id)))return;
+  if(!['skill','relationship'].includes(kind))return;
+  sessionStorage.setItem(`people-${kind}-filter`,id);
+  state.view='people-filter';
+  render();
+}
+
+function makePeopleAnnotationFilter(kind,id,label) {
+  const button=document.createElement('button');
+  button.type='button';button.className='people-annotation-filter';
+  button.dataset.peopleFilterKind=kind;button.dataset.peopleFilterValue=id;
+  button.textContent=label;button.title=`Filter by ${kind}: ${label}`;
+  button.setAttribute('aria-label',button.title);
+  return button;
+}
+
 function makePeopleReadRow(person, index = 0) {
   const row = document.createElement("div");
   row.className = "person-card person-read-row";
@@ -7476,13 +7495,12 @@ function makePeopleReadRow(person, index = 0) {
   if (isPrivatePeopleUnlocked()) {
     row.querySelectorAll("span")[3].textContent = ageCategoryNameForId(person.age_category_id) || person.age_band || "";
     row.querySelectorAll("span")[4].textContent = person.race || "";
-    row.querySelectorAll("span")[5].textContent = relationshipNameForId(person.relationship_type_id) || "";
+    const relationshipName=relationshipNameForId(person.relationship_type_id);
+    if(relationshipName)row.querySelectorAll("span")[5].append(makePeopleAnnotationFilter('relationship',person.relationship_type_id,relationshipName));
     skillIndex = 6;
   }
-  row.querySelectorAll("span")[skillIndex].textContent = person.skill_ids
-    .map((id) => state.skills.find((skill) => skill.id === id)?.name)
-    .filter(Boolean)
-    .join(", ");
+  const skillCell=row.querySelectorAll("span")[skillIndex];skillCell.classList.add('people-filter-values');
+  for(const id of person.skill_ids){const name=state.skills.find(skill=>skill.id===id)?.name;if(name)skillCell.append(makePeopleAnnotationFilter('skill',id,name));}
   row.querySelector(".person-projects").append(...personProjectPills(person));
   row.querySelector("button").dataset.personEditId = person.id;
   applyPersonRelationshipTone(row, relationshipNameForId(person.relationship_type_id));
@@ -9077,6 +9095,8 @@ els.taskList.addEventListener("click", async (event) => {
     if (personId) focusObject("person", personId, state.view);
     return;
   }
+  const annotationFilter=event.target.closest('[data-people-filter-kind]');
+  if(annotationFilter){applyPeopleAnnotationFilter(annotationFilter.dataset.peopleFilterKind,annotationFilter.dataset.peopleFilterValue);return;}
   const clearPeopleFiltersButton = event.target.closest(".clear-people-filters");
   if (clearPeopleFiltersButton) {
     sessionStorage.removeItem("people-skill-filter");

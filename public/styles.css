@@ -4855,3 +4855,9 @@ dialog::backdrop {
 .task-tag-panel .tag-filter { color: #263c37; border-color: #b8c9c2; }
 .task-tag-panel .tag-filter.active, .task-tag-panel .tag-filter:hover { color: white; background: #245b49; }
 .optional-task-tags > summary { cursor: pointer; padding: 6px 0; font-size: .85rem; }
+.people-filter-values { display: flex; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.people-annotation-filter { border: 0; border-radius: 0; background: transparent; color: #0d7770; padding: 3px 0; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; overflow-wrap: anywhere; }
+.people-annotation-filter:hover { color: #084f4b; }
+.people-annotation-filter:focus-visible { outline: 2px solid #0d7770; outline-offset: 3px; }
+.people-filter-count { margin: 4px 0 10px; font-size: 13px; color: #657186; }
+@media(max-width:760px) { .people-annotation-filter { min-height: 44px; } }
