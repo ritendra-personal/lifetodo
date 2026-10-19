@@ -1,4 +1,5 @@
 import {refineLifeMapStructure} from './life-map-structure.js?v=1.14.77';
+import {applyHierarchyEdits} from './life-map-hierarchy.js?v=1.14.84';
 // Possibilities, not assumed obligations. Each choice still requires confirmation.
 export const discoveryChoices = {
  home: [
@@ -184,13 +185,13 @@ export function expandDiscovery(items,{refine=true}={}) {
 
 // Preserve old reviewed topics and links at their original IDs as explicit outcomes.
 // Their replacement discovery menu gets a new ID; nothing is written or deleted here.
-export function assembleTopics(base, templates, data) {
+export function assembleTopics(base, templates, data,options={}) {
  const replaced=new Map(templates.filter(t=>t.expandedDiscovery&&data.answers?.[t.id]?.status!=='uninterested'&&(data.answers?.[t.id]?.status||(data.links?.[t.id]||[]).length)).map(t=>[t.id,'discover:'+t.id]));
  const menus=templates.map(t=>({...t,id:replaced.get(t.id)||t.id,parent:replaced.get(t.parent)||t.parent}));
  const saved=templates.filter(t=>replaced.has(t.id)).map(t=>({...t,kind:null,group:null,expandedDiscovery:false,choices:null,suggested:false,isOutcome:true,parent:replaced.get(t.id),question:`Where are you with “${t.title}”?`}));
  const concerns=(data.concerns||[]).map(topic=>{
   const original=topic.parent?.startsWith('discover:')?topic.parent.slice(9):null;
-  return {...topic,isOutcome:true,...(original&&templates.some(item=>item.id===original)&&!replaced.has(original)?{parent:original}:{})};
+  return {...topic,isOutcome:topic.node_type!=='topic',...(topic.node_type==='topic'?{group:'custom',kind:null}:{}),...(original&&templates.some(item=>item.id===original)&&!replaced.has(original)?{parent:original}:{})};
  });
- return [...base,...menus,...saved,...concerns];
+ return applyHierarchyEdits([...base,...menus,...saved,...concerns],data,options);
 }

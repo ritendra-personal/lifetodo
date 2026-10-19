@@ -132,3 +132,37 @@ body:has(.lm-map-canvas){overflow:hidden}
 @media(max-width:750px) { .lm-review-counts button { min-height: 44px; } }
 .life-map-tooltip { position: fixed; z-index: 10000; box-sizing: border-box; width: max-content; max-width: min(360px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: auto; padding: 10px 12px; border: 1px solid #465059; border-radius: 6px; background: #253239; color: #fff; font-size: 13px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; pointer-events: none; box-shadow: 0 4px 16px #0003; }
 .life-map-tooltip[hidden] { display: none; }
+.lm-add-child-actions,.lm-hierarchy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lm-add-child-actions { align-self: end; }
+.lm-edit-current-node { margin-top: 12px; }
+.life-map.lm-hierarchy { max-width: none; width: 100%; box-sizing: border-box; margin: 0; }
+.lm-hierarchy button:not([data-hierarchy-select]) { padding: 8px 12px; border: 1px solid #cbd8d0; border-radius: 4px; background: #fff; color: #244b36; font: inherit; font-size: 13px; align-self: end; }
+.lm-hierarchy button:hover { background: #e8f2ec; }
+.lm-hierarchy button.danger-button { color: #a82d29; border-color: #d9aaa8; }
+.life-map.lm-hierarchy form > label { margin: 0; }
+.lm-hierarchy-editor textarea { min-height: 76px; }
+.lm-hierarchy-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.lm-hierarchy-toolbar h3 { margin: 0; font-size: 20px; }
+.lm-hierarchy-layout { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(300px, 1.3fr); gap: 24px; align-items: start; }
+.lm-hierarchy-tree,.lm-hierarchy-editor { min-width: 0; }
+.lm-hierarchy-tree ul { list-style: none; padding: 0; margin: 0; }
+.lm-hierarchy-tree ul ul { padding-left: 14px; margin-left: 6px; border-left: 1px solid #d6dfda; }
+.lm-hierarchy-tree li { margin: 2px 0; }
+.lm-hierarchy-tree details { margin: 0; padding: 0; }
+.lm-hierarchy-tree summary { display: flex; align-items: center; cursor: pointer; }
+.lm-hierarchy-tree summary::before { content: '+'; width: 18px; flex: 0 0 18px; text-align: center; }
+.lm-hierarchy-tree details[open] > summary::before { content: '-'; }
+.lm-hierarchy-tree button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; border: 0; border-radius: 4px; background: transparent; padding: 8px; text-align: left; font-size: 13px; }
+.lm-hierarchy-tree button span { min-width: 0; overflow-wrap: anywhere; }
+.lm-hierarchy-tree button small { color: #657186; font-size: 11px; flex-shrink: 0; }
+.lm-hierarchy-tree button[aria-current=true] { background: #e3f0e8; color: #194c36; font-weight: 700; }
+.lm-hierarchy-editor { position: sticky; top: 16px; }
+.lm-hierarchy-editor h4 { margin: 0 0 12px; font-size: 16px; overflow-wrap: anywhere; }
+.lm-hierarchy-editor form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 24px; }
+.lm-hierarchy-editor label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; min-width: 0; }
+.lm-hierarchy-editor label:first-child,.lm-hierarchy-description,.lm-hierarchy-actions { grid-column: 1 / -1; }
+.lm-hierarchy-editor input,.lm-hierarchy-editor select,.lm-hierarchy-editor textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
+.lm-hierarchy-feedback { min-height: 20px; font-size: 13px; margin: 0 0 12px; }
+.lm-hierarchy-feedback[role=alert] { color: #b32d29; font-weight: 600; }
+.lm-hierarchy-removed > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+@media(max-width:750px) { .lm-hierarchy-layout { grid-template-columns: minmax(0,1fr); gap: 16px; } .lm-hierarchy-editor { position: static; order: -1; } .lm-hierarchy button,.lm-hierarchy input,.lm-hierarchy select { min-height: 44px; } .lm-hierarchy input,.lm-hierarchy select,.lm-hierarchy textarea { font-size: 16px; } }

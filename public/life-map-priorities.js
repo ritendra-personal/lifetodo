@@ -1,5 +1,5 @@
 import {createTopicExclusionResolver} from './life-map-review.js?v=1.14.44';
-import {bindTopicTooltips} from './life-map-help.js?v=1.14.83';
+import {bindTopicTooltips} from './life-map-help.js?v=1.14.84';
 
 export const priorityStatuses=[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure']];
 const complete=status=>['done','well'].includes(status);
@@ -89,6 +89,8 @@ export function renderPriorityView(root,{topics,data,tasks,notice,save,openOutco
  root.querySelectorAll('[data-priority-timing]').forEach(select=>select.onchange=async()=>{select.disabled=true;setOutcomeUrgency(data,select.dataset.priorityTiming,select.value);await save();});
  root.querySelectorAll('[data-priority-deadline]').forEach(input=>input.onchange=async()=>{if(!input.validity.valid)return;input.disabled=true;setOutcomeUrgency(data,input.dataset.priorityDeadline,'date',input.value);await save();});
  root.querySelectorAll('[data-priority-panel]').forEach(button=>button.onclick=()=>changePanel(button.dataset.priorityPanel));
+ const toolbar=root.querySelector?.('.lm-toolbar');
+ if(toolbar?.insertAdjacentHTML){toolbar.insertAdjacentHTML('beforeend','<button type="button" data-hierarchy-panel>Edit hierarchy</button>');toolbar.querySelector('[data-hierarchy-panel]').onclick=()=>changePanel('hierarchy');}
  root.querySelectorAll('[data-priority-open]').forEach(button=>button.onclick=()=>openOutcome(button.dataset.priorityOpen));
  root.querySelectorAll('[data-priority-task]').forEach(button=>button.onclick=()=>openTask(button.dataset.priorityTask));
  root.querySelectorAll('[data-priority-task-toggle]').forEach(input=>input.onchange=async()=>{input.disabled=true;try{await toggleTask(input.dataset.priorityTaskToggle);}catch(error){input.checked=!input.checked;input.disabled=false;const message=input.closest('article').querySelector('[role=alert]');if(message)message.textContent=error.message;}});

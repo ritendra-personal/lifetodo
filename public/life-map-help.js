@@ -2,6 +2,7 @@ const clean=value=>String(value||'').replace(/\s+/g,' ').trim();
 export function topicDescription(topic,topics,answers={}){
  if(!topic)return '';
  const notes=clean(answers[topic.id]?.notes);
+ if(clean(topic.description))return [clean(topic.description),notes?`Notes: ${notes}`:''].filter(Boolean).join(' ').slice(0,900);
  if(topic.isOutcome){
   const parent=topics.find(item=>item.id===topic.parent);
   return [`Desired result: ${clean(topic.title)}.`,notes?`Notes: ${notes}`:'',parent?`Under ${clean(parent.title)}.`:''].filter(Boolean).join(' ').slice(0,900);

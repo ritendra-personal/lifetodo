@@ -20,6 +20,7 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
  for(const t of topics.filter(t=>included.has(t.id))){const state=stateFor?.(t,answers[t.id]||{},[])||{key:'unknown',label:'Not reviewed'};nodes.set(t.id,{id:'topic:'+t.id,label:t.title,kind:!t.parent?'area':t.group||t.kind?'group':'outcome',sourceId:t.id,reviewed:reviewFor?reviewFor(t.id).key==='reviewed':Boolean(answers[t.id]?.reviewedAt||answers[t.id]?.status),status:(!t.group&&!t.kind&&t.parent?'Outcome · ':'')+(state.key==='unknown'&&(reviewFor?t.isOutcome:answers[t.id]?.reviewedAt)?'Status not set':state.label),state:state.key,children:[]});}
  for(const t of topics.filter(t=>included.has(t.id))){
   const node=nodes.get(t.id),parent=nodes.get(t.parent)||root;
+  node.organizational=t.node_type==='topic';
   const sourceParent=topics.find(x=>x.id===t.parent);
   if(['support-discovery','relationship-discovery'].includes(sourceParent?.kind)&&t.personName){
    const key=`support-person:${t.parent}:${t.personId||t.personName.toLowerCase()}`;
@@ -65,7 +66,7 @@ export function buildLifeGraph({topics,answers={},links={},tasks=[],projects=[],
    node.status+=reviewed===ids.size?' · Reviewed':' · Partially reviewed';
   }
   if(excluded.has(node.sourceId)){node.status='Not of interest · Reviewed';node.state='inactive';}
-  if(!excluded.has(node.sourceId)&&['done','well'].includes(answers[node.sourceId]?.status)){
+  if(!node.organizational&&!excluded.has(node.sourceId)&&['done','well'].includes(answers[node.sourceId]?.status)){
    node.state='complete';
    if(!node.status.includes('Taken care of'))node.status='Taken care of · '+node.status;
   }
