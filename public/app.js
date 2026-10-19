@@ -1,11 +1,11 @@
-import {renderLifeMap,lifeMapTaskContext,setTaskOutcome,retryLifeMapLoad} from './life-map.js?v=1.14.78';
+import {renderLifeMap,lifeMapTaskContext,setTaskOutcome,retryLifeMapLoad} from './life-map.js?v=1.14.83';
 import {renderOutcomePicker,taskOutcomeIds} from './outcome-picker.js?v=1.14.76';
 import {renderQuickTaskEntry} from './quick-task-entry.js?v=1.14.76';
 import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
 import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.82";
+const APP_VERSION = "1.14.83";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];

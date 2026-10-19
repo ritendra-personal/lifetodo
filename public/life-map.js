@@ -3,7 +3,8 @@ import {concreteAction} from './life-map-actions.js?v=1.14.77';
 import {existingOutcome} from './life-map-structure.js?v=1.14.77';
 import {renderOutcomePicker} from './outcome-picker.js?v=1.14.76';
 import {lifeMapReviewProgress,reviewProgressMarkup} from './life-map-progress.js?v=1.14.78';
-import {priorityItems,renderPriorityView,setOutcomeStatus,setOutcomeUrgency,urgencyChoices} from './life-map-priorities.js?v=1.14.76';
+import {bindTopicTooltips} from './life-map-help.js?v=1.14.83';
+import {priorityItems,renderPriorityView,setOutcomeStatus,setOutcomeUrgency,urgencyChoices} from './life-map-priorities.js?v=1.14.83';
 import {createTopicExclusionResolver,reopenTopicInterest} from './life-map-review.js?v=1.14.44';
 import {buildLifeGraph,buildOutcomeTaskGraph,graphMarkup,bindGraph} from './life-map-graph.js?v=1.14.75';
 export function linkCandidates(records,type,linked=[],query='') {
@@ -459,6 +460,7 @@ export function renderLifeMap(root,api){
   bindGraph(root,tree,api.render,api.tasks);
   root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{selected=b.dataset.go;panel='explore';step='question';api.openOutcome();});
   root.querySelectorAll('[data-graph-task]').forEach(b=>b.onclick=()=>api.openTask(b.dataset.graphTask));
+  bindTopicTooltips(root,topics,data.answers);
   return;
  }
  const graph=buildLifeGraph({topics,answers:data.answers,links:data.links,tasks:api.tasks,projects:api.projects,goals:api.goals,people:api.people,stateFor:mapState,reviewFor:id=>topicReviewState(id,topics,data.answers),interestFilter:mapInterestFilter,hideCompleted:mapHideCompleted});
@@ -693,4 +695,6 @@ export function renderLifeMap(root,api){
  root.onLifeMapToggle=async e=>{const task=api.tasks.find(t=>t.id===e.detail);if(!task)return;const saved=await api.createTask({...task,status:task.status==='done'?'active':'done',completed_at:task.status==='done'?null:new Date().toISOString()});notice=saved?'Task updated.':'Task update failed.';api.render();};
  root.addEventListener('life-map-task-toggle',root.onLifeMapToggle);
  if(loading)root.querySelectorAll('button,input,select,textarea').forEach(x=>x.disabled=true);
+ const heading=root.querySelector('.lm-interview h3');if(heading&&panel!=='map')heading.dataset.topicTooltip=current.id;
+ bindTopicTooltips(root,topics,data.answers);
 }

@@ -1,4 +1,5 @@
 import {createTopicExclusionResolver} from './life-map-review.js?v=1.14.44';
+import {bindTopicTooltips} from './life-map-help.js?v=1.14.83';
 
 export const priorityStatuses=[['done','Already taken care of'],['unstarted','I need to do this'],['progress','I have started'],['unsure','Not sure']];
 const complete=status=>['done','well'].includes(status);
@@ -128,5 +129,6 @@ export function renderPriorityView(root,{topics,data,tasks,notice,save,openOutco
   row.ondragover=event=>{event.preventDefault();event.dataTransfer.dropEffect='move';};
   row.ondrop=async event=>{event.preventDefault();if(reorderPriorities(data,model.active,event.dataTransfer.getData('text/plain'),row.dataset.priorityId))await save();};
  });
+ if(root.ownerDocument)bindTopicTooltips(root,topics,data.answers);
  return model;
 }
