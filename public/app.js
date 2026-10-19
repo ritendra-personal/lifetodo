@@ -5,7 +5,7 @@ import {renderSeasonPlanning} from './season-planning.js?v=1.14.59';
 import {renderPlanningConflicts} from './planning-conflicts.js?v=1.14.59';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const APP_VERSION = "1.14.79";
+const APP_VERSION = "1.14.80";
 const PENDING_PROJECT_PERSON_KEY = "pending-project-person-id";
 
 const densityOptions = ["compact", "comfort", "roomy"];
@@ -3506,11 +3506,13 @@ async function deleteNamedOption(type, id) {
 
 async function persistPerson(person, options = {}) {
   const trace = options.trace || createDiagnosticTrace("person-persist");
-  const normalized = normalizePerson({ ...person, user_id: state.user?.id || null, updated_at: nowIso() });
+  const normalized = normalizePerson({ ...state.people.find(item=>item.id===person.id), ...person, user_id: state.user?.id || null, updated_at: nowIso() });
+  const savePrivate = isPrivatePeopleUnlocked();
+  if(options.requirePrivate && !savePrivate)throw new Error("Relationship was not saved: private attributes were locked before saving. Unlock and retry.");
   if (!normalized.first_name) return;
   const previousPeople = state.people;
   trace("persist:start", { requireCloud: Boolean(options.requireCloud), hasSupabase: Boolean(state.supabase), hasSession: Boolean(state.session) });
-  if (options.requireCloud && isPrivatePeopleUnlocked() && !state.privateTableReady) {
+  if ((options.requireCloud || isSupabaseReady()) && savePrivate && !state.privateTableReady) {
     state.syncError = "Person was not saved to database: private attributes table is not ready. Run migrations/017_private_people_attributes.sql.";
     state.syncMessage = "";
     if (options.render !== false) render();
@@ -3569,9 +3571,9 @@ async function persistPerson(person, options = {}) {
       "Person save is taking longer than usual. Still waiting for the database..."
     );
     const saved = normalizePerson(data);
-    if (isPrivatePeopleUnlocked()) {
-      await upsertPrivatePersonRow(saved.id, privateValuesForPerson(normalized), { requireCloud: options.requireCloud });
-      Object.assign(saved, privateValuesForPerson(normalized));
+    if (savePrivate) {
+      await upsertPrivatePersonRow(saved.id, privateValuesForPerson(normalized), { requireCloud: true });
+      if(isPrivatePeopleUnlocked())Object.assign(saved, privateValuesForPerson(normalized));
     }
     state.people = state.people.some((item) => item.id === saved.id)
       ? state.people.map((item) => (item.id === saved.id ? saved : item))
@@ -3585,7 +3587,7 @@ async function persistPerson(person, options = {}) {
   } catch (error) {
     trace("persist:error", { message: error.message });
     if (options.requireCloud) {
-      state.people = previousPeople;
+      state.people = isPrivatePeopleUnlocked() ? previousPeople : previousPeople.map(publicPersonForStorage).map(normalizePerson);
       saveLocal({ silent: true });
     }
     state.syncError = `Person was not saved to database: ${error.message}`;
@@ -4395,7 +4397,9 @@ function setPendingProjectForNewPerson(projectId) {
 }
 
 async function upsertPrivatePersonRow(personId, values, options = {}) {
-  if (!isPrivatePeopleUnlocked()) return;
+  if (!isPrivatePeopleUnlocked()) throw new Error("Private attributes are locked. Unlock and retry saving.");
+  const requireCloud = options.requireCloud || isSupabaseReady();
+  if(requireCloud && (!isSupabaseReady() || !state.privateTableReady))throw new Error("Relationship and other private attributes were not saved to database: the private attributes table is unavailable. Run migration 017_private_people_attributes.sql, then Sync and retry.");
   const payload = await encryptPrivateAttributes(values);
   const row = {
     person_id: personId,
@@ -4403,15 +4407,8 @@ async function upsertPrivatePersonRow(personId, values, options = {}) {
     payload,
     updated_at: nowIso()
   };
-  state.peoplePrivateRows = state.peoplePrivateRows.some((item) => item.person_id === personId)
-    ? state.peoplePrivateRows.map((item) => (item.person_id === personId ? row : item))
-    : [...state.peoplePrivateRows, row];
-  saveLocal({ silent: true });
-  if (!isSupabaseReady() || !state.privateTableReady) {
-    if (options.requireCloud) throw new Error("Private attributes table is not ready. Run the latest Supabase migration.");
-    return;
-  }
-  await supabaseRestMutation("planner_person_private_attributes?on_conflict=person_id&select=*", {
+  if(requireCloud){
+  const result = await supabaseRestMutation("planner_person_private_attributes?on_conflict=person_id&select=*", {
     method: "POST",
     headers: {
       Prefer: "resolution=merge-duplicates,return=representation"
@@ -4423,6 +4420,12 @@ async function upsertPrivatePersonRow(personId, values, options = {}) {
       updated_at: row.updated_at
     })
   });
+  if(!Array.isArray(result)||!result.some(item=>item.person_id===personId&&item.payload))throw new Error("Database did not confirm saving the relationship and other private attributes.");
+  }
+  state.peoplePrivateRows = state.peoplePrivateRows.some((item) => item.person_id === personId)
+    ? state.peoplePrivateRows.map((item) => (item.person_id === personId ? row : item))
+    : [...state.peoplePrivateRows, row];
+  saveLocal({ silent: true });
 }
 
 async function unlockPrivatePeople(passphrase) {
@@ -9749,27 +9752,33 @@ function updateAreaRow(row, shouldRender = false) {
   if (shouldRender) render();
 }
 
+const personAutosaveQueues = new Map();
+function persistPersonAutosave(values, options) {
+  const key = `${state.user?.id || 'local'}:${values.id}`;
+  const previous = personAutosaveQueues.get(key) || Promise.resolve();
+  const pending = previous.catch(()=>{}).then(()=>persistPerson(values, options));
+  personAutosaveQueues.set(key,pending);
+  return pending.finally(()=>{if(personAutosaveQueues.get(key)===pending)personAutosaveQueues.delete(key);});
+}
+
 function autosavePersonCard(card) {
   const person = state.people.find((item) => item.id === card.dataset.personId);
   if (!person) return;
   const firstName = card.querySelector("[name='firstName']").value.trim();
   if (!firstName) return;
-  queueAutosave(`person:${person.id}`, () =>
-    persistPerson(
-      {
+  const values = {
         id: person.id,
         first_name: firstName,
         last_name: card.querySelector("[name='lastName']").value.trim(),
         gender: card.querySelector("[name='gender']")?.value || "",
-        age_category_id: card.querySelector("[name='ageCategoryId']")?.value || "",
-        race: card.querySelector("[name='race']")?.value || "",
-        relationship_type_id: card.querySelector("[name='relationshipTypeId']")?.value || "",
+        age_category_id: card.querySelector("[name='ageCategoryId']")?.value ?? person.age_category_id,
+        race: card.querySelector("[name='race']")?.value ?? person.race,
+        relationship_type_id: card.querySelector("[name='relationshipTypeId']")?.value ?? person.relationship_type_id,
         skill_ids: [...card.querySelectorAll("[name='skillIds']")].map((input) => input.value),
         created_at: person.created_at
-      },
-      { render: false }
-    )
-  );
+      };
+  const options = {render:false,requireCloud:Boolean(state.user),requirePrivate:Boolean(card.querySelector("[name='relationshipTypeId']"))};
+  queueAutosave(`person:${person.id}`,()=>persistPersonAutosave(values,options));
 }
 
 function autosaveProjectCard(card) {
